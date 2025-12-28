@@ -489,3 +489,439 @@ pub fn get_string_array(json: &serde_json::Value, field: &str) -> Result<Vec<Str
         .filter_map(|v| v.as_str().map(String::from))
         .collect())
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // Weighted parsing tests
+    #[test]
+    fn test_parse_criteria_success() {
+        let json = json!({
+            "criteria": [
+                {"name": "cost", "weight": 0.5, "description": "Cost efficiency"},
+                {"name": "quality", "weight": 0.5, "description": "Quality level"}
+            ]
+        });
+        let result = parse_criteria(&json);
+        assert!(result.is_ok());
+        let criteria = result.unwrap();
+        assert_eq!(criteria.len(), 2);
+        assert_eq!(criteria[0].name, "cost");
+    }
+
+    #[test]
+    fn test_parse_criteria_missing() {
+        let result = parse_criteria(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_scores_success() {
+        let json = json!({
+            "scores": {
+                "option_a": {"cost": 0.8, "quality": 0.9},
+                "option_b": {"cost": 0.6, "quality": 0.7}
+            }
+        });
+        let result = parse_scores(&json);
+        assert!(result.is_ok());
+        let scores = result.unwrap();
+        assert_eq!(scores.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_scores_invalid_option() {
+        let json = json!({"scores": {"option_a": "not_an_object"}});
+        let result = parse_scores(&json);
+        assert!(matches!(result, Err(ModeError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn test_parse_scores_invalid_value() {
+        let json = json!({"scores": {"option_a": {"cost": "not_a_number"}}});
+        let result = parse_scores(&json);
+        assert!(matches!(result, Err(ModeError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn test_parse_weighted_totals_success() {
+        let json = json!({"weighted_totals": {"a": 0.8, "b": 0.6}});
+        let result = parse_weighted_totals(&json);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_weighted_ranking_success() {
+        let json = json!({
+            "ranking": [
+                {"option": "a", "score": 0.9, "rank": 1},
+                {"option": "b", "score": 0.7, "rank": 2}
+            ]
+        });
+        let result = parse_weighted_ranking(&json);
+        assert!(result.is_ok());
+        let ranking = result.unwrap();
+        assert_eq!(ranking.len(), 2);
+        assert_eq!(ranking[0].rank, 1);
+    }
+
+    // Pairwise parsing tests
+    #[test]
+    fn test_parse_comparisons_success() {
+        let json = json!({
+            "comparisons": [{
+                "option_a": "first",
+                "option_b": "second",
+                "preferred": "option_a",
+                "strength": "strong",
+                "reasoning": "Better overall"
+            }]
+        });
+        let result = parse_comparisons(&json);
+        assert!(result.is_ok());
+        let comps = result.unwrap();
+        assert_eq!(comps.len(), 1);
+        assert_eq!(comps[0].preferred, PreferenceResult::OptionA);
+    }
+
+    #[test]
+    fn test_parse_comparisons_option_b() {
+        let json = json!({
+            "comparisons": [{
+                "option_a": "first",
+                "option_b": "second",
+                "preferred": "option_b",
+                "strength": "moderate",
+                "reasoning": "Better value"
+            }]
+        });
+        let result = parse_comparisons(&json);
+        assert!(result.is_ok());
+        let comps = result.unwrap();
+        assert_eq!(comps[0].preferred, PreferenceResult::OptionB);
+        assert_eq!(comps[0].strength, PreferenceStrength::Moderate);
+    }
+
+    #[test]
+    fn test_parse_comparisons_tie() {
+        let json = json!({
+            "comparisons": [{
+                "option_a": "first",
+                "option_b": "second",
+                "preferred": "tie",
+                "strength": "slight",
+                "reasoning": "Too close"
+            }]
+        });
+        let result = parse_comparisons(&json);
+        assert!(result.is_ok());
+        let comps = result.unwrap();
+        assert_eq!(comps[0].preferred, PreferenceResult::Tie);
+        assert_eq!(comps[0].strength, PreferenceStrength::Slight);
+    }
+
+    #[test]
+    fn test_parse_comparisons_invalid_preferred() {
+        let json = json!({
+            "comparisons": [{
+                "option_a": "a", "option_b": "b",
+                "preferred": "invalid",
+                "strength": "strong", "reasoning": "x"
+            }]
+        });
+        let result = parse_comparisons(&json);
+        assert!(matches!(result, Err(ModeError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn test_parse_comparisons_invalid_strength() {
+        let json = json!({
+            "comparisons": [{
+                "option_a": "a", "option_b": "b",
+                "preferred": "option_a",
+                "strength": "invalid", "reasoning": "x"
+            }]
+        });
+        let result = parse_comparisons(&json);
+        assert!(matches!(result, Err(ModeError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn test_parse_pairwise_matrix_success() {
+        let json = json!({"pairwise_matrix": {"a_vs_b": 2, "a_vs_c": -1}});
+        let result = parse_pairwise_matrix(&json);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_pairwise_ranking_success() {
+        let json = json!({
+            "ranking": [
+                {"option": "a", "wins": 3, "rank": 1},
+                {"option": "b", "wins": 1, "rank": 2}
+            ]
+        });
+        let result = parse_pairwise_ranking(&json);
+        assert!(result.is_ok());
+    }
+
+    // TOPSIS parsing tests
+    #[test]
+    fn test_parse_topsis_criteria_success() {
+        let json = json!({
+            "criteria": [
+                {"name": "cost", "type": "cost", "weight": 0.4},
+                {"name": "quality", "type": "benefit", "weight": 0.6}
+            ]
+        });
+        let result = parse_topsis_criteria(&json);
+        assert!(result.is_ok());
+        let criteria = result.unwrap();
+        assert_eq!(criteria[0].criterion_type, CriterionType::Cost);
+        assert_eq!(criteria[1].criterion_type, CriterionType::Benefit);
+    }
+
+    #[test]
+    fn test_parse_topsis_criteria_invalid_type() {
+        let json = json!({
+            "criteria": [{"name": "x", "type": "invalid", "weight": 0.5}]
+        });
+        let result = parse_topsis_criteria(&json);
+        assert!(matches!(result, Err(ModeError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn test_parse_decision_matrix_success() {
+        let json = json!({
+            "decision_matrix": {
+                "a": [0.8, 0.9],
+                "b": [0.6, 0.7]
+            }
+        });
+        let result = parse_decision_matrix(&json);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_decision_matrix_invalid() {
+        let json = json!({"decision_matrix": {"a": "not_array"}});
+        let result = parse_decision_matrix(&json);
+        assert!(matches!(result, Err(ModeError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn test_parse_f64_array_success() {
+        let json = json!({"values": [0.1, 0.2, 0.3]});
+        let result = parse_f64_array(&json, "values");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_parse_distances_success() {
+        let json = json!({
+            "distances": {
+                "a": {"to_ideal": 0.2, "to_anti_ideal": 0.8},
+                "b": {"to_ideal": 0.5, "to_anti_ideal": 0.5}
+            }
+        });
+        let result = parse_distances(&json);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_relative_closeness_success() {
+        let json = json!({"relative_closeness": {"a": 0.8, "b": 0.5}});
+        let result = parse_relative_closeness(&json);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_topsis_ranking_success() {
+        let json = json!({
+            "ranking": [
+                {"option": "a", "closeness": 0.8, "rank": 1}
+            ]
+        });
+        let result = parse_topsis_ranking(&json);
+        assert!(result.is_ok());
+    }
+
+    // Perspectives parsing tests
+    #[test]
+    fn test_parse_stakeholders_success() {
+        let json = json!({
+            "stakeholders": [{
+                "name": "Customer",
+                "interests": ["quality", "price"],
+                "preferred_option": "option_a",
+                "concerns": ["delivery"],
+                "influence_level": "high"
+            }]
+        });
+        let result = parse_stakeholders(&json);
+        assert!(result.is_ok());
+        let stakeholders = result.unwrap();
+        assert_eq!(stakeholders[0].influence_level, InfluenceLevel::High);
+    }
+
+    #[test]
+    fn test_parse_stakeholders_medium_influence() {
+        let json = json!({
+            "stakeholders": [{
+                "name": "Partner", "interests": [], "preferred_option": "a",
+                "concerns": [], "influence_level": "medium"
+            }]
+        });
+        let result = parse_stakeholders(&json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()[0].influence_level, InfluenceLevel::Medium);
+    }
+
+    #[test]
+    fn test_parse_stakeholders_low_influence() {
+        let json = json!({
+            "stakeholders": [{
+                "name": "Vendor", "interests": [], "preferred_option": "b",
+                "concerns": [], "influence_level": "low"
+            }]
+        });
+        let result = parse_stakeholders(&json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()[0].influence_level, InfluenceLevel::Low);
+    }
+
+    #[test]
+    fn test_parse_stakeholders_invalid_influence() {
+        let json = json!({
+            "stakeholders": [{
+                "name": "X", "interests": [], "preferred_option": "a",
+                "concerns": [], "influence_level": "invalid"
+            }]
+        });
+        let result = parse_stakeholders(&json);
+        assert!(matches!(result, Err(ModeError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn test_parse_conflicts_success() {
+        let json = json!({
+            "conflicts": [{
+                "between": ["A", "B"],
+                "issue": "resource allocation",
+                "severity": "high"
+            }]
+        });
+        let result = parse_conflicts(&json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()[0].severity, ConflictSeverity::High);
+    }
+
+    #[test]
+    fn test_parse_conflicts_medium_severity() {
+        let json = json!({
+            "conflicts": [{
+                "between": ["A", "B"], "issue": "timing", "severity": "medium"
+            }]
+        });
+        let result = parse_conflicts(&json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()[0].severity, ConflictSeverity::Medium);
+    }
+
+    #[test]
+    fn test_parse_conflicts_low_severity() {
+        let json = json!({
+            "conflicts": [{
+                "between": ["A", "B"], "issue": "minor", "severity": "low"
+            }]
+        });
+        let result = parse_conflicts(&json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()[0].severity, ConflictSeverity::Low);
+    }
+
+    #[test]
+    fn test_parse_conflicts_invalid_severity() {
+        let json = json!({
+            "conflicts": [{
+                "between": ["A", "B"], "issue": "x", "severity": "invalid"
+            }]
+        });
+        let result = parse_conflicts(&json);
+        assert!(matches!(result, Err(ModeError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn test_parse_alignments_success() {
+        let json = json!({
+            "alignments": [{
+                "stakeholders": ["A", "B"],
+                "common_ground": "shared goal"
+            }]
+        });
+        let result = parse_alignments(&json);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_balanced_recommendation_success() {
+        let json = json!({
+            "balanced_recommendation": {
+                "option": "option_a",
+                "rationale": "Best overall",
+                "mitigation": "Address concerns"
+            }
+        });
+        let result = parse_balanced_recommendation(&json);
+        assert!(result.is_ok());
+    }
+
+    // Utility helper tests
+    #[test]
+    fn test_get_str_success() {
+        let json = json!({"name": "test"});
+        let result = get_str(&json, "name");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "test");
+    }
+
+    #[test]
+    fn test_get_str_missing() {
+        let result = get_str(&json!({}), "name");
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_get_f64_success() {
+        let json = json!({"value": 3.14});
+        let result = get_f64(&json, "value");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_f64_missing() {
+        let result = get_f64(&json!({}), "value");
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_get_string_array_success() {
+        let json = json!({"items": ["a", "b", "c"]});
+        let result = get_string_array(&json, "items");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_get_string_array_missing() {
+        let result = get_string_array(&json!({}), "items");
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+}

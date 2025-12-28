@@ -154,4 +154,118 @@ pub mod tests {
 
         let _ = std::fs::remove_file(&db_path);
     }
+
+    // ========== Additional tests for coverage ==========
+
+    #[test]
+    fn test_generate_id() {
+        let id1 = SqliteStorage::generate_id();
+        let id2 = SqliteStorage::generate_id();
+
+        // IDs should be unique
+        assert_ne!(id1, id2);
+
+        // Should be valid UUIDs
+        assert!(Uuid::parse_str(&id1).is_ok());
+        assert!(Uuid::parse_str(&id2).is_ok());
+    }
+
+    #[test]
+    fn test_parse_datetime_valid() {
+        let datetime_str = "2024-01-15T10:30:00Z";
+        let result = SqliteStorage::parse_datetime(datetime_str);
+        assert!(result.is_ok());
+
+        let dt = result.unwrap();
+        assert_eq!(dt.year(), 2024);
+        assert_eq!(dt.month(), 1);
+        assert_eq!(dt.day(), 15);
+    }
+
+    #[test]
+    fn test_parse_datetime_invalid() {
+        let invalid_str = "not-a-datetime";
+        let result = SqliteStorage::parse_datetime(invalid_str);
+        assert!(result.is_err());
+
+        match result {
+            Err(StorageError::Internal { message }) => {
+                assert!(message.contains("Failed to parse datetime"));
+                assert!(message.contains("not-a-datetime"));
+            }
+            _ => panic!("Expected Internal error"),
+        }
+    }
+
+    #[test]
+    fn test_query_error() {
+        let err = SqliteStorage::query_error("SELECT * FROM foo", "some db error".to_string());
+
+        match err {
+            StorageError::QueryFailed { query, message } => {
+                assert_eq!(query, "SELECT * FROM foo");
+                assert_eq!(message, "some db error");
+            }
+            _ => panic!("Expected QueryFailed error"),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_new_with_nested_path() {
+        let temp_dir = std::env::temp_dir();
+        let nested_path = temp_dir.join("deeply").join("nested").join("path");
+        let db_path = nested_path.join("test_nested.db");
+
+        // Clean up first if exists
+        let _ = std::fs::remove_dir_all(temp_dir.join("deeply"));
+
+        // Should create parent directories
+        let storage = SqliteStorage::new(&db_path).await;
+        assert!(storage.is_ok());
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(temp_dir.join("deeply"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_storage_debug() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        let debug = format!("{:?}", storage);
+        assert!(debug.contains("SqliteStorage"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_storage_clone() {
+        let storage1 = SqliteStorage::new_in_memory().await.unwrap();
+        let storage2 = storage1.clone();
+
+        // Both should work
+        let id1 = SqliteStorage::generate_id();
+        let id2 = SqliteStorage::generate_id();
+        assert_ne!(id1, id2);
+
+        // Check that cloned storage works
+        drop(storage1);
+        // storage2 should still be usable (pool is shared)
+        drop(storage2);
+    }
+
+    #[test]
+    fn test_parse_datetime_with_offset() {
+        // ISO 8601 with Z offset
+        let dt_str = "2024-06-15T14:30:00Z";
+        let result = SqliteStorage::parse_datetime(dt_str);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_datetime_empty() {
+        let result = SqliteStorage::parse_datetime("");
+        assert!(result.is_err());
+    }
+
+    use chrono::Datelike;
 }

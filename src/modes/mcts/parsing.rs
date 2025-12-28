@@ -335,3 +335,525 @@ pub fn get_string_array(json: &serde_json::Value, field: &str) -> Result<Vec<Str
         .filter_map(|v| v.as_str().map(String::from))
         .collect())
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // Utility Helper Tests
+    #[test]
+    fn test_get_str_success() {
+        let json = json!({"name": "test"});
+        let result = get_str(&json, "name");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "test");
+    }
+
+    #[test]
+    fn test_get_str_missing() {
+        let json = json!({"other": "value"});
+        let result = get_str(&json, "name");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_f64_success() {
+        let json = json!({"value": 0.85});
+        let result = get_f64(&json, "value");
+        assert!(result.is_ok());
+        assert!((result.unwrap() - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_get_f64_missing() {
+        let json = json!({"other": 1.0});
+        let result = get_f64(&json, "value");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_string_array_success() {
+        let json = json!({"items": ["a", "b", "c"]});
+        let result = get_string_array(&json, "items");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_get_string_array_missing() {
+        let json = json!({"other": []});
+        let result = get_string_array(&json, "items");
+        assert!(result.is_err());
+    }
+
+    // Parse Frontier Tests
+    #[test]
+    fn test_parse_frontier_success() {
+        let json = json!({
+            "frontier_evaluation": [
+                {
+                    "node_id": "n1",
+                    "visits": 10,
+                    "average_value": 0.7,
+                    "ucb1_score": 0.85,
+                    "exploration_bonus": 0.15
+                }
+            ]
+        });
+        let result = parse_frontier(&json);
+        assert!(result.is_ok());
+        let frontier = result.unwrap();
+        assert_eq!(frontier.len(), 1);
+        assert_eq!(frontier[0].node_id, "n1");
+        assert_eq!(frontier[0].visits, 10);
+        assert!((frontier[0].average_value - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_frontier_missing() {
+        let json = json!({"other": []});
+        let result = parse_frontier(&json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_frontier_empty() {
+        let json = json!({"frontier_evaluation": []});
+        let result = parse_frontier(&json);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    // Parse Selected Tests
+    #[test]
+    fn test_parse_selected_success() {
+        let json = json!({
+            "selected_node": {
+                "node_id": "n1",
+                "selection_reason": "Highest UCB1 score"
+            }
+        });
+        let result = parse_selected(&json);
+        assert!(result.is_ok());
+        let selected = result.unwrap();
+        assert_eq!(selected.node_id, "n1");
+        assert_eq!(selected.selection_reason, "Highest UCB1 score");
+    }
+
+    #[test]
+    fn test_parse_selected_missing() {
+        let json = json!({"other": {}});
+        let result = parse_selected(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Expansion Tests
+    #[test]
+    fn test_parse_expansion_success() {
+        let json = json!({
+            "expansion": {
+                "new_nodes": [
+                    {"id": "n2", "content": "New exploration", "simulated_value": 0.6},
+                    {"id": "n3", "content": "Another path", "simulated_value": 0.7}
+                ]
+            }
+        });
+        let result = parse_expansion(&json);
+        assert!(result.is_ok());
+        let expansion = result.unwrap();
+        assert_eq!(expansion.new_nodes.len(), 2);
+        assert_eq!(expansion.new_nodes[0].id, "n2");
+        assert!((expansion.new_nodes[1].simulated_value - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_expansion_missing() {
+        let json = json!({"other": {}});
+        let result = parse_expansion(&json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_expansion_empty_nodes() {
+        let json = json!({
+            "expansion": {"new_nodes": []}
+        });
+        let result = parse_expansion(&json);
+        assert!(result.is_ok());
+        assert!(result.unwrap().new_nodes.is_empty());
+    }
+
+    // Parse Backpropagation Tests
+    #[test]
+    fn test_parse_backpropagation_success() {
+        let json = json!({
+            "backpropagation": {
+                "updated_nodes": ["n1", "n2"],
+                "value_changes": {"n1": 0.1, "n2": -0.05}
+            }
+        });
+        let result = parse_backpropagation(&json);
+        assert!(result.is_ok());
+        let bp = result.unwrap();
+        assert_eq!(bp.updated_nodes.len(), 2);
+        assert_eq!(bp.value_changes.len(), 2);
+        assert!((bp.value_changes.get("n1").unwrap() - 0.1).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_backpropagation_no_value_changes() {
+        let json = json!({
+            "backpropagation": {
+                "updated_nodes": ["n1"]
+            }
+        });
+        let result = parse_backpropagation(&json);
+        assert!(result.is_ok());
+        let bp = result.unwrap();
+        assert!(bp.value_changes.is_empty());
+    }
+
+    #[test]
+    fn test_parse_backpropagation_missing() {
+        let json = json!({"other": {}});
+        let result = parse_backpropagation(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Search Status Tests
+    #[test]
+    fn test_parse_search_status_success() {
+        let json = json!({
+            "search_status": {
+                "total_nodes": 100,
+                "total_simulations": 500,
+                "best_path_value": 0.85
+            }
+        });
+        let result = parse_search_status(&json);
+        assert!(result.is_ok());
+        let status = result.unwrap();
+        assert_eq!(status.total_nodes, 100);
+        assert_eq!(status.total_simulations, 500);
+        assert!((status.best_path_value - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_search_status_missing() {
+        let json = json!({"other": {}});
+        let result = parse_search_status(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Quality Assessment Tests
+    #[test]
+    fn test_parse_quality_assessment_declining() {
+        let json = json!({
+            "quality_assessment": {
+                "recent_values": [0.8, 0.7, 0.6],
+                "trend": "declining",
+                "decline_magnitude": 0.2
+            }
+        });
+        let result = parse_quality_assessment(&json);
+        assert!(result.is_ok());
+        let qa = result.unwrap();
+        assert_eq!(qa.recent_values.len(), 3);
+        assert!(matches!(qa.trend, QualityTrend::Declining));
+        assert!((qa.decline_magnitude - 0.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_quality_assessment_stable() {
+        let json = json!({
+            "quality_assessment": {
+                "recent_values": [0.7, 0.7, 0.7],
+                "trend": "stable",
+                "decline_magnitude": 0.0
+            }
+        });
+        let result = parse_quality_assessment(&json);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().trend, QualityTrend::Stable));
+    }
+
+    #[test]
+    fn test_parse_quality_assessment_improving() {
+        let json = json!({
+            "quality_assessment": {
+                "recent_values": [0.6, 0.7, 0.8],
+                "trend": "improving",
+                "decline_magnitude": 0.0
+            }
+        });
+        let result = parse_quality_assessment(&json);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().trend, QualityTrend::Improving));
+    }
+
+    #[test]
+    fn test_parse_quality_assessment_invalid_trend() {
+        let json = json!({
+            "quality_assessment": {
+                "recent_values": [0.7],
+                "trend": "unknown",
+                "decline_magnitude": 0.0
+            }
+        });
+        let result = parse_quality_assessment(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::InvalidValue { field, reason }) => {
+                assert_eq!(field, "trend");
+                assert!(reason.contains("unknown"));
+            }
+            _ => panic!("Expected InvalidValue error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_quality_assessment_missing() {
+        let json = json!({"other": {}});
+        let result = parse_quality_assessment(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Backtrack Decision Tests
+    #[test]
+    fn test_parse_backtrack_decision_should_backtrack() {
+        let json = json!({
+            "backtrack_decision": {
+                "should_backtrack": true,
+                "reason": "Quality declining",
+                "backtrack_to": "n5",
+                "depth_reduction": 3
+            }
+        });
+        let result = parse_backtrack_decision(&json);
+        assert!(result.is_ok());
+        let bd = result.unwrap();
+        assert!(bd.should_backtrack);
+        assert_eq!(bd.reason, "Quality declining");
+        assert_eq!(bd.backtrack_to, Some("n5".to_string()));
+        assert_eq!(bd.depth_reduction, Some(3));
+    }
+
+    #[test]
+    fn test_parse_backtrack_decision_no_backtrack() {
+        let json = json!({
+            "backtrack_decision": {
+                "should_backtrack": false,
+                "reason": "Path still promising"
+            }
+        });
+        let result = parse_backtrack_decision(&json);
+        assert!(result.is_ok());
+        let bd = result.unwrap();
+        assert!(!bd.should_backtrack);
+        assert!(bd.backtrack_to.is_none());
+        assert!(bd.depth_reduction.is_none());
+    }
+
+    #[test]
+    fn test_parse_backtrack_decision_missing() {
+        let json = json!({"other": {}});
+        let result = parse_backtrack_decision(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Alternatives Tests
+    #[test]
+    fn test_parse_alternatives_success() {
+        let json = json!({
+            "alternative_actions": [
+                {"action": "prune", "rationale": "Remove low-value branches"},
+                {"action": "refine", "rationale": "Focus on promising area"},
+                {"action": "widen", "rationale": "Explore more options"},
+                {"action": "continue", "rationale": "Current path is good"}
+            ]
+        });
+        let result = parse_alternatives(&json);
+        assert!(result.is_ok());
+        let alts = result.unwrap();
+        assert_eq!(alts.len(), 4);
+        assert!(matches!(alts[0].action, AlternativeAction::Prune));
+        assert!(matches!(alts[1].action, AlternativeAction::Refine));
+        assert!(matches!(alts[2].action, AlternativeAction::Widen));
+        assert!(matches!(alts[3].action, AlternativeAction::Continue));
+    }
+
+    #[test]
+    fn test_parse_alternatives_invalid_action() {
+        let json = json!({
+            "alternative_actions": [
+                {"action": "unknown", "rationale": "Test"}
+            ]
+        });
+        let result = parse_alternatives(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::InvalidValue { field, reason }) => {
+                assert_eq!(field, "action");
+                assert!(reason.contains("unknown"));
+            }
+            _ => panic!("Expected InvalidValue error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_alternatives_missing() {
+        let json = json!({"other": []});
+        let result = parse_alternatives(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Recommendation Tests
+    #[test]
+    fn test_parse_recommendation_backtrack() {
+        let json = json!({
+            "recommendation": {
+                "action": "backtrack",
+                "confidence": 0.9,
+                "expected_benefit": "Recover from declining path"
+            }
+        });
+        let result = parse_recommendation(&json);
+        assert!(result.is_ok());
+        let rec = result.unwrap();
+        assert!(matches!(rec.action, RecommendedAction::Backtrack));
+        assert!((rec.confidence - 0.9).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_recommendation_continue() {
+        let json = json!({
+            "recommendation": {
+                "action": "continue",
+                "confidence": 0.8,
+                "expected_benefit": "Path is promising"
+            }
+        });
+        let result = parse_recommendation(&json);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().action, RecommendedAction::Continue));
+    }
+
+    #[test]
+    fn test_parse_recommendation_terminate() {
+        let json = json!({
+            "recommendation": {
+                "action": "terminate",
+                "confidence": 0.95,
+                "expected_benefit": "Found optimal solution"
+            }
+        });
+        let result = parse_recommendation(&json);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().action, RecommendedAction::Terminate));
+    }
+
+    #[test]
+    fn test_parse_recommendation_invalid_action() {
+        let json = json!({
+            "recommendation": {
+                "action": "invalid",
+                "confidence": 0.5,
+                "expected_benefit": "Test"
+            }
+        });
+        let result = parse_recommendation(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::InvalidValue { field, .. }) => {
+                assert_eq!(field, "action");
+            }
+            _ => panic!("Expected InvalidValue error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_recommendation_invalid_confidence_high() {
+        let json = json!({
+            "recommendation": {
+                "action": "continue",
+                "confidence": 1.5,
+                "expected_benefit": "Test"
+            }
+        });
+        let result = parse_recommendation(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::InvalidValue { field, reason }) => {
+                assert_eq!(field, "confidence");
+                assert!(reason.contains("between 0.0 and 1.0"));
+            }
+            _ => panic!("Expected InvalidValue error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_recommendation_invalid_confidence_low() {
+        let json = json!({
+            "recommendation": {
+                "action": "continue",
+                "confidence": -0.5,
+                "expected_benefit": "Test"
+            }
+        });
+        let result = parse_recommendation(&json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_recommendation_missing() {
+        let json = json!({"other": {}});
+        let result = parse_recommendation(&json);
+        assert!(result.is_err());
+    }
+
+    // Edge Cases
+    #[test]
+    fn test_parse_quality_assessment_case_insensitive() {
+        let json = json!({
+            "quality_assessment": {
+                "recent_values": [0.5],
+                "trend": "DECLINING",
+                "decline_magnitude": 0.1
+            }
+        });
+        let result = parse_quality_assessment(&json);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().trend, QualityTrend::Declining));
+    }
+
+    #[test]
+    fn test_parse_alternatives_case_insensitive() {
+        let json = json!({
+            "alternative_actions": [
+                {"action": "PRUNE", "rationale": "Test"}
+            ]
+        });
+        let result = parse_alternatives(&json);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap()[0].action, AlternativeAction::Prune));
+    }
+
+    #[test]
+    fn test_parse_recommendation_case_insensitive() {
+        let json = json!({
+            "recommendation": {
+                "action": "BACKTRACK",
+                "confidence": 0.5,
+                "expected_benefit": "Test"
+            }
+        });
+        let result = parse_recommendation(&json);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().action, RecommendedAction::Backtrack));
+    }
+}

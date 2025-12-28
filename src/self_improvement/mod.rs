@@ -56,25 +56,45 @@
 
 mod allowlist;
 mod analyzer;
+pub mod anthropic_calls;
+pub mod baseline;
 mod circuit_breaker;
+pub mod cli;
 mod executor;
 mod learner;
 mod monitor;
+pub mod storage;
 mod system;
 mod types;
 
 // Re-export main types
 pub use allowlist::{Allowlist, AllowlistConfig, ValidationError, ValidationErrorCode};
 pub use analyzer::{AnalysisResult, Analyzer};
+pub use anthropic_calls::{
+    AnthropicCalls, DiagnosisContent, HealthContext, LearningContext, LearningSynthesis,
+    MetricsContext, TriggerContext, ValidationResult,
+};
+pub use baseline::{Baseline as BaselineTracker, BaselineCollection, BaselineConfig, ToolBaseline};
 pub use circuit_breaker::{
     CircuitBreaker, CircuitBreakerConfig, CircuitBreakerStats, CircuitState,
+};
+pub use cli::{
+    format_duration, help_text, parse_duration, CommandParseError, SelfImproveCommands,
+    StatusOutput,
 };
 pub use executor::{ConfigState, ExecutionRecord, ExecutionResult, Executor};
 pub use learner::{ActionTypeStats, Learner, LearnerConfig, LearningResult, LearningSummary};
 pub use monitor::{Baseline, Monitor, MonitorConfig, MonitorResult};
+pub use storage::{
+    ActionRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord, InvocationStats,
+    LearningRecord, SelfImprovementStorage,
+};
 pub use system::{CycleResult, SelfImprovementSystem, SystemConfig};
 pub use types::{
-    ActionStatus, ActionType, Lesson, SelfImprovementAction, Severity, SystemMetrics, TriggerMetric,
+    ActionStatus, ActionType, Baselines, ConfigScope, DiagnosisStatus, LegacyTriggerMetric, Lesson,
+    MetricsSnapshot, NormalizedReward, ParamValue, ResourceType, RewardBreakdown, RewardWeights,
+    SelfDiagnosis, SelfImprovementAction, Severity, SuggestedAction, SystemMetrics, ToolMetrics,
+    TriggerMetric,
 };
 
 #[cfg(test)]
@@ -86,6 +106,6 @@ mod tests {
         // Verify all major types are exported
         let _ = ActionType::ConfigAdjust;
         let _ = ActionStatus::Proposed;
-        let _ = Severity::Low;
+        let _ = Severity::Info;
     }
 }

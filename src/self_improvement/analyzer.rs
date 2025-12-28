@@ -3,7 +3,7 @@
 //! Phase 2 of the 4-phase loop: LLM-based diagnosis and action proposal.
 
 use super::monitor::MonitorResult;
-use super::types::{ActionType, SelfImprovementAction, Severity};
+use super::types::{ActionType, LegacyTriggerMetric, SelfImprovementAction, Severity};
 use crate::error::ModeError;
 use crate::traits::{AnthropicClientTrait, CompletionConfig, Message};
 
@@ -68,7 +68,7 @@ impl<C: AnthropicClientTrait> Analyzer<C> {
         let triggers_desc = monitor_result
             .triggers
             .iter()
-            .map(|t| {
+            .map(|t: &LegacyTriggerMetric| {
                 format!(
                     "- {} ({:?}): {} (value: {:.3}, threshold: {:.3})",
                     t.name, t.severity, t.description, t.value, t.threshold
@@ -226,20 +226,20 @@ Respond in JSON format:
         let highest_severity = monitor_result
             .triggers
             .iter()
-            .map(|t| &t.severity)
-            .max_by(|a, b| severity_ord(a).cmp(&severity_ord(b)))
-            .unwrap_or(&Severity::Low);
+            .map(|t| t.severity)
+            .max()
+            .unwrap_or(Severity::Info);
 
         let (action_type, description) = match highest_severity {
             Severity::Critical | Severity::High => (
                 ActionType::ConfigAdjust,
                 "Adjust configuration to address critical issues".to_string(),
             ),
-            Severity::Medium => (
+            Severity::Warning => (
                 ActionType::ThresholdAdjust,
                 "Adjust thresholds to improve system performance".to_string(),
             ),
-            Severity::Low => (
+            Severity::Info => (
                 ActionType::LogObservation,
                 "Log observation for monitoring".to_string(),
             ),
@@ -260,15 +260,6 @@ Respond in JSON format:
             "Fallback action due to parse failure",
             0.1,
         )
-    }
-}
-
-fn severity_ord(s: &Severity) -> u8 {
-    match s {
-        Severity::Low => 0,
-        Severity::Medium => 1,
-        Severity::High => 2,
-        Severity::Critical => 3,
     }
 }
 
@@ -304,13 +295,13 @@ fn extract_json_block(text: &str) -> Result<String, ModeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::self_improvement::types::{SystemMetrics, TriggerMetric};
+    use crate::self_improvement::types::{LegacyTriggerMetric, SystemMetrics};
     use crate::traits::{CompletionResponse, MockAnthropicClientTrait, Usage};
     use std::collections::HashMap;
 
     fn create_test_monitor_result(with_triggers: bool) -> MonitorResult {
         let triggers = if with_triggers {
-            vec![TriggerMetric::new(
+            vec![LegacyTriggerMetric::new(
                 "test_metric",
                 0.5,
                 0.8,
@@ -471,9 +462,9 @@ Done."#;
 
     #[test]
     fn test_severity_ordering() {
-        assert!(severity_ord(&Severity::Critical) > severity_ord(&Severity::High));
-        assert!(severity_ord(&Severity::High) > severity_ord(&Severity::Medium));
-        assert!(severity_ord(&Severity::Medium) > severity_ord(&Severity::Low));
+        assert!(Severity::Critical > Severity::High);
+        assert!(Severity::High > Severity::Warning);
+        assert!(Severity::Warning > Severity::Info);
     }
 
     #[test]

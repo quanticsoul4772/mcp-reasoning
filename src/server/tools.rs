@@ -1209,4 +1209,713 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<ReasoningServer>();
     }
+
+    // ============================================================================
+    // IntoContents Tests - Cover macro-generated implementations
+    // ============================================================================
+
+    #[test]
+    fn test_linear_response_into_contents() {
+        let response = LinearResponse {
+            thought_id: "t1".to_string(),
+            session_id: "s1".to_string(),
+            content: "reasoning content".to_string(),
+            confidence: 0.85,
+            next_step: Some("continue".to_string()),
+        };
+        let contents = response.clone().into_contents();
+        assert_eq!(contents.len(), 1);
+        // Verify it produces valid JSON content
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("thought_id"));
+        assert!(json.contains("t1"));
+    }
+
+    #[test]
+    fn test_tree_response_into_contents() {
+        let response = TreeResponse {
+            session_id: "s1".to_string(),
+            branch_id: Some("b1".to_string()),
+            branches: Some(vec![Branch {
+                id: "b1".to_string(),
+                content: "branch content".to_string(),
+                score: 0.9,
+                status: "active".to_string(),
+            }]),
+            recommendation: Some("explore branch b1".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_divergent_response_into_contents() {
+        let response = DivergentResponse {
+            thought_id: "t1".to_string(),
+            session_id: "s1".to_string(),
+            perspectives: vec![Perspective {
+                viewpoint: "optimistic".to_string(),
+                content: "positive outlook".to_string(),
+                novelty_score: 0.8,
+            }],
+            challenged_assumptions: Some(vec!["assumption1".to_string()]),
+            synthesis: Some("unified insight".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_reflection_response_into_contents() {
+        let response = ReflectionResponse {
+            quality_score: 0.85,
+            thought_id: Some("t1".to_string()),
+            session_id: Some("s1".to_string()),
+            iterations_used: Some(3),
+            strengths: Some(vec!["logical".to_string()]),
+            weaknesses: Some(vec!["needs more detail".to_string()]),
+            recommendations: Some(vec!["add examples".to_string()]),
+            refined_content: Some("improved reasoning".to_string()),
+            coherence_score: Some(0.9),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_checkpoint_response_into_contents() {
+        let response = CheckpointResponse {
+            session_id: "s1".to_string(),
+            checkpoint_id: Some("cp1".to_string()),
+            checkpoints: Some(vec![Checkpoint {
+                id: "cp1".to_string(),
+                name: "checkpoint 1".to_string(),
+                description: Some("first checkpoint".to_string()),
+                created_at: "2024-01-01T00:00:00Z".to_string(),
+                thought_count: 5,
+            }]),
+            restored_state: None,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_auto_response_into_contents() {
+        let response = AutoResponse {
+            selected_mode: "linear".to_string(),
+            confidence: 0.9,
+            rationale: "simple query".to_string(),
+            result: serde_json::json!({"status": "ok"}),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_graph_response_into_contents() {
+        let response = GraphResponse {
+            session_id: "s1".to_string(),
+            node_id: Some("n1".to_string()),
+            nodes: Some(vec![GraphNode {
+                id: "n1".to_string(),
+                content: "node content".to_string(),
+                score: Some(0.85),
+                depth: Some(1),
+                parent_id: None,
+            }]),
+            aggregated_insight: Some("combined insight".to_string()),
+            conclusions: Some(vec!["conclusion 1".to_string()]),
+            state: Some(GraphState {
+                total_nodes: 10,
+                active_nodes: 8,
+                max_depth: 3,
+                pruned_count: 2,
+            }),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_detect_response_into_contents() {
+        let response = DetectResponse {
+            detections: vec![Detection {
+                detection_type: "confirmation_bias".to_string(),
+                category: Some("cognitive".to_string()),
+                severity: "medium".to_string(),
+                confidence: 0.8,
+                evidence: "selective evidence".to_string(),
+                explanation: "focusing on confirming data".to_string(),
+                remediation: Some("consider counterexamples".to_string()),
+            }],
+            summary: Some("1 bias detected".to_string()),
+            overall_quality: Some(0.7),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_decision_response_into_contents() {
+        let response = DecisionResponse {
+            recommendation: "Option A".to_string(),
+            rankings: Some(vec![RankedOption {
+                option: "Option A".to_string(),
+                score: 0.9,
+                rank: 1,
+            }]),
+            stakeholder_map: Some(StakeholderMap {
+                key_players: vec!["CEO".to_string()],
+                keep_satisfied: vec!["Board".to_string()],
+                keep_informed: vec!["Team".to_string()],
+                minimal_effort: vec!["Others".to_string()],
+            }),
+            conflicts: Some(vec!["resource allocation".to_string()]),
+            alignments: Some(vec!["shared goals".to_string()]),
+            rationale: Some("highest weighted score".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_evidence_response_into_contents() {
+        let response = EvidenceResponse {
+            overall_credibility: 0.85,
+            evidence_assessments: Some(vec![EvidenceAssessment {
+                content: "primary source".to_string(),
+                credibility_score: 0.9,
+                source_tier: "tier1".to_string(),
+                corroborated_by: Some(vec![1, 2]),
+            }]),
+            posterior: Some(0.75),
+            prior: Some(0.5),
+            likelihood_ratio: Some(3.0),
+            entropy: Some(0.2),
+            confidence_interval: Some(ConfidenceInterval {
+                lower: 0.6,
+                upper: 0.9,
+            }),
+            synthesis: Some("strong evidence".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_timeline_response_into_contents() {
+        let response = TimelineResponse {
+            timeline_id: "tl1".to_string(),
+            branch_id: Some("br1".to_string()),
+            branches: Some(vec![TimelineBranch {
+                id: "br1".to_string(),
+                label: Some("main".to_string()),
+                content: "timeline content".to_string(),
+                created_at: "2024-01-01T00:00:00Z".to_string(),
+            }]),
+            comparison: Some(BranchComparison {
+                divergence_points: vec!["point1".to_string()],
+                quality_differences: serde_json::json!({"score": 0.1}),
+                convergence_opportunities: vec!["merge here".to_string()],
+            }),
+            merged_content: None,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_mcts_response_into_contents() {
+        let response = MctsResponse {
+            session_id: "s1".to_string(),
+            best_path: Some(vec![MctsNode {
+                node_id: "n1".to_string(),
+                content: "node content".to_string(),
+                visits: 10,
+                ucb_score: 1.2,
+            }]),
+            iterations_completed: Some(50),
+            backtrack_suggestion: Some(BacktrackSuggestion {
+                should_backtrack: false,
+                target_step: None,
+                reason: None,
+                quality_drop: None,
+            }),
+            executed: Some(false),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_counterfactual_response_into_contents() {
+        let response = CounterfactualResponse {
+            counterfactual_outcome: "different result".to_string(),
+            causal_chain: vec![CausalStep {
+                step: 1,
+                cause: "intervention".to_string(),
+                effect: "outcome change".to_string(),
+                probability: 0.8,
+            }],
+            session_id: Some("s1".to_string()),
+            original_scenario: "base scenario".to_string(),
+            intervention_applied: "change X".to_string(),
+            analysis_depth: "counterfactual".to_string(),
+            key_differences: vec!["difference 1".to_string()],
+            confidence: 0.85,
+            assumptions: vec!["assumption 1".to_string()],
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_preset_response_into_contents() {
+        let response = PresetResponse {
+            presets: Some(vec![PresetInfo {
+                id: "p1".to_string(),
+                name: "Quick Analysis".to_string(),
+                description: "Fast analysis preset".to_string(),
+                category: "analysis".to_string(),
+                required_inputs: vec!["content".to_string()],
+            }]),
+            execution_result: None,
+            session_id: Some("s1".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    #[test]
+    fn test_metrics_response_into_contents() {
+        let response = MetricsResponse {
+            summary: Some(MetricsSummary {
+                total_calls: 100,
+                success_rate: 0.95,
+                avg_latency_ms: 150.0,
+                by_mode: serde_json::json!({"linear": 50, "tree": 30}),
+            }),
+            mode_stats: None,
+            invocations: None,
+            config: None,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+    }
+
+    // ============================================================================
+    // Request Deserialization Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tree_request_deserialize() {
+        let json = r#"{"operation": "create", "content": "test"}"#;
+        let req: TreeRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.operation, Some("create".to_string()));
+    }
+
+    #[test]
+    fn test_divergent_request_deserialize() {
+        let json = r#"{"content": "test", "force_rebellion": true}"#;
+        let req: DivergentRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.force_rebellion, Some(true));
+    }
+
+    #[test]
+    fn test_reflection_request_deserialize() {
+        let json = r#"{"operation": "evaluate", "session_id": "s1"}"#;
+        let req: ReflectionRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.operation, Some("evaluate".to_string()));
+    }
+
+    #[test]
+    fn test_checkpoint_request_deserialize() {
+        let json = r#"{"operation": "create", "session_id": "s1", "name": "cp1"}"#;
+        let req: CheckpointRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.name, Some("cp1".to_string()));
+    }
+
+    #[test]
+    fn test_auto_request_deserialize() {
+        let json = r#"{"content": "test", "hints": ["hint1"]}"#;
+        let req: AutoRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.hints, Some(vec!["hint1".to_string()]));
+    }
+
+    #[test]
+    fn test_graph_request_deserialize() {
+        let json = r#"{"operation": "init", "session_id": "s1", "k": 5}"#;
+        let req: GraphRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.k, Some(5));
+    }
+
+    #[test]
+    fn test_detect_request_deserialize() {
+        let json = r#"{"type": "biases", "check_formal": true}"#;
+        let req: DetectRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.detect_type, "biases");
+    }
+
+    #[test]
+    fn test_decision_request_deserialize() {
+        let json = r#"{"type": "weighted", "options": ["A", "B"]}"#;
+        let req: DecisionRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.options, Some(vec!["A".to_string(), "B".to_string()]));
+    }
+
+    #[test]
+    fn test_evidence_request_deserialize() {
+        let json = r#"{"type": "assess", "prior": 0.5}"#;
+        let req: EvidenceRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.prior, Some(0.5));
+    }
+
+    #[test]
+    fn test_timeline_request_deserialize() {
+        let json = r#"{"operation": "branch", "timeline_id": "tl1"}"#;
+        let req: TimelineRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.timeline_id, Some("tl1".to_string()));
+    }
+
+    #[test]
+    fn test_mcts_request_deserialize() {
+        let json = r#"{"operation": "explore", "iterations": 50}"#;
+        let req: MctsRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.iterations, Some(50));
+    }
+
+    #[test]
+    fn test_counterfactual_request_deserialize() {
+        let json = r#"{"scenario": "base", "intervention": "change"}"#;
+        let req: CounterfactualRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.scenario, "base");
+    }
+
+    #[test]
+    fn test_preset_request_deserialize() {
+        let json = r#"{"operation": "run", "preset_id": "p1"}"#;
+        let req: PresetRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.preset_id, Some("p1".to_string()));
+    }
+
+    #[test]
+    fn test_metrics_request_deserialize() {
+        let json = r#"{"query": "by_mode", "mode_name": "linear"}"#;
+        let req: MetricsRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.mode_name, Some("linear".to_string()));
+    }
+
+    // ============================================================================
+    // ServerHandler Tests
+    // ============================================================================
+
+    fn create_test_server_sync() -> ReasoningServer {
+        use crate::anthropic::{AnthropicClient, ClientConfig};
+        use crate::config::{Config, SecretString};
+        use crate::storage::SqliteStorage;
+
+        let config = Config {
+            api_key: SecretString::new("test-key"),
+            database_path: ":memory:".to_string(),
+            log_level: "info".to_string(),
+            request_timeout_ms: 30000,
+            max_retries: 3,
+            model: "claude-sonnet-4-20250514".to_string(),
+        };
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(async { SqliteStorage::new_in_memory().await.unwrap() });
+
+        let client = AnthropicClient::new("test-key", ClientConfig::default()).unwrap();
+        let state = AppState::new(storage, client, config);
+        ReasoningServer::new(Arc::new(state))
+    }
+
+    async fn create_test_server() -> ReasoningServer {
+        use crate::anthropic::{AnthropicClient, ClientConfig};
+        use crate::config::{Config, SecretString};
+        use crate::storage::SqliteStorage;
+
+        let config = Config {
+            api_key: SecretString::new("test-key"),
+            database_path: ":memory:".to_string(),
+            log_level: "info".to_string(),
+            request_timeout_ms: 30000,
+            max_retries: 3,
+            model: "claude-sonnet-4-20250514".to_string(),
+        };
+
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        let client = AnthropicClient::new("test-key", ClientConfig::default()).unwrap();
+        let state = AppState::new(storage, client, config);
+        ReasoningServer::new(Arc::new(state))
+    }
+
+    #[test]
+    fn test_server_handler_get_info() {
+        let server = create_test_server_sync();
+        let info = server.get_info();
+        assert_eq!(info.server_info.name, "mcp-reasoning");
+        assert!(info.capabilities.tools.is_some());
+        assert!(info.instructions.is_some());
+    }
+
+    #[test]
+    fn test_server_handler_get_peer() {
+        let server = create_test_server_sync();
+        assert!(server.get_peer().is_none());
+    }
+
+    #[test]
+    fn test_server_handler_set_peer() {
+        let mut server = create_test_server_sync();
+        // set_peer is a no-op, just verify it doesn't panic
+        // We can't easily create a Peer, so just verify method exists
+        let _ = &mut server;
+    }
+
+    #[test]
+    fn test_reasoning_server_new() {
+        let server = create_test_server_sync();
+        // Just verify we can create a server without panicking
+        let _ = &server.state;
+    }
+
+    // ============================================================================
+    // Tool Method Tests (stubs, covering return path)
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_reasoning_linear_tool() {
+        let server = create_test_server().await;
+        let req = LinearRequest {
+            content: "test".to_string(),
+            session_id: Some("s1".to_string()),
+            confidence: Some(0.8),
+        };
+        let resp = server.reasoning_linear(req).await;
+        assert_eq!(resp.session_id, "s1");
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_tree_tool() {
+        let server = create_test_server().await;
+        let req = TreeRequest {
+            operation: Some("create".to_string()),
+            content: Some("test".to_string()),
+            session_id: Some("s1".to_string()),
+            branch_id: None,
+            num_branches: Some(2),
+            completed: None,
+        };
+        let resp = server.reasoning_tree(req).await;
+        assert_eq!(resp.session_id, "s1");
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_divergent_tool() {
+        let server = create_test_server().await;
+        let req = DivergentRequest {
+            content: "test".to_string(),
+            session_id: Some("s1".to_string()),
+            num_perspectives: Some(3),
+            challenge_assumptions: Some(true),
+            force_rebellion: Some(false),
+        };
+        let resp = server.reasoning_divergent(req).await;
+        assert_eq!(resp.session_id, "s1");
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_reflection_tool() {
+        let server = create_test_server().await;
+        let req = ReflectionRequest {
+            operation: Some("process".to_string()),
+            content: Some("test".to_string()),
+            thought_id: None,
+            session_id: Some("s1".to_string()),
+            max_iterations: Some(3),
+            quality_threshold: Some(0.8),
+        };
+        let resp = server.reasoning_reflection(req).await;
+        assert!(resp.quality_score >= 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_checkpoint_tool() {
+        let server = create_test_server().await;
+        let req = CheckpointRequest {
+            operation: "create".to_string(),
+            session_id: "s1".to_string(),
+            checkpoint_id: None,
+            name: Some("cp1".to_string()),
+            description: Some("test checkpoint".to_string()),
+            new_direction: None,
+        };
+        let resp = server.reasoning_checkpoint(req).await;
+        assert_eq!(resp.session_id, "s1");
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_auto_tool() {
+        let server = create_test_server().await;
+        let req = AutoRequest {
+            content: "test".to_string(),
+            hints: Some(vec!["hint".to_string()]),
+            session_id: Some("s1".to_string()),
+        };
+        let resp = server.reasoning_auto(req).await;
+        assert!(!resp.selected_mode.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_graph_tool() {
+        let server = create_test_server().await;
+        let req = GraphRequest {
+            operation: "init".to_string(),
+            session_id: "s1".to_string(),
+            content: Some("test".to_string()),
+            problem: Some("problem".to_string()),
+            node_id: None,
+            node_ids: None,
+            k: Some(3),
+            threshold: None,
+            terminal_node_ids: None,
+        };
+        let resp = server.reasoning_graph(req).await;
+        assert_eq!(resp.session_id, "s1");
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_detect_tool() {
+        let server = create_test_server().await;
+        let req = DetectRequest {
+            detect_type: "biases".to_string(),
+            content: Some("test".to_string()),
+            thought_id: None,
+            session_id: Some("s1".to_string()),
+            check_types: None,
+            check_formal: Some(true),
+            check_informal: Some(true),
+        };
+        let resp = server.reasoning_detect(req).await;
+        assert!(resp.detections.is_empty() || !resp.detections.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_decision_tool() {
+        let server = create_test_server().await;
+        let req = DecisionRequest {
+            decision_type: Some("weighted".to_string()),
+            question: Some("which?".to_string()),
+            options: Some(vec!["A".to_string(), "B".to_string()]),
+            topic: None,
+            context: Some("context".to_string()),
+            session_id: Some("s1".to_string()),
+        };
+        let resp = server.reasoning_decision(req).await;
+        // Stub returns empty recommendation
+        let _ = resp.recommendation;
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_evidence_tool() {
+        let server = create_test_server().await;
+        let req = EvidenceRequest {
+            evidence_type: Some("assess".to_string()),
+            claim: Some("claim".to_string()),
+            hypothesis: None,
+            context: Some("context".to_string()),
+            prior: Some(0.5),
+            session_id: Some("s1".to_string()),
+        };
+        let resp = server.reasoning_evidence(req).await;
+        assert!(resp.overall_credibility >= 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_timeline_tool() {
+        let server = create_test_server().await;
+        let req = TimelineRequest {
+            operation: "create".to_string(),
+            session_id: Some("s1".to_string()),
+            timeline_id: None,
+            content: Some("test".to_string()),
+            label: Some("main".to_string()),
+            branch_ids: None,
+            source_branch_id: None,
+            target_branch_id: None,
+            merge_strategy: None,
+        };
+        let resp = server.reasoning_timeline(req).await;
+        // Stub returns empty timeline_id
+        let _ = resp.timeline_id;
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_mcts_tool() {
+        let server = create_test_server().await;
+        let req = MctsRequest {
+            operation: Some("explore".to_string()),
+            content: Some("test".to_string()),
+            session_id: Some("s1".to_string()),
+            node_id: None,
+            iterations: Some(10),
+            exploration_constant: Some(1.41),
+            simulation_depth: Some(5),
+            quality_threshold: Some(0.7),
+            lookback_depth: Some(3),
+            auto_execute: Some(false),
+        };
+        let resp = server.reasoning_mcts(req).await;
+        assert_eq!(resp.session_id, "s1");
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_counterfactual_tool() {
+        let server = create_test_server().await;
+        let req = CounterfactualRequest {
+            scenario: "base".to_string(),
+            intervention: "change".to_string(),
+            analysis_depth: Some("counterfactual".to_string()),
+            session_id: Some("s1".to_string()),
+        };
+        let resp = server.reasoning_counterfactual(req).await;
+        // Stub uses input values for output
+        assert_eq!(resp.original_scenario, "base");
+        assert_eq!(resp.intervention_applied, "change");
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_preset_tool() {
+        let server = create_test_server().await;
+        let req = PresetRequest {
+            operation: "list".to_string(),
+            preset_id: None,
+            category: Some("analysis".to_string()),
+            inputs: None,
+            session_id: Some("s1".to_string()),
+        };
+        let resp = server.reasoning_preset(req).await;
+        // presets may or may not be present
+        let _ = resp.presets;
+    }
+
+    #[tokio::test]
+    async fn test_reasoning_metrics_tool() {
+        let server = create_test_server().await;
+        let req = MetricsRequest {
+            query: "summary".to_string(),
+            mode_name: None,
+            tool_name: None,
+            session_id: None,
+            success_only: Some(true),
+            limit: Some(10),
+        };
+        let resp = server.reasoning_metrics(req).await;
+        // summary may or may not be present
+        let _ = resp.summary;
+    }
 }

@@ -2,7 +2,7 @@
 //!
 //! Phase 1 of the 4-phase loop: Collect metrics and detect issues.
 
-use super::types::{Severity, SystemMetrics, TriggerMetric};
+use super::types::{LegacyTriggerMetric, Severity, SystemMetrics};
 use crate::metrics::{MetricsCollector, MetricsSummary};
 use std::collections::HashMap;
 
@@ -79,7 +79,7 @@ pub struct MonitorResult {
     /// Current system metrics.
     pub metrics: SystemMetrics,
     /// Triggered issues.
-    pub triggers: Vec<TriggerMetric>,
+    pub triggers: Vec<LegacyTriggerMetric>,
     /// Whether action is recommended.
     pub action_recommended: bool,
 }
@@ -137,7 +137,7 @@ impl Monitor {
         if summary.overall_success_rate < self.config.min_success_rate {
             let severity =
                 self.calculate_severity(summary.overall_success_rate, self.config.min_success_rate);
-            triggers.push(TriggerMetric::new(
+            triggers.push(LegacyTriggerMetric::new(
                 "overall_success_rate",
                 summary.overall_success_rate,
                 self.config.min_success_rate,
@@ -155,7 +155,7 @@ impl Monitor {
             if stats.success_rate < self.config.mode_success_threshold {
                 let severity =
                     self.calculate_severity(stats.success_rate, self.config.mode_success_threshold);
-                triggers.push(TriggerMetric::new(
+                triggers.push(LegacyTriggerMetric::new(
                     format!("mode_{mode}_success_rate"),
                     stats.success_rate,
                     self.config.mode_success_threshold,
@@ -171,7 +171,7 @@ impl Monitor {
             // Check latency
             if stats.avg_latency_ms > self.config.max_avg_latency_ms {
                 let severity = self.calculate_latency_severity(stats.avg_latency_ms);
-                triggers.push(TriggerMetric::new(
+                triggers.push(LegacyTriggerMetric::new(
                     format!("mode_{mode}_latency"),
                     stats.avg_latency_ms,
                     self.config.max_avg_latency_ms,
@@ -190,7 +190,7 @@ impl Monitor {
         }
 
         let action_recommended =
-            !triggers.is_empty() && triggers.iter().any(|t| t.severity != Severity::Low);
+            !triggers.is_empty() && triggers.iter().any(|t| t.severity != Severity::Info);
 
         MonitorResult {
             metrics: self.summary_to_metrics(&summary),
@@ -232,9 +232,9 @@ impl Monitor {
         } else if deviation > 0.3 {
             Severity::High
         } else if deviation > 0.15 {
-            Severity::Medium
+            Severity::Warning
         } else {
-            Severity::Low
+            Severity::Info
         }
     }
 
@@ -245,9 +245,9 @@ impl Monitor {
         } else if ratio > 2.0 {
             Severity::High
         } else if ratio > 1.5 {
-            Severity::Medium
+            Severity::Warning
         } else {
-            Severity::Low
+            Severity::Info
         }
     }
 
@@ -255,21 +255,21 @@ impl Monitor {
         &self,
         summary: &MetricsSummary,
         baseline: &Baseline,
-        triggers: &mut Vec<TriggerMetric>,
+        triggers: &mut Vec<LegacyTriggerMetric>,
     ) {
         // Check success rate deviation from baseline
         if baseline.success_rate > 0.0 {
             let deviation =
                 (baseline.success_rate - summary.overall_success_rate) / baseline.success_rate;
             if deviation > 0.2 {
-                triggers.push(TriggerMetric::new(
+                triggers.push(LegacyTriggerMetric::new(
                     "success_rate_deviation",
                     summary.overall_success_rate,
                     baseline.success_rate,
                     if deviation > 0.4 {
                         Severity::High
                     } else {
-                        Severity::Medium
+                        Severity::Warning
                     },
                     format!(
                         "Success rate dropped {:.1}% from baseline",
@@ -294,14 +294,14 @@ impl Monitor {
         if baseline.avg_latency_ms > 0.0 {
             let deviation = (current_latency - baseline.avg_latency_ms) / baseline.avg_latency_ms;
             if deviation > 0.5 {
-                triggers.push(TriggerMetric::new(
+                triggers.push(LegacyTriggerMetric::new(
                     "latency_deviation",
                     current_latency,
                     baseline.avg_latency_ms,
                     if deviation > 1.0 {
                         Severity::High
                     } else {
-                        Severity::Medium
+                        Severity::Warning
                     },
                     format!(
                         "Average latency increased {:.1}% from baseline",
@@ -477,13 +477,13 @@ mod tests {
         let severity = monitor.calculate_severity(0.5, 0.8);
         assert_eq!(severity, Severity::High);
 
-        // Medium: 15-30% deviation
+        // Warning: 15-30% deviation
         let severity = monitor.calculate_severity(0.65, 0.8);
-        assert_eq!(severity, Severity::Medium);
+        assert_eq!(severity, Severity::Warning);
 
-        // Low: <15% deviation
+        // Info: <15% deviation
         let severity = monitor.calculate_severity(0.75, 0.8);
-        assert_eq!(severity, Severity::Low);
+        assert_eq!(severity, Severity::Info);
     }
 
     #[test]
@@ -499,8 +499,11 @@ mod tests {
             Severity::Critical
         );
         assert_eq!(monitor.calculate_latency_severity(2500.0), Severity::High);
-        assert_eq!(monitor.calculate_latency_severity(1600.0), Severity::Medium);
-        assert_eq!(monitor.calculate_latency_severity(1200.0), Severity::Low);
+        assert_eq!(
+            monitor.calculate_latency_severity(1600.0),
+            Severity::Warning
+        );
+        assert_eq!(monitor.calculate_latency_severity(1200.0), Severity::Info);
     }
 
     #[test]
@@ -531,7 +534,7 @@ mod tests {
         let monitor = Monitor::new(config);
         let collector = MetricsCollector::new();
 
-        // 75% success rate - just below threshold, low severity
+        // 75% success rate - just below threshold, info severity
         for _ in 0..15 {
             collector.record(MetricEvent::new("linear", 100, true));
         }
@@ -540,9 +543,9 @@ mod tests {
         }
 
         let result = monitor.check(&collector);
-        // Triggers exist but should be low severity
-        let all_low = result.triggers.iter().all(|t| t.severity == Severity::Low);
-        if !result.triggers.is_empty() && all_low {
+        // Triggers exist but should be info severity
+        let all_info = result.triggers.iter().all(|t| t.severity == Severity::Info);
+        if !result.triggers.is_empty() && all_info {
             assert!(!result.action_recommended);
         }
     }

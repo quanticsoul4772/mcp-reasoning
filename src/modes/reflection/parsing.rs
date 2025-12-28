@@ -145,3 +145,336 @@ pub fn parse_string_array(json: &serde_json::Value, key: &str) -> Option<Vec<Str
         })
     })
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // parse_analysis tests
+    #[test]
+    fn test_parse_analysis_success() {
+        let json = json!({
+            "analysis": {
+                "strengths": ["clear logic", "good structure"],
+                "weaknesses": ["missing examples"],
+                "gaps": ["needs more detail"]
+            }
+        });
+
+        let result = parse_analysis(&json);
+        assert!(result.is_ok());
+        let analysis = result.unwrap();
+        assert_eq!(analysis.strengths.len(), 2);
+        assert_eq!(analysis.weaknesses.len(), 1);
+        assert!(analysis.gaps.is_some());
+        assert_eq!(analysis.gaps.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_parse_analysis_without_gaps() {
+        let json = json!({
+            "analysis": {
+                "strengths": ["strong argument"],
+                "weaknesses": ["weak conclusion"]
+            }
+        });
+
+        let result = parse_analysis(&json);
+        assert!(result.is_ok());
+        let analysis = result.unwrap();
+        assert!(analysis.gaps.is_none());
+    }
+
+    #[test]
+    fn test_parse_analysis_missing_analysis() {
+        let json = json!({});
+
+        let result = parse_analysis(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::MissingField { field }) => {
+                assert_eq!(field, "analysis");
+            }
+            _ => panic!("Expected MissingField error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_analysis_missing_strengths() {
+        let json = json!({
+            "analysis": {
+                "weaknesses": ["missing examples"]
+            }
+        });
+
+        let result = parse_analysis(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::MissingField { field }) => {
+                assert_eq!(field, "analysis.strengths");
+            }
+            _ => panic!("Expected MissingField error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_analysis_missing_weaknesses() {
+        let json = json!({
+            "analysis": {
+                "strengths": ["good point"]
+            }
+        });
+
+        let result = parse_analysis(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::MissingField { field }) => {
+                assert_eq!(field, "analysis.weaknesses");
+            }
+            _ => panic!("Expected MissingField error"),
+        }
+    }
+
+    // parse_improvements tests
+    #[test]
+    fn test_parse_improvements_success() {
+        let json = json!({
+            "improvements": [
+                {"issue": "lack of detail", "suggestion": "add examples", "priority": "high"},
+                {"issue": "unclear", "suggestion": "rephrase", "priority": "low"}
+            ]
+        });
+
+        let result = parse_improvements(&json);
+        assert!(result.is_ok());
+        let improvements = result.unwrap();
+        assert_eq!(improvements.len(), 2);
+        assert_eq!(improvements[0].issue, "lack of detail");
+        assert_eq!(improvements[0].priority, Priority::High);
+        assert_eq!(improvements[1].priority, Priority::Low);
+    }
+
+    #[test]
+    fn test_parse_improvements_default_priority() {
+        let json = json!({
+            "improvements": [
+                {"issue": "unclear", "suggestion": "fix it"}
+            ]
+        });
+
+        let result = parse_improvements(&json);
+        assert!(result.is_ok());
+        let improvements = result.unwrap();
+        assert_eq!(improvements.len(), 1);
+        assert_eq!(improvements[0].priority, Priority::Medium);
+    }
+
+    #[test]
+    fn test_parse_improvements_skip_empty() {
+        let json = json!({
+            "improvements": [
+                {"issue": "", "suggestion": "fix it"},
+                {"issue": "real issue", "suggestion": ""}
+            ]
+        });
+
+        let result = parse_improvements(&json);
+        assert!(result.is_ok());
+        let improvements = result.unwrap();
+        assert_eq!(improvements.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_improvements_missing() {
+        let json = json!({});
+
+        let result = parse_improvements(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::MissingField { field }) => {
+                assert_eq!(field, "improvements");
+            }
+            _ => panic!("Expected MissingField error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_improvements_not_array() {
+        let json = json!({
+            "improvements": "not an array"
+        });
+
+        let result = parse_improvements(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::InvalidValue { field, reason }) => {
+                assert_eq!(field, "improvements");
+                assert_eq!(reason, "expected array");
+            }
+            _ => panic!("Expected InvalidValue error"),
+        }
+    }
+
+    // parse_session_assessment tests
+    #[test]
+    fn test_parse_session_assessment_success() {
+        let json = json!({
+            "session_assessment": {
+                "overall_quality": 0.85,
+                "coherence": 0.9,
+                "completeness": 0.75,
+                "depth": 0.8
+            }
+        });
+
+        let result = parse_session_assessment(&json);
+        assert!(result.is_ok());
+        let assessment = result.unwrap();
+        assert!((assessment.overall_quality - 0.85).abs() < 0.01);
+        assert!((assessment.coherence - 0.9).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_session_assessment_missing() {
+        let json = json!({});
+
+        let result = parse_session_assessment(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::MissingField { field }) => {
+                assert_eq!(field, "session_assessment");
+            }
+            _ => panic!("Expected MissingField error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_session_assessment_missing_quality() {
+        let json = json!({
+            "session_assessment": {
+                "coherence": 0.9,
+                "completeness": 0.75,
+                "depth": 0.8
+            }
+        });
+
+        let result = parse_session_assessment(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::MissingField { field }) => {
+                assert_eq!(field, "session_assessment.overall_quality");
+            }
+            _ => panic!("Expected MissingField error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_session_assessment_missing_coherence() {
+        let json = json!({
+            "session_assessment": {
+                "overall_quality": 0.85,
+                "completeness": 0.75,
+                "depth": 0.8
+            }
+        });
+
+        let result = parse_session_assessment(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::MissingField { field }) => {
+                assert_eq!(field, "session_assessment.coherence");
+            }
+            _ => panic!("Expected MissingField error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_session_assessment_missing_completeness() {
+        let json = json!({
+            "session_assessment": {
+                "overall_quality": 0.85,
+                "coherence": 0.9,
+                "depth": 0.8
+            }
+        });
+
+        let result = parse_session_assessment(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::MissingField { field }) => {
+                assert_eq!(field, "session_assessment.completeness");
+            }
+            _ => panic!("Expected MissingField error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_session_assessment_missing_depth() {
+        let json = json!({
+            "session_assessment": {
+                "overall_quality": 0.85,
+                "coherence": 0.9,
+                "completeness": 0.75
+            }
+        });
+
+        let result = parse_session_assessment(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::MissingField { field }) => {
+                assert_eq!(field, "session_assessment.depth");
+            }
+            _ => panic!("Expected MissingField error"),
+        }
+    }
+
+    // parse_string_array tests
+    #[test]
+    fn test_parse_string_array_success() {
+        let json = json!({
+            "items": ["one", "two", "three"]
+        });
+
+        let result = parse_string_array(&json, "items");
+        assert!(result.is_some());
+        let items = result.unwrap();
+        assert_eq!(items.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_string_array_missing() {
+        let json = json!({});
+
+        let result = parse_string_array(&json, "items");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_string_array_not_array() {
+        let json = json!({
+            "items": "not an array"
+        });
+
+        let result = parse_string_array(&json, "items");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_string_array_filters_non_strings() {
+        let json = json!({
+            "items": ["one", 2, "three", null]
+        });
+
+        let result = parse_string_array(&json, "items");
+        assert!(result.is_some());
+        let items = result.unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0], "one");
+        assert_eq!(items[1], "three");
+    }
+}

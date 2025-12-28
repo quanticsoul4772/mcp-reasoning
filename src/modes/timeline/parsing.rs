@@ -322,3 +322,549 @@ pub fn get_string_array(json: &serde_json::Value, field: &str) -> Result<Vec<Str
         .filter_map(|v| v.as_str().map(String::from))
         .collect())
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // Utility Helper Tests
+    #[test]
+    fn test_get_str_success() {
+        let json = json!({"name": "test"});
+        let result = get_str(&json, "name");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "test");
+    }
+
+    #[test]
+    fn test_get_str_missing() {
+        let json = json!({"other": "value"});
+        let result = get_str(&json, "name");
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::MissingField { field }) => assert_eq!(field, "name"),
+            _ => panic!("Expected MissingField error"),
+        }
+    }
+
+    #[test]
+    fn test_get_str_not_string() {
+        let json = json!({"name": 123});
+        let result = get_str(&json, "name");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_f64_success() {
+        let json = json!({"value": 0.85});
+        let result = get_f64(&json, "value");
+        assert!(result.is_ok());
+        assert!((result.unwrap() - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_get_f64_integer() {
+        let json = json!({"value": 42});
+        let result = get_f64(&json, "value");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42.0);
+    }
+
+    #[test]
+    fn test_get_f64_missing() {
+        let json = json!({"other": 1.0});
+        let result = get_f64(&json, "value");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_f64_not_number() {
+        let json = json!({"value": "not a number"});
+        let result = get_f64(&json, "value");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_string_array_success() {
+        let json = json!({"items": ["a", "b", "c"]});
+        let result = get_string_array(&json, "items");
+        assert!(result.is_ok());
+        let arr = result.unwrap();
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[0], "a");
+    }
+
+    #[test]
+    fn test_get_string_array_empty() {
+        let json = json!({"items": []});
+        let result = get_string_array(&json, "items");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_get_string_array_missing() {
+        let json = json!({"other": []});
+        let result = get_string_array(&json, "items");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_string_array_not_array() {
+        let json = json!({"items": "not an array"});
+        let result = get_string_array(&json, "items");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_string_array_mixed_types() {
+        let json = json!({"items": ["a", 1, "b", null]});
+        let result = get_string_array(&json, "items");
+        assert!(result.is_ok());
+        let arr = result.unwrap();
+        assert_eq!(arr.len(), 2); // Only strings are kept
+        assert_eq!(arr, vec!["a", "b"]);
+    }
+
+    // Parse Events Tests
+    #[test]
+    fn test_parse_events_success() {
+        let json = json!({
+            "events": [
+                {
+                    "id": "e1",
+                    "description": "Event 1",
+                    "time": "2024-01-01",
+                    "type": "event",
+                    "causes": ["c1"],
+                    "effects": ["ef1"]
+                }
+            ]
+        });
+        let result = parse_events(&json);
+        assert!(result.is_ok());
+        let events = result.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].id, "e1");
+        assert_eq!(events[0].description, "Event 1");
+        assert_eq!(events[0].event_type, EventType::Event);
+    }
+
+    #[test]
+    fn test_parse_events_state_type() {
+        let json = json!({
+            "events": [{"id": "s1", "description": "State", "time": "now", "type": "state"}]
+        });
+        let result = parse_events(&json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()[0].event_type, EventType::State);
+    }
+
+    #[test]
+    fn test_parse_events_decision_point_type() {
+        let json = json!({
+            "events": [{"id": "d1", "description": "Decision", "time": "future", "type": "decision_point"}]
+        });
+        let result = parse_events(&json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()[0].event_type, EventType::DecisionPoint);
+    }
+
+    #[test]
+    fn test_parse_events_invalid_type() {
+        let json = json!({
+            "events": [{"id": "x1", "description": "Bad", "time": "now", "type": "unknown"}]
+        });
+        let result = parse_events(&json);
+        assert!(result.is_err());
+        match result {
+            Err(ModeError::InvalidValue { field, reason }) => {
+                assert_eq!(field, "type");
+                assert!(reason.contains("unknown"));
+            }
+            _ => panic!("Expected InvalidValue error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_events_missing() {
+        let json = json!({"other": []});
+        let result = parse_events(&json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_events_optional_causes_effects() {
+        let json = json!({
+            "events": [{"id": "e1", "description": "Event", "time": "now", "type": "event"}]
+        });
+        let result = parse_events(&json);
+        assert!(result.is_ok());
+        let events = result.unwrap();
+        assert!(events[0].causes.is_empty());
+        assert!(events[0].effects.is_empty());
+    }
+
+    // Parse Decision Points Tests
+    #[test]
+    fn test_parse_decision_points_success() {
+        let json = json!({
+            "decision_points": [
+                {
+                    "id": "dp1",
+                    "description": "Choose path",
+                    "options": ["A", "B", "C"],
+                    "deadline": "2024-06-01"
+                }
+            ]
+        });
+        let result = parse_decision_points(&json);
+        assert!(result.is_ok());
+        let points = result.unwrap();
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].options.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_decision_points_missing() {
+        let json = json!({"other": []});
+        let result = parse_decision_points(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Temporal Structure Tests
+    #[test]
+    fn test_parse_temporal_structure_success() {
+        let json = json!({
+            "temporal_structure": {
+                "start": "2024-01-01",
+                "current": "2024-06-15",
+                "horizon": "2025-01-01"
+            }
+        });
+        let result = parse_temporal_structure(&json);
+        assert!(result.is_ok());
+        let ts = result.unwrap();
+        assert_eq!(ts.start, "2024-01-01");
+        assert_eq!(ts.current, "2024-06-15");
+        assert_eq!(ts.horizon, "2025-01-01");
+    }
+
+    #[test]
+    fn test_parse_temporal_structure_missing() {
+        let json = json!({"other": {}});
+        let result = parse_temporal_structure(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Branch Point Tests
+    #[test]
+    fn test_parse_branch_point_success() {
+        let json = json!({
+            "branch_point": {
+                "event_id": "e1",
+                "description": "Decision point"
+            }
+        });
+        let result = parse_branch_point(&json);
+        assert!(result.is_ok());
+        let bp = result.unwrap();
+        assert_eq!(bp.event_id, "e1");
+        assert_eq!(bp.description, "Decision point");
+    }
+
+    #[test]
+    fn test_parse_branch_point_missing() {
+        let json = json!({"other": {}});
+        let result = parse_branch_point(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Branches Tests
+    #[test]
+    fn test_parse_branches_success() {
+        let json = json!({
+            "branches": [
+                {
+                    "id": "b1",
+                    "choice": "Option A",
+                    "events": [
+                        {"id": "be1", "description": "Branch event", "probability": 0.8, "time_offset": "+1d"}
+                    ],
+                    "plausibility": 0.7,
+                    "outcome_quality": 0.85
+                }
+            ]
+        });
+        let result = parse_branches(&json);
+        assert!(result.is_ok());
+        let branches = result.unwrap();
+        assert_eq!(branches.len(), 1);
+        assert_eq!(branches[0].id, "b1");
+        assert_eq!(branches[0].events.len(), 1);
+        assert!((branches[0].plausibility - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_branches_missing() {
+        let json = json!({"other": []});
+        let result = parse_branches(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Branch Events Tests
+    #[test]
+    fn test_parse_branch_events_success() {
+        let json = json!({
+            "events": [
+                {"id": "be1", "description": "Event 1", "probability": 0.9, "time_offset": "+2h"},
+                {"id": "be2", "description": "Event 2", "probability": 0.5, "time_offset": "+1d"}
+            ]
+        });
+        let result = parse_branch_events(&json);
+        assert!(result.is_ok());
+        let events = result.unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].probability, 0.9);
+    }
+
+    #[test]
+    fn test_parse_branch_events_missing() {
+        let json = json!({"other": []});
+        let result = parse_branch_events(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Branch Comparison Tests
+    #[test]
+    fn test_parse_branch_comparison_success() {
+        let json = json!({
+            "comparison": {
+                "most_likely_good_outcome": "Branch A",
+                "highest_risk": "Branch B",
+                "key_differences": ["diff1", "diff2"]
+            }
+        });
+        let result = parse_branch_comparison(&json);
+        assert!(result.is_ok());
+        let comp = result.unwrap();
+        assert_eq!(comp.most_likely_good_outcome, "Branch A");
+        assert_eq!(comp.highest_risk, "Branch B");
+        assert_eq!(comp.key_differences.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_branch_comparison_missing() {
+        let json = json!({"other": {}});
+        let result = parse_branch_comparison(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Key Differences Tests
+    #[test]
+    fn test_parse_key_differences_success() {
+        let json = json!({
+            "key_differences": [
+                {
+                    "dimension": "Risk",
+                    "branch_1_value": "Low",
+                    "branch_2_value": "High",
+                    "significance": "Critical"
+                }
+            ]
+        });
+        let result = parse_key_differences(&json);
+        assert!(result.is_ok());
+        let diffs = result.unwrap();
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(diffs[0].dimension, "Risk");
+    }
+
+    #[test]
+    fn test_parse_key_differences_missing() {
+        let json = json!({"other": []});
+        let result = parse_key_differences(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Risk Assessment Tests
+    #[test]
+    fn test_parse_risk_assessment_success() {
+        let json = json!({
+            "risk_assessment": {
+                "branch_1_risks": ["risk1", "risk2"],
+                "branch_2_risks": ["risk3"]
+            }
+        });
+        let result = parse_risk_assessment(&json);
+        assert!(result.is_ok());
+        let ra = result.unwrap();
+        assert_eq!(ra.branch_1_risks.len(), 2);
+        assert_eq!(ra.branch_2_risks.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_risk_assessment_missing() {
+        let json = json!({"other": {}});
+        let result = parse_risk_assessment(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Opportunity Assessment Tests
+    #[test]
+    fn test_parse_opportunity_assessment_success() {
+        let json = json!({
+            "opportunity_assessment": {
+                "branch_1_opportunities": ["opp1"],
+                "branch_2_opportunities": ["opp2", "opp3"]
+            }
+        });
+        let result = parse_opportunity_assessment(&json);
+        assert!(result.is_ok());
+        let oa = result.unwrap();
+        assert_eq!(oa.branch_1_opportunities.len(), 1);
+        assert_eq!(oa.branch_2_opportunities.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_opportunity_assessment_missing() {
+        let json = json!({"other": {}});
+        let result = parse_opportunity_assessment(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Compare Recommendation Tests
+    #[test]
+    fn test_parse_compare_recommendation_success() {
+        let json = json!({
+            "recommendation": {
+                "preferred_branch": "Branch A",
+                "conditions": "If risk tolerance is low",
+                "key_factors": "Stability, cost"
+            }
+        });
+        let result = parse_compare_recommendation(&json);
+        assert!(result.is_ok());
+        let rec = result.unwrap();
+        assert_eq!(rec.preferred_branch, "Branch A");
+        assert_eq!(rec.conditions, "If risk tolerance is low");
+    }
+
+    #[test]
+    fn test_parse_compare_recommendation_missing() {
+        let json = json!({"other": {}});
+        let result = parse_compare_recommendation(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Common Patterns Tests
+    #[test]
+    fn test_parse_common_patterns_success() {
+        let json = json!({
+            "common_patterns": [
+                {
+                    "pattern": "Growth trend",
+                    "frequency": 0.75,
+                    "implications": "Positive outlook"
+                }
+            ]
+        });
+        let result = parse_common_patterns(&json);
+        assert!(result.is_ok());
+        let patterns = result.unwrap();
+        assert_eq!(patterns.len(), 1);
+        assert_eq!(patterns[0].pattern, "Growth trend");
+        assert!((patterns[0].frequency - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_common_patterns_missing() {
+        let json = json!({"other": []});
+        let result = parse_common_patterns(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Robust Strategies Tests
+    #[test]
+    fn test_parse_robust_strategies_success() {
+        let json = json!({
+            "robust_strategies": [
+                {
+                    "strategy": "Diversification",
+                    "effectiveness": 0.9,
+                    "conditions": "All market conditions"
+                }
+            ]
+        });
+        let result = parse_robust_strategies(&json);
+        assert!(result.is_ok());
+        let strategies = result.unwrap();
+        assert_eq!(strategies.len(), 1);
+        assert_eq!(strategies[0].strategy, "Diversification");
+    }
+
+    #[test]
+    fn test_parse_robust_strategies_missing() {
+        let json = json!({"other": []});
+        let result = parse_robust_strategies(&json);
+        assert!(result.is_err());
+    }
+
+    // Parse Fragile Strategies Tests
+    #[test]
+    fn test_parse_fragile_strategies_success() {
+        let json = json!({
+            "fragile_strategies": [
+                {
+                    "strategy": "Single bet",
+                    "failure_modes": "Market crash"
+                }
+            ]
+        });
+        let result = parse_fragile_strategies(&json);
+        assert!(result.is_ok());
+        let strategies = result.unwrap();
+        assert_eq!(strategies.len(), 1);
+        assert_eq!(strategies[0].strategy, "Single bet");
+        assert_eq!(strategies[0].failure_modes, "Market crash");
+    }
+
+    #[test]
+    fn test_parse_fragile_strategies_missing() {
+        let json = json!({"other": []});
+        let result = parse_fragile_strategies(&json);
+        assert!(result.is_err());
+    }
+
+    // Edge Cases
+    #[test]
+    fn test_parse_events_empty_array() {
+        let json = json!({"events": []});
+        let result = parse_events(&json);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_branches_empty_array() {
+        let json = json!({"branches": []});
+        let result = parse_branches(&json);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_events_case_insensitive_type() {
+        let json = json!({
+            "events": [{"id": "e1", "description": "E", "time": "now", "type": "EVENT"}]
+        });
+        let result = parse_events(&json);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()[0].event_type, EventType::Event);
+    }
+}
