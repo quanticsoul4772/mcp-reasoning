@@ -1,0 +1,99 @@
+[package]
+name = "mcp-reasoning"
+version = "0.1.0"
+edition = "2021"
+authors = ["quanticsoul4772"]
+description = "MCP server providing structured reasoning capabilities via direct Anthropic Claude API"
+repository = "https://github.com/quanticsoul4772/mcp-reasoning"
+license = "MIT"
+keywords = ["mcp", "reasoning", "anthropic", "claude", "ai"]
+categories = ["development-tools", "command-line-utilities"]
+
+[lib]
+name = "mcp_reasoning"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mcp-reasoning"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+
+# MCP SDK
+rmcp = { version = "0.1", features = ["server", "macros", "transport-io"] }
+
+# HTTP client for Anthropic API
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+async-trait = "0.1"
+futures = "0.3"
+async-stream = "0.3"
+bytes = "1.0"
+
+# Environment
+dotenvy = "0.15"
+
+# Schema generation
+schemars = "0.8"
+
+[dev-dependencies]
+# Testing
+mockall = "0.13"
+tokio-test = "0.4"
+pretty_assertions = "1"
+test-case = "3"
+serial_test = "3"
+wiremock = "0.6"
+
+# Compile-time assertions
+static_assertions = "1.1"
+
+# Property-based testing
+proptest = "1.4"
+
+# Benchmarking
+criterion = "0.5"
+
+[[bench]]
+name = "reasoning_benchmarks"
+harness = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+[workspace.metadata.llvm-cov]
+fail-under-lines = 100
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
