@@ -1,14 +1,15 @@
 # MCP Reasoning Server
 
-A Rust-based MCP (Model Context Protocol) server providing 15 structured reasoning tools via direct Anthropic Claude API calls.
+An MCP server that adds structured reasoning capabilities to Claude Code and Claude Desktop.
 
 ## Features
 
-- **15 Consolidated Reasoning Tools** - Streamlined from 40 in predecessor project
-- **Direct Anthropic API** - No middleware, direct Claude model access
-- **Session Persistence** - SQLite storage for thoughts, checkpoints, and graphs
-- **Extended Thinking** - Configurable thinking budgets per mode
-- **Self-Improvement System** - 4-phase optimization loop with safety controls
+- **Structured Reasoning** - Linear, tree-based, and graph-based reasoning patterns
+- **Decision Analysis** - Weighted scoring, pairwise comparison, TOPSIS, stakeholder mapping
+- **Bias Detection** - Identify cognitive biases and logical fallacies in arguments
+- **Counterfactual Analysis** - What-if scenarios using Pearl's causal framework
+- **Session Persistence** - Save and restore reasoning state across sessions
+- **Built-in Workflows** - Pre-configured presets for common reasoning tasks
 
 ## Architecture
 
