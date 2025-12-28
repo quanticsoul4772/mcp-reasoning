@@ -400,7 +400,7 @@ src/
 
 - **Zero unsafe code** - `#![forbid(unsafe_code)]` enforced
 - **No panics** - No `.unwrap()` or `.expect()` in production paths
-- **1,524 tests** - Comprehensive unit and integration test coverage (95.8% line coverage)
+- **1,524 tests** - Comprehensive unit and integration test coverage
 - **Max 500 lines per file** - Enforced for maintainability
 - **Structured logging** - Via `tracing` crate, logs to stderr
 - **Clippy pedantic** - All pedantic lints enabled as warnings

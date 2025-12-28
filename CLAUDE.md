@@ -10,7 +10,7 @@ MCP Reasoning Server - A Rust-based MCP server providing structured reasoning ca
 
 **Key Stats**:
 - 83 source files, 33,000+ lines of code
-- 1,524 tests (95.8% line coverage)
+- 1,524 tests
 - 15 reasoning tools, 5 workflow presets
 - 4-phase self-improvement system with safety mechanisms
 
@@ -34,10 +34,10 @@ cargo test -p mcp-reasoning <module>  # Test specific module (e.g., "error", "co
 # Quality checks
 cargo fmt --check                     # Check formatting
 cargo clippy -- -D warnings           # Lint with warnings as errors
-cargo llvm-cov                        # Coverage report (95.8% achieved)
+cargo llvm-cov --fail-under-lines 100 # Coverage (100% required)
 
 # Full validation (run before every commit)
-cargo fmt --check && cargo clippy -- -D warnings && cargo test --lib
+cargo fmt --check && cargo clippy -- -D warnings && cargo llvm-cov --fail-under-lines 100
 
 # Database
 cargo sqlx prepare --database-url "sqlite:./data/reasoning.db"  # Prepare SQLx queries
@@ -204,9 +204,9 @@ const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message
 
 - **Zero unsafe code**: `#![forbid(unsafe_code)]` in lib.rs
 - **No panics**: No `.unwrap()` or `.expect()` in production paths
-- **TDD workflow**: Write tests first → fail → implement → pass
+- **TDD workflow**: Write tests first → fail → implement → pass → 100% coverage
 - **File size limits**: Max 500 lines per .rs file
-- **95.8% test coverage**: Via `cargo llvm-cov` (I/O code excluded from 100% target)
+- **100% test coverage**: Enforced via `cargo llvm-cov --fail-under-lines 100`
 - **Structured logging**: Use `tracing` with structured fields, logs to stderr only
 
 ## Implementation Status
