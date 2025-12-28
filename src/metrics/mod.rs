@@ -8,12 +8,21 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```
 //! use mcp_reasoning::metrics::{MetricsCollector, MetricEvent};
 //!
 //! let metrics = MetricsCollector::new();
-//! metrics.record(MetricEvent::invocation("linear", 150, true));
+//! metrics.record(MetricEvent::new("linear", 150, true));
+//! metrics.record(MetricEvent::new("linear", 200, true));
+//! metrics.record(MetricEvent::new("tree", 300, false));
+//!
 //! let summary = metrics.summary();
+//! assert_eq!(summary.total_invocations, 3);
+//! // 2 out of 3 succeeded = ~66.7%
+//! assert!((summary.overall_success_rate - 0.666).abs() < 0.01);
+//! // Per-mode stats are available
+//! assert!(summary.by_mode.contains_key("linear"));
+//! assert!(summary.by_mode.contains_key("tree"));
 //! ```
 
 use serde::{Deserialize, Serialize};

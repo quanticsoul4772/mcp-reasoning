@@ -18,12 +18,26 @@
 //!
 //! # Example
 //!
-//! ```ignore
-//! use mcp_reasoning::server::{AppState, ReasoningServer};
+//! ```no_run
+//! use mcp_reasoning::server::{AppState, TransportConfig};
+//! use mcp_reasoning::storage::SqliteStorage;
+//! use mcp_reasoning::anthropic::{AnthropicClient, ClientConfig};
+//! use mcp_reasoning::config::{Config, SecretString, DEFAULT_MODEL};
 //!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let storage = SqliteStorage::new("./data/reasoning.db").await?;
+//! let client = AnthropicClient::new("sk-ant-xxx", ClientConfig::default())?;
+//! let config = Config {
+//!     api_key: SecretString::new("sk-ant-xxx"),
+//!     database_path: "./data/reasoning.db".to_string(),
+//!     log_level: "info".to_string(),
+//!     request_timeout_ms: 30000,
+//!     max_retries: 3,
+//!     model: DEFAULT_MODEL.to_string(),
+//! };
 //! let state = AppState::new(storage, client, config);
-//! let server = ReasoningServer::new(state);
-//! server.serve_stdio().await?;
+//! # Ok(())
+//! # }
 //! ```
 
 mod mcp;

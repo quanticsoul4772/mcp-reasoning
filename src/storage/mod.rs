@@ -24,11 +24,22 @@
 //!
 //! # Example
 //!
-//! ```ignore
-//! use mcp_reasoning::storage::SqliteStorage;
+//! ```
+//! use mcp_reasoning::doctest_helpers::{MockStorage, block_on};
+//! use mcp_reasoning::traits::StorageTrait;
 //!
-//! let storage = SqliteStorage::new("./data/reasoning.db").await?;
-//! let session = storage.create_session().await?;
+//! // In production, use SqliteStorage::new("./data/reasoning.db").await?
+//! // For doctests, we use MockStorage to avoid file I/O
+//! let storage = MockStorage::new();
+//!
+//! block_on(async {
+//!     let session = storage.get_or_create_session(None).await.unwrap();
+//!     assert!(!session.id.is_empty());
+//!
+//!     // Retrieve the session by ID
+//!     let found = storage.get_session(&session.id).await.unwrap();
+//!     assert!(found.is_some());
+//! });
 //! ```
 
 mod actions;

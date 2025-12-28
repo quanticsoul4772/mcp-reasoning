@@ -233,7 +233,7 @@ pub struct TimelineRequest {
 /// Request for MCTS.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MctsRequest {
-    /// Operation: `explore` or `auto_backtrack`.
+    /// Operation: explore or auto_backtrack.
     pub operation: Option<String>,
     /// Content (for explore).
     pub content: Option<String>,
@@ -286,9 +286,9 @@ pub struct PresetRequest {
 /// Request for metrics queries.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MetricsRequest {
-    /// Query: `summary`, `by_mode`, `invocations`, `fallbacks`, or `config`.
+    /// Query: summary, by_mode, invocations, fallbacks, or config.
     pub query: String,
-    /// Mode name (for `by_mode`).
+    /// Mode name (for by_mode query).
     pub mode_name: Option<String>,
     /// Tool name filter.
     pub tool_name: Option<String>,

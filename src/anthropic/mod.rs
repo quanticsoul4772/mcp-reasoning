@@ -15,12 +15,21 @@
 //!
 //! # Example
 //!
-//! ```ignore
-//! use mcp_reasoning::anthropic::{AnthropicClient, ApiRequest, ApiMessage};
+//! ```
+//! use mcp_reasoning::anthropic::{ApiMessage, ApiRequest, ClientConfig};
+//! use mcp_reasoning::doctest_helpers::{MockClient, block_on};
+//! use mcp_reasoning::traits::{AnthropicClientTrait, Message, CompletionConfig};
 //!
-//! let client = AnthropicClient::with_api_key("sk-ant-xxx")?;
-//! let request = ApiRequest::new("claude-3", 1000, vec![ApiMessage::user("Hello")]);
-//! let response = client.complete(request).await?;
+//! // In production, use AnthropicClient::with_api_key("sk-ant-xxx")
+//! // For doctests, we use MockClient to avoid real API calls
+//! let client = MockClient::with_response(r#"{"result": "Hello!"}"#);
+//!
+//! block_on(async {
+//!     let messages = vec![Message::user("Hello")];
+//!     let config = CompletionConfig::new().with_max_tokens(1000);
+//!     let response = client.complete(messages, config).await.unwrap();
+//!     assert!(!response.content.is_empty());
+//! });
 //! ```
 
 mod client;

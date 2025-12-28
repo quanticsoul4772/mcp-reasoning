@@ -800,7 +800,7 @@ pub struct MetricsParams {
     )]
     pub query: MetricsQuery,
 
-    /// Mode name (for `by_mode` query).
+    /// Mode name (for by_mode query).
     #[schemars(description = "For by_mode query")]
     pub mode_name: Option<String>,
 

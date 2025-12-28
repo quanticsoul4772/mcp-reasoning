@@ -8,13 +8,24 @@
 //!
 //! # Example
 //!
-//! ```ignore
-//! use mcp_reasoning::config::Config;
+//! ```
+//! use mcp_reasoning::config::{Config, SecretString, DEFAULT_MODEL};
 //!
-//! let config = Config::from_env()?;
+//! // Create a config directly (use Config::from_env() in production)
+//! let config = Config {
+//!     api_key: SecretString::new("sk-ant-example-key"),
+//!     database_path: "./data/reasoning.db".to_string(),
+//!     log_level: "info".to_string(),
+//!     request_timeout_ms: 30000,
+//!     max_retries: 3,
+//!     model: DEFAULT_MODEL.to_string(),
+//! };
+//!
 //! println!("Using model: {}", config.model);
 //! // API key is protected from accidental logging
-//! println!("Config: {:?}", config); // Shows <REDACTED> for api_key
+//! let debug = format!("{:?}", config);
+//! assert!(debug.contains("<REDACTED>"));
+//! assert!(!debug.contains("sk-ant-example-key"));
 //! ```
 
 mod secret;

@@ -71,13 +71,16 @@ impl LinearResponse {
 ///
 /// # Example
 ///
-/// ```ignore
-/// use mcp_reasoning::modes::LinearMode;
+/// ```
+/// use mcp_reasoning::modes::{LinearMode, LinearResponse};
+/// use mcp_reasoning::doctest_helpers::{MockStorage, MockClient};
 ///
-/// let mode = LinearMode::new(storage, client);
-/// let response = mode.process("Analyze this problem", None, None).await?;
-/// println!("Analysis: {}", response.content);
-/// println!("Confidence: {}", response.confidence);
+/// // Create a mode with mock dependencies
+/// let mode = LinearMode::new(MockStorage::new(), MockClient::new());
+///
+/// // LinearResponse can be constructed directly for testing
+/// let response = LinearResponse::new("thought-1", "session-1", "Analysis result", 0.85);
+/// assert_eq!(response.confidence, 0.85);
 /// ```
 pub struct LinearMode<S, C>
 where

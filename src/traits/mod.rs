@@ -14,7 +14,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```
 //! use mcp_reasoning::traits::{TimeProvider, RealTimeProvider};
 //!
 //! let time_provider = RealTimeProvider;

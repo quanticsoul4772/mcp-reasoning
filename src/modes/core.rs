@@ -8,12 +8,22 @@
 //! # Design Pattern
 //!
 //! Rather than using trait inheritance, modes use composition by holding
-//! a [`ModeCore`] instance that provides access to shared dependencies.
+//! a `ModeCore`-like struct that provides access to shared dependencies.
 //!
-//! ```ignore
-//! struct LinearMode {
-//!     core: ModeCore,
+//! ```
+//! use mcp_reasoning::doctest_helpers::{MockStorage, MockClient};
+//! use mcp_reasoning::traits::{StorageTrait, AnthropicClientTrait};
+//!
+//! // Modes use composition with generic type parameters
+//! struct ExampleMode<S: StorageTrait, C: AnthropicClientTrait> {
+//!     storage: S,
+//!     client: C,
 //! }
+//!
+//! let mode = ExampleMode {
+//!     storage: MockStorage::new(),
+//!     client: MockClient::new(),
+//! };
 //! ```
 
 #![allow(clippy::missing_const_for_fn)]
@@ -29,16 +39,8 @@ use crate::storage::SqliteStorage;
 /// This struct provides access to shared dependencies and utilities
 /// that all reasoning modes need. Modes hold this via composition.
 ///
-/// # Example
-///
-/// ```ignore
-/// use mcp_reasoning::modes::ModeCore;
-/// use mcp_reasoning::storage::SqliteStorage;
-/// use mcp_reasoning::anthropic::AnthropicClient;
-///
-/// let core = ModeCore::new(storage, client);
-/// let linear = LinearMode::new(core);
-/// ```
+/// Note: This uses concrete types (`SqliteStorage`, `AnthropicClient`).
+/// For generic mode implementations, see [`LinearMode`] which uses trait bounds.
 #[derive(Clone)]
 pub struct ModeCore {
     storage: Arc<SqliteStorage>,
@@ -114,16 +116,22 @@ impl std::fmt::Debug for ModeCore {
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```
 /// use mcp_reasoning::modes::extract_json;
 ///
 /// // Raw JSON
-/// let json = extract_json(r#"{"key": "value"}"#)?;
+/// let json = extract_json(r#"{"key": "value"}"#).unwrap();
+/// assert_eq!(json["key"], "value");
 ///
-/// // Code block
+/// // JSON in code block
 /// let json = extract_json(r#"```json
 /// {"key": "value"}
-/// ```"#)?;
+/// ```"#).unwrap();
+/// assert_eq!(json["key"], "value");
+///
+/// // Invalid JSON returns error
+/// let result = extract_json("not json");
+/// assert!(result.is_err());
 /// ```
 pub fn extract_json(text: &str) -> Result<serde_json::Value, ModeError> {
     let trimmed = text.trim();

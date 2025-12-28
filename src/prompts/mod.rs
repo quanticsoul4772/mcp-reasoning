@@ -20,10 +20,11 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```
 //! use mcp_reasoning::prompts::{get_prompt_for_mode, ReasoningMode, Operation};
 //!
 //! let prompt = get_prompt_for_mode(ReasoningMode::Linear, None);
+//! assert!(prompt.contains("step-by-step"));
 //! ```
 
 #![allow(clippy::match_same_arms)]
@@ -341,14 +342,16 @@ impl std::fmt::Display for Operation {
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```
 /// use mcp_reasoning::prompts::{get_prompt_for_mode, ReasoningMode, Operation};
 ///
 /// // Simple mode without operation
 /// let prompt = get_prompt_for_mode(ReasoningMode::Linear, None);
+/// assert!(!prompt.is_empty());
 ///
 /// // Mode with specific operation
-/// let prompt = get_prompt_for_mode(ReasoningMode::Tree, Some(Operation::Create));
+/// let prompt = get_prompt_for_mode(ReasoningMode::Tree, Some(&Operation::Create));
+/// assert!(prompt.contains("branches"));
 /// ```
 #[must_use]
 pub fn get_prompt_for_mode(mode: ReasoningMode, operation: Option<&Operation>) -> &'static str {

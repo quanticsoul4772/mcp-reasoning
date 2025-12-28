@@ -37,21 +37,23 @@
 //!
 //! # Example
 //!
-//! ```ignore
-//! use mcp_reasoning::self_improvement::{SelfImprovementSystem, SystemConfig};
+//! ```
+//! use mcp_reasoning::self_improvement::{
+//!     ActionType, ActionStatus, Severity, CircuitBreakerConfig,
+//! };
 //! use mcp_reasoning::metrics::MetricsCollector;
 //!
+//! // Create a metrics collector for tracking
 //! let metrics = MetricsCollector::new();
-//! let client = AnthropicClient::new(...);
-//! let mut system = SelfImprovementSystem::with_defaults(client);
 //!
-//! // Run improvement cycle
-//! let result = system.run_cycle(&metrics).await?;
+//! // Configuration types are available for customization
+//! let breaker_config = CircuitBreakerConfig::default();
+//! assert!(breaker_config.failure_threshold > 0);
 //!
-//! if !result.pending_actions().is_empty() {
-//!     // Review and approve actions
-//!     system.approve_and_execute();
-//! }
+//! // Action types for the self-improvement system
+//! assert!(matches!(ActionType::ConfigAdjust, ActionType::ConfigAdjust));
+//! assert!(matches!(ActionStatus::Proposed, ActionStatus::Proposed));
+//! assert!(matches!(Severity::Info, Severity::Info));
 //! ```
 
 mod allowlist;

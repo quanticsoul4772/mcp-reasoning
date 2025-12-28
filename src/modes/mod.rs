@@ -13,12 +13,16 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```
 //! use mcp_reasoning::modes::{LinearMode, extract_json};
-//! use mcp_reasoning::prompts::{ReasoningMode, get_prompt_for_mode};
+//! use mcp_reasoning::doctest_helpers::{MockStorage, MockClient};
 //!
-//! let mode = LinearMode::new(storage, client);
-//! let response = mode.process("Analyze this", None, None).await?;
+//! // Create a mode with mock dependencies
+//! let mode = LinearMode::new(MockStorage::new(), MockClient::new());
+//!
+//! // extract_json can be used synchronously
+//! let json = extract_json(r#"{"key": "value"}"#).unwrap();
+//! assert_eq!(json["key"], "value");
 //! ```
 //!
 //! [`StorageTrait`]: crate::traits::StorageTrait

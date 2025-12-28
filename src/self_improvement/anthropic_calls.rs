@@ -47,12 +47,7 @@ const MAX_JSON_SIZE: usize = 100_000;
 /// 1. Escaping format string markers (`{` and `}`)
 /// 2. Truncating content exceeding `MAX_PROMPT_CONTENT_LEN`
 ///
-/// # Examples
-///
-/// ```ignore
-/// let safe = escape_for_prompt("User {input}");
-/// assert_eq!(safe, "User {{input}}");
-/// ```
+/// Prevents prompt injection by escaping format string markers.
 fn escape_for_prompt(content: &str) -> String {
     let mut escaped = content.replace('{', "{{").replace('}', "}}");
 

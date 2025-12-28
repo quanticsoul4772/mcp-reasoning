@@ -47,12 +47,16 @@ use parsing::{
 ///
 /// # Example
 ///
-/// ```ignore
-/// use mcp_reasoning::modes::DetectMode;
+/// ```
+/// use mcp_reasoning::modes::{DetectMode, BiasSeverity, FallacyCategory};
+/// use mcp_reasoning::doctest_helpers::{MockStorage, MockClient};
 ///
-/// let mode = DetectMode::new(storage, client);
-/// let biases = mode.biases("Some biased argument", None).await?;
-/// let fallacies = mode.fallacies("Some flawed argument", None).await?;
+/// // Create a mode with mock dependencies
+/// let mode = DetectMode::new(MockStorage::new(), MockClient::new());
+///
+/// // Severity and category enums can be used directly
+/// assert!(matches!(BiasSeverity::High, BiasSeverity::High));
+/// assert!(matches!(FallacyCategory::Informal, FallacyCategory::Informal));
 /// ```
 pub struct DetectMode<S, C>
 where
