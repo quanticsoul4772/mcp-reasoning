@@ -4,7 +4,7 @@ A high-performance MCP server that adds structured reasoning capabilities to Cla
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/Tests-1372%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/Tests-1524%20passing-brightgreen.svg)](#development)
 
 ## Features
 
@@ -270,36 +270,40 @@ Run a preset:
 The server includes a 4-phase autonomous optimization loop with comprehensive safety mechanisms:
 
 ```
-╔═════════════════════════════════════════════════════════════════════════════╗
-║                    SELF-IMPROVEMENT SYSTEM (4-Phase Loop)                   ║
-╠═════════════════════════════════════════════════════════════════════════════╣
-║                                                                             ║
-║  ┌───────────┐     ┌───────────┐     ┌───────────┐     ┌───────────┐       ║
-║  │  MONITOR  │────►│  ANALYZER │────►│  EXECUTOR │────►│  LEARNER  │──┐    ║
-║  ├───────────┤     ├───────────┤     ├───────────┤     ├───────────┤  │    ║
-║  │ • Metrics │     │ • LLM     │     │ • Apply   │     │ • Reward  │  │    ║
-║  │ • Anomaly │     │   Diagnosis│    │   Action  │     │   Calc    │  │    ║
-║  │ • Errors  │     │ • Root    │     │ • Rollback│     │ • Update  │  │    ║
-║  │ • Latency │     │   Cause   │     │   Support │     │   Baseline│  │    ║
-║  │ • Quality │     │ • Propose │     │           │     │           │  │    ║
-║  └─────┬─────┘     └───────────┘     └─────┬─────┘     └───────────┘  │    ║
-║        │                                   │                          │    ║
-║        │    ╔═════════════════════════════════════════════════╗      │    ║
-║        │    ║            SAFETY MECHANISMS                    ║      │    ║
-║        │    ╠══════════════════════╦══════════════════════════╣      │    ║
-║        │    ║   Circuit Breaker    ║      Allowlist           ║      │    ║
-║        └───►║   ────────────────   ║   ────────────────       ║◄─────┘    ║
-║             ║   Halts on failures  ║   Validates actions      ║           ║
-║             ╠══════════════════════╬══════════════════════════╣           ║
-║             ║   Rate Limiting      ║   Approval Gate          ║           ║
-║             ║   ────────────────   ║   ────────────────       ║           ║
-║             ║   Max actions/period ║   Human-in-loop (opt)    ║           ║
-║             ╚══════════════════════╩══════════════════════════╝           ║
-║                                                                           ║
-╚═══════════════════════════════════════════════════════════════════════════╝
-                                    ▲                          │
-                                    │      feedback loop       │
-                                    └──────────────────────────┘
++===========================================================================+
+|                  SELF-IMPROVEMENT SYSTEM (4-Phase Loop)                   |
++===========================================================================+
+|                                                                           |
+|   +-------------------------------------------------------------------+   |
+|   |                       OPTIMIZATION LOOP                           |   |
+|   |                                                                   |   |
+|   |   +----------+    +----------+    +----------+    +----------+    |   |
+|   |   | MONITOR  |--->| ANALYZER |--->| EXECUTOR |--->| LEARNER  |--+ |   |
+|   |   +----------+    +----------+    +----------+    +----------+  | |   |
+|   |   | Metrics  |    | LLM      |    | Apply    |    | Reward   |  | |   |
+|   |   | Anomaly  |    | Diagnose |    | Action   |    | Calc     |  | |   |
+|   |   | Errors   |    | Root     |    | Rollback |    | Extract  |  | |   |
+|   |   | Latency  |    | Cause    |    | Support  |    | Lessons  |  | |   |
+|   |   | Quality  |    | Propose  |    |          |    |          |  | |   |
+|   |   +----^-----+    +----------+    +----------+    +----------+  | |   |
+|   |        |                                                        | |   |
+|   |        +------------------ Update Baselines <-------------------+ |   |
+|   |                                                                   |   |
+|   +-------------------------------------------------------------------+   |
+|                                                                           |
+|   +===================================================================+   |
+|   |                       SAFETY MECHANISMS                           |   |
+|   +===============================+===================================+   |
+|   | Circuit Breaker               | Allowlist                         |   |
+|   | - Halts on consecutive fails  | - Validates action types          |   |
+|   | - Auto-recovery after timeout | - Checks parameter bounds         |   |
+|   +-------------------------------+-----------------------------------+   |
+|   | Rate Limiting                 | Approval Gate                     |   |
+|   | - Max actions per period      | - Human-in-loop (optional)        |   |
+|   | - Prevents runaway execution  | - Required for high-risk actions  |   |
+|   +-------------------------------+-----------------------------------+   |
+|                                                                           |
++===========================================================================+
 ```
 
 **Phase Details:**
@@ -331,7 +335,7 @@ cargo build
 # Release build (optimized)
 cargo build --release
 
-# Run all tests (1,372 tests)
+# Run all tests (1,524 tests)
 cargo test
 
 # Run specific test module
@@ -396,7 +400,7 @@ src/
 
 - **Zero unsafe code** - `#![forbid(unsafe_code)]` enforced
 - **No panics** - No `.unwrap()` or `.expect()` in production paths
-- **1,372 tests** - Comprehensive unit and integration test coverage
+- **1,524 tests** - Comprehensive unit and integration test coverage (95.8% line coverage)
 - **Max 500 lines per file** - Enforced for maintainability
 - **Structured logging** - Via `tracing` crate, logs to stderr
 - **Clippy pedantic** - All pedantic lints enabled as warnings
