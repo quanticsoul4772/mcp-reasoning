@@ -497,4 +497,251 @@ Done."#;
         let action = analyzer.parse_action(&json, 0);
         assert!(action.is_none());
     }
+
+    #[tokio::test]
+    async fn test_analyzer_client_error() {
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Err(ModeError::ApiUnavailable {
+                message: "API failed".to_string(),
+            })
+        });
+
+        let analyzer = Analyzer::new(client);
+        let monitor_result = create_test_monitor_result(true);
+
+        let result = analyzer.analyze(&monitor_result).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_empty_actions_creates_fallback() {
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Ok(mock_response(
+                r#"{"summary": "Empty", "confidence": 0.7, "actions": []}"#,
+            ))
+        });
+
+        let analyzer = Analyzer::new(client);
+        let monitor_result = create_test_monitor_result(true);
+
+        let result = analyzer.analyze(&monitor_result).await.unwrap();
+        assert_eq!(result.actions.len(), 1);
+        assert!(result.actions[0].id.starts_with("fallback-"));
+    }
+
+    #[test]
+    fn test_create_fallback_action_critical() {
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+
+        let monitor_result = MonitorResult {
+            metrics: SystemMetrics::new(0.5, 200.0, 50, HashMap::new()),
+            triggers: vec![LegacyTriggerMetric::new(
+                "critical_metric",
+                0.2,
+                0.9,
+                Severity::Critical,
+                "Critical issue",
+            )],
+            action_recommended: true,
+        };
+
+        let action = analyzer.create_fallback_action(&monitor_result);
+        assert_eq!(action.action_type, ActionType::ConfigAdjust);
+    }
+
+    #[test]
+    fn test_create_fallback_action_warning() {
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+
+        let monitor_result = MonitorResult {
+            metrics: SystemMetrics::new(0.7, 150.0, 75, HashMap::new()),
+            triggers: vec![LegacyTriggerMetric::new(
+                "warning_metric",
+                0.6,
+                0.7,
+                Severity::Warning,
+                "Warning issue",
+            )],
+            action_recommended: true,
+        };
+
+        let action = analyzer.create_fallback_action(&monitor_result);
+        assert_eq!(action.action_type, ActionType::ThresholdAdjust);
+    }
+
+    #[test]
+    fn test_create_fallback_action_info() {
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+
+        let monitor_result = MonitorResult {
+            metrics: SystemMetrics::new(0.9, 50.0, 100, HashMap::new()),
+            triggers: vec![LegacyTriggerMetric::new(
+                "info_metric",
+                0.85,
+                0.9,
+                Severity::Info,
+                "Info observation",
+            )],
+            action_recommended: false,
+        };
+
+        let action = analyzer.create_fallback_action(&monitor_result);
+        assert_eq!(action.action_type, ActionType::LogObservation);
+    }
+
+    #[test]
+    fn test_parse_action_with_defaults() {
+        let json: serde_json::Value = serde_json::json!({
+            "action_type": "threshold_adjust"
+        });
+
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+
+        let action = analyzer.parse_action(&json, 0).unwrap();
+        assert_eq!(action.action_type, ActionType::ThresholdAdjust);
+        assert_eq!(action.description, "Improvement action");
+        assert_eq!(action.rationale, "Based on detected issues");
+        assert!((action.expected_improvement - 0.1).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_action_null_parameters() {
+        let json: serde_json::Value = serde_json::json!({
+            "action_type": "log_observation",
+            "description": "Log it",
+            "rationale": "For tracking",
+            "expected_improvement": 0.05,
+            "parameters": null
+        });
+
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+
+        let action = analyzer.parse_action(&json, 0).unwrap();
+        assert_eq!(action.action_type, ActionType::LogObservation);
+        assert!(action.parameters.is_none());
+    }
+
+    #[test]
+    fn test_parse_action_missing_action_type() {
+        let json: serde_json::Value = serde_json::json!({
+            "description": "No type",
+            "rationale": "Missing"
+        });
+
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+
+        let action = analyzer.parse_action(&json, 0);
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn test_parse_action_pascal_case_types() {
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+
+        // Test all pascal case variants
+        for (type_str, expected) in [
+            ("ConfigAdjust", ActionType::ConfigAdjust),
+            ("PromptTune", ActionType::PromptTune),
+            ("ThresholdAdjust", ActionType::ThresholdAdjust),
+            ("LogObservation", ActionType::LogObservation),
+        ] {
+            let json = serde_json::json!({ "action_type": type_str });
+            let action = analyzer.parse_action(&json, 0).unwrap();
+            assert_eq!(action.action_type, expected);
+        }
+    }
+
+    #[test]
+    fn test_extract_json_block_triple_backticks_no_newline() {
+        let text = "```json{\"key\": \"value\"}```";
+        let result = extract_json_block(text).unwrap();
+        assert!(result.contains("key"));
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_invalid_json_response() {
+        let mut client = MockAnthropicClientTrait::new();
+        client
+            .expect_complete()
+            .returning(|_, _| Ok(mock_response(r#"{"invalid json with missing bracket"#)));
+
+        let analyzer = Analyzer::new(client);
+        let monitor_result = create_test_monitor_result(true);
+
+        let result = analyzer.analyze(&monitor_result).await;
+        assert!(matches!(result, Err(ModeError::JsonParseFailed { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_response_missing_fields_uses_defaults() {
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Ok(mock_response(
+                r#"{"actions": [{"action_type": "config_adjust"}]}"#,
+            ))
+        });
+
+        let analyzer = Analyzer::new(client);
+        let monitor_result = create_test_monitor_result(true);
+
+        let result = analyzer.analyze(&monitor_result).await.unwrap();
+        assert_eq!(result.summary, "Analysis complete");
+        assert!((result.confidence - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_action_clamps_expected_improvement() {
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+
+        let json = serde_json::json!({
+            "action_type": "config_adjust",
+            "expected_improvement": 2.5
+        });
+
+        let action = analyzer.parse_action(&json, 0).unwrap();
+        assert!((action.expected_improvement - 1.0).abs() < f64::EPSILON);
+
+        let json_neg = serde_json::json!({
+            "action_type": "config_adjust",
+            "expected_improvement": -0.5
+        });
+
+        let action_neg = analyzer.parse_action(&json_neg, 0).unwrap();
+        assert!((action_neg.expected_improvement - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_build_analysis_prompt_format() {
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+
+        let monitor_result = MonitorResult {
+            metrics: SystemMetrics::new(0.75, 150.5, 200, HashMap::new()),
+            triggers: vec![
+                LegacyTriggerMetric::new("metric1", 0.5, 0.8, Severity::High, "Issue 1"),
+                LegacyTriggerMetric::new("metric2", 0.3, 0.6, Severity::Warning, "Issue 2"),
+            ],
+            action_recommended: true,
+        };
+
+        let prompt = analyzer.build_analysis_prompt(&monitor_result);
+
+        assert!(prompt.contains("Success Rate: 75.0%"));
+        assert!(prompt.contains("Average Latency: 150ms")); // {:.0} rounds 150.5 to 150
+        assert!(prompt.contains("Total Invocations: 200"));
+        assert!(prompt.contains("metric1"));
+        assert!(prompt.contains("metric2"));
+        assert!(prompt.contains("High"));
+        assert!(prompt.contains("Warning"));
+    }
 }

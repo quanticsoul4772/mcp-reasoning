@@ -82,6 +82,7 @@ harness = false
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }

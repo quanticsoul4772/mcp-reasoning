@@ -41,6 +41,7 @@ impl McpServer {
     /// - Storage initialization fails
     /// - Anthropic client creation fails
     /// - Server encounters a runtime error
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub async fn run_stdio(&self) -> Result<(), AppError> {
         // Initialize storage
         let storage = SqliteStorage::new(&self.config.database_path).await?;

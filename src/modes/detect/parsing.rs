@@ -308,3 +308,594 @@ pub fn parse_fallacy_assessment(json: &serde_json::Value) -> Result<FallacyAsses
         most_critical,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ========================================================================
+    // parse_biases tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_biases_success_all_severities() {
+        let json = json!({
+            "biases_detected": [
+                {
+                    "bias": "confirmation bias",
+                    "evidence": "Only supporting evidence cited",
+                    "severity": "high",
+                    "impact": "Skews conclusions",
+                    "debiasing": "Seek disconfirming evidence"
+                },
+                {
+                    "bias": "anchoring bias",
+                    "evidence": "First number dominates",
+                    "severity": "medium",
+                    "impact": "Affects estimates",
+                    "debiasing": "Consider multiple anchors"
+                },
+                {
+                    "bias": "availability heuristic",
+                    "evidence": "Recent events overweighted",
+                    "severity": "low",
+                    "impact": "Minor distortion",
+                    "debiasing": "Use base rates"
+                }
+            ]
+        });
+
+        let result = parse_biases(&json).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].bias, "confirmation bias");
+        assert!(matches!(result[0].severity, BiasSeverity::High));
+        assert!(matches!(result[1].severity, BiasSeverity::Medium));
+        assert!(matches!(result[2].severity, BiasSeverity::Low));
+    }
+
+    #[test]
+    fn test_parse_biases_missing_biases_detected() {
+        let json = json!({});
+        let result = parse_biases(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "biases_detected")
+        );
+    }
+
+    #[test]
+    fn test_parse_biases_missing_bias_field() {
+        let json = json!({
+            "biases_detected": [{
+                "evidence": "test",
+                "severity": "low",
+                "impact": "test",
+                "debiasing": "test"
+            }]
+        });
+        let result = parse_biases(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "bias"));
+    }
+
+    #[test]
+    fn test_parse_biases_missing_evidence() {
+        let json = json!({
+            "biases_detected": [{
+                "bias": "test",
+                "severity": "low",
+                "impact": "test",
+                "debiasing": "test"
+            }]
+        });
+        let result = parse_biases(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "evidence"));
+    }
+
+    #[test]
+    fn test_parse_biases_missing_severity() {
+        let json = json!({
+            "biases_detected": [{
+                "bias": "test",
+                "evidence": "test",
+                "impact": "test",
+                "debiasing": "test"
+            }]
+        });
+        let result = parse_biases(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "severity"));
+    }
+
+    #[test]
+    fn test_parse_biases_invalid_severity() {
+        let json = json!({
+            "biases_detected": [{
+                "bias": "test",
+                "evidence": "test",
+                "severity": "extreme",
+                "impact": "test",
+                "debiasing": "test"
+            }]
+        });
+        let result = parse_biases(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "severity")
+        );
+    }
+
+    #[test]
+    fn test_parse_biases_missing_impact() {
+        let json = json!({
+            "biases_detected": [{
+                "bias": "test",
+                "evidence": "test",
+                "severity": "low",
+                "debiasing": "test"
+            }]
+        });
+        let result = parse_biases(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "impact"));
+    }
+
+    #[test]
+    fn test_parse_biases_missing_debiasing() {
+        let json = json!({
+            "biases_detected": [{
+                "bias": "test",
+                "evidence": "test",
+                "severity": "low",
+                "impact": "test"
+            }]
+        });
+        let result = parse_biases(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "debiasing"));
+    }
+
+    // ========================================================================
+    // parse_bias_assessment tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_bias_assessment_success() {
+        let json = json!({
+            "overall_assessment": {
+                "bias_count": 3,
+                "most_severe": "confirmation bias",
+                "reasoning_quality": 0.75
+            }
+        });
+
+        let result = parse_bias_assessment(&json).unwrap();
+        assert_eq!(result.bias_count, 3);
+        assert_eq!(result.most_severe, "confirmation bias");
+        assert!((result.reasoning_quality - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_bias_assessment_missing_overall() {
+        let json = json!({});
+        let result = parse_bias_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "overall_assessment")
+        );
+    }
+
+    #[test]
+    fn test_parse_bias_assessment_missing_bias_count() {
+        let json = json!({
+            "overall_assessment": {
+                "most_severe": "test",
+                "reasoning_quality": 0.5
+            }
+        });
+        let result = parse_bias_assessment(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "bias_count"));
+    }
+
+    #[test]
+    fn test_parse_bias_assessment_missing_most_severe() {
+        let json = json!({
+            "overall_assessment": {
+                "bias_count": 1,
+                "reasoning_quality": 0.5
+            }
+        });
+        let result = parse_bias_assessment(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "most_severe"));
+    }
+
+    #[test]
+    fn test_parse_bias_assessment_missing_reasoning_quality() {
+        let json = json!({
+            "overall_assessment": {
+                "bias_count": 1,
+                "most_severe": "test"
+            }
+        });
+        let result = parse_bias_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "reasoning_quality")
+        );
+    }
+
+    #[test]
+    fn test_parse_bias_assessment_invalid_reasoning_quality_too_high() {
+        let json = json!({
+            "overall_assessment": {
+                "bias_count": 1,
+                "most_severe": "test",
+                "reasoning_quality": 1.5
+            }
+        });
+        let result = parse_bias_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "reasoning_quality")
+        );
+    }
+
+    #[test]
+    fn test_parse_bias_assessment_invalid_reasoning_quality_negative() {
+        let json = json!({
+            "overall_assessment": {
+                "bias_count": 1,
+                "most_severe": "test",
+                "reasoning_quality": -0.1
+            }
+        });
+        let result = parse_bias_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "reasoning_quality")
+        );
+    }
+
+    // ========================================================================
+    // parse_fallacies tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_fallacies_success_all_categories() {
+        let json = json!({
+            "fallacies_detected": [
+                {
+                    "fallacy": "affirming the consequent",
+                    "category": "formal",
+                    "passage": "If A then B. B. Therefore A.",
+                    "explanation": "Invalid logical form",
+                    "correction": "Cannot conclude A from B"
+                },
+                {
+                    "fallacy": "ad hominem",
+                    "category": "informal",
+                    "passage": "He's wrong because he's biased",
+                    "explanation": "Attacks person not argument",
+                    "correction": "Address the argument directly"
+                },
+                {
+                    "fallacy": "red herring",
+                    "category": "relevance",
+                    "passage": "But what about...",
+                    "explanation": "Changes the topic",
+                    "correction": "Stay on topic"
+                },
+                {
+                    "fallacy": "begging the question",
+                    "category": "presumption",
+                    "passage": "It's true because it's true",
+                    "explanation": "Circular reasoning",
+                    "correction": "Provide independent evidence"
+                }
+            ]
+        });
+
+        let result = parse_fallacies(&json).unwrap();
+        assert_eq!(result.len(), 4);
+        assert!(matches!(result[0].category, FallacyCategory::Formal));
+        assert!(matches!(result[1].category, FallacyCategory::Informal));
+        assert!(matches!(result[2].category, FallacyCategory::Relevance));
+        assert!(matches!(result[3].category, FallacyCategory::Presumption));
+    }
+
+    #[test]
+    fn test_parse_fallacies_missing_fallacies_detected() {
+        let json = json!({});
+        let result = parse_fallacies(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "fallacies_detected")
+        );
+    }
+
+    #[test]
+    fn test_parse_fallacies_missing_fallacy() {
+        let json = json!({
+            "fallacies_detected": [{
+                "category": "formal",
+                "passage": "test",
+                "explanation": "test",
+                "correction": "test"
+            }]
+        });
+        let result = parse_fallacies(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "fallacy"));
+    }
+
+    #[test]
+    fn test_parse_fallacies_missing_category() {
+        let json = json!({
+            "fallacies_detected": [{
+                "fallacy": "test",
+                "passage": "test",
+                "explanation": "test",
+                "correction": "test"
+            }]
+        });
+        let result = parse_fallacies(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "category"));
+    }
+
+    #[test]
+    fn test_parse_fallacies_invalid_category() {
+        let json = json!({
+            "fallacies_detected": [{
+                "fallacy": "test",
+                "category": "unknown_category",
+                "passage": "test",
+                "explanation": "test",
+                "correction": "test"
+            }]
+        });
+        let result = parse_fallacies(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "category")
+        );
+    }
+
+    #[test]
+    fn test_parse_fallacies_missing_passage() {
+        let json = json!({
+            "fallacies_detected": [{
+                "fallacy": "test",
+                "category": "formal",
+                "explanation": "test",
+                "correction": "test"
+            }]
+        });
+        let result = parse_fallacies(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "passage"));
+    }
+
+    #[test]
+    fn test_parse_fallacies_missing_explanation() {
+        let json = json!({
+            "fallacies_detected": [{
+                "fallacy": "test",
+                "category": "formal",
+                "passage": "test",
+                "correction": "test"
+            }]
+        });
+        let result = parse_fallacies(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "explanation"));
+    }
+
+    #[test]
+    fn test_parse_fallacies_missing_correction() {
+        let json = json!({
+            "fallacies_detected": [{
+                "fallacy": "test",
+                "category": "formal",
+                "passage": "test",
+                "explanation": "test"
+            }]
+        });
+        let result = parse_fallacies(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "correction"));
+    }
+
+    // ========================================================================
+    // parse_argument_structure tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_argument_structure_success_valid() {
+        let json = json!({
+            "argument_structure": {
+                "premises": ["All men are mortal", "Socrates is a man"],
+                "conclusion": "Socrates is mortal",
+                "validity": "valid"
+            }
+        });
+
+        let result = parse_argument_structure(&json).unwrap();
+        assert_eq!(result.premises.len(), 2);
+        assert_eq!(result.conclusion, "Socrates is mortal");
+        assert!(matches!(result.validity, ArgumentValidity::Valid));
+    }
+
+    #[test]
+    fn test_parse_argument_structure_success_invalid() {
+        let json = json!({
+            "argument_structure": {
+                "premises": ["If A then B", "B"],
+                "conclusion": "A",
+                "validity": "invalid"
+            }
+        });
+
+        let result = parse_argument_structure(&json).unwrap();
+        assert!(matches!(result.validity, ArgumentValidity::Invalid));
+    }
+
+    #[test]
+    fn test_parse_argument_structure_success_partially_valid() {
+        let json = json!({
+            "argument_structure": {
+                "premises": ["Most X are Y", "Z is X"],
+                "conclusion": "Z is likely Y",
+                "validity": "partially_valid"
+            }
+        });
+
+        let result = parse_argument_structure(&json).unwrap();
+        assert!(matches!(result.validity, ArgumentValidity::PartiallyValid));
+    }
+
+    #[test]
+    fn test_parse_argument_structure_missing_structure() {
+        let json = json!({});
+        let result = parse_argument_structure(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "argument_structure")
+        );
+    }
+
+    #[test]
+    fn test_parse_argument_structure_missing_premises() {
+        let json = json!({
+            "argument_structure": {
+                "conclusion": "test",
+                "validity": "valid"
+            }
+        });
+        let result = parse_argument_structure(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "premises"));
+    }
+
+    #[test]
+    fn test_parse_argument_structure_missing_conclusion() {
+        let json = json!({
+            "argument_structure": {
+                "premises": ["test"],
+                "validity": "valid"
+            }
+        });
+        let result = parse_argument_structure(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "conclusion"));
+    }
+
+    #[test]
+    fn test_parse_argument_structure_missing_validity() {
+        let json = json!({
+            "argument_structure": {
+                "premises": ["test"],
+                "conclusion": "test"
+            }
+        });
+        let result = parse_argument_structure(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "validity"));
+    }
+
+    #[test]
+    fn test_parse_argument_structure_invalid_validity() {
+        let json = json!({
+            "argument_structure": {
+                "premises": ["test"],
+                "conclusion": "test",
+                "validity": "somewhat_valid"
+            }
+        });
+        let result = parse_argument_structure(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "validity")
+        );
+    }
+
+    // ========================================================================
+    // parse_fallacy_assessment tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_fallacy_assessment_success() {
+        let json = json!({
+            "overall_assessment": {
+                "fallacy_count": 2,
+                "argument_strength": 0.6,
+                "most_critical": "ad hominem"
+            }
+        });
+
+        let result = parse_fallacy_assessment(&json).unwrap();
+        assert_eq!(result.fallacy_count, 2);
+        assert!((result.argument_strength - 0.6).abs() < f64::EPSILON);
+        assert_eq!(result.most_critical, "ad hominem");
+    }
+
+    #[test]
+    fn test_parse_fallacy_assessment_missing_overall() {
+        let json = json!({});
+        let result = parse_fallacy_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "overall_assessment")
+        );
+    }
+
+    #[test]
+    fn test_parse_fallacy_assessment_missing_fallacy_count() {
+        let json = json!({
+            "overall_assessment": {
+                "argument_strength": 0.5,
+                "most_critical": "test"
+            }
+        });
+        let result = parse_fallacy_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "fallacy_count")
+        );
+    }
+
+    #[test]
+    fn test_parse_fallacy_assessment_missing_argument_strength() {
+        let json = json!({
+            "overall_assessment": {
+                "fallacy_count": 1,
+                "most_critical": "test"
+            }
+        });
+        let result = parse_fallacy_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "argument_strength")
+        );
+    }
+
+    #[test]
+    fn test_parse_fallacy_assessment_invalid_argument_strength_too_high() {
+        let json = json!({
+            "overall_assessment": {
+                "fallacy_count": 1,
+                "argument_strength": 1.1,
+                "most_critical": "test"
+            }
+        });
+        let result = parse_fallacy_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "argument_strength")
+        );
+    }
+
+    #[test]
+    fn test_parse_fallacy_assessment_invalid_argument_strength_negative() {
+        let json = json!({
+            "overall_assessment": {
+                "fallacy_count": 1,
+                "argument_strength": -0.5,
+                "most_critical": "test"
+            }
+        });
+        let result = parse_fallacy_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "argument_strength")
+        );
+    }
+
+    #[test]
+    fn test_parse_fallacy_assessment_missing_most_critical() {
+        let json = json!({
+            "overall_assessment": {
+                "fallacy_count": 1,
+                "argument_strength": 0.5
+            }
+        });
+        let result = parse_fallacy_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "most_critical")
+        );
+    }
+}

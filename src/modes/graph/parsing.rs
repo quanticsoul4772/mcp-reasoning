@@ -487,46 +487,787 @@ pub fn parse_metrics(json: &serde_json::Value) -> Result<GraphMetrics, ModeError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    // ========================================================================
+    // Helper function tests
+    // ========================================================================
 
     #[test]
-    fn test_parse_node_type() {
+    fn test_get_str_success() {
+        let json = json!({"name": "test"});
+        assert_eq!(get_str(&json, "name").unwrap(), "test");
+    }
+
+    #[test]
+    fn test_get_str_missing() {
+        let json = json!({});
+        assert!(
+            matches!(get_str(&json, "name"), Err(ModeError::MissingField { field }) if field == "name")
+        );
+    }
+
+    #[test]
+    fn test_get_f64_success() {
+        let json = json!({"score": 0.75});
+        let result = get_f64(&json, "score").unwrap();
+        assert!((result - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_get_f64_missing() {
+        let json = json!({});
+        assert!(
+            matches!(get_f64(&json, "score"), Err(ModeError::MissingField { field }) if field == "score")
+        );
+    }
+
+    #[test]
+    fn test_get_u32_success() {
+        let json = json!({"count": 42});
+        assert_eq!(get_u32(&json, "count").unwrap(), 42);
+    }
+
+    #[test]
+    fn test_get_u32_missing() {
+        let json = json!({});
+        assert!(
+            matches!(get_u32(&json, "count"), Err(ModeError::MissingField { field }) if field == "count")
+        );
+    }
+
+    #[test]
+    fn test_get_string_array_success() {
+        let json = json!({"items": ["a", "b", "c"]});
+        let result = get_string_array(&json, "items").unwrap();
+        assert_eq!(result, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_get_string_array_missing() {
+        let json = json!({});
+        assert!(
+            matches!(get_string_array(&json, "items"), Err(ModeError::MissingField { field }) if field == "items")
+        );
+    }
+
+    #[test]
+    fn test_get_string_array_filters_non_strings() {
+        let json = json!({"items": ["a", 123, "b", null, true]});
+        let result = get_string_array(&json, "items").unwrap();
+        assert_eq!(result, vec!["a", "b"]);
+    }
+
+    // ========================================================================
+    // Enum parser tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_node_type_all_variants() {
         assert!(matches!(parse_node_type("root"), Ok(NodeType::Root)));
         assert!(matches!(
             parse_node_type("reasoning"),
             Ok(NodeType::Reasoning)
         ));
-        assert!(parse_node_type("unknown").is_err());
+        assert!(matches!(
+            parse_node_type("evidence"),
+            Ok(NodeType::Evidence)
+        ));
+        assert!(matches!(
+            parse_node_type("hypothesis"),
+            Ok(NodeType::Hypothesis)
+        ));
+        assert!(matches!(
+            parse_node_type("conclusion"),
+            Ok(NodeType::Conclusion)
+        ));
+        assert!(matches!(
+            parse_node_type("synthesis"),
+            Ok(NodeType::Synthesis)
+        ));
+        assert!(matches!(parse_node_type("refined"), Ok(NodeType::Refined)));
     }
 
     #[test]
-    fn test_parse_complexity() {
+    fn test_parse_node_type_case_insensitive() {
+        assert!(matches!(parse_node_type("ROOT"), Ok(NodeType::Root)));
+        assert!(matches!(
+            parse_node_type("Reasoning"),
+            Ok(NodeType::Reasoning)
+        ));
+    }
+
+    #[test]
+    fn test_parse_node_type_invalid() {
+        assert!(
+            matches!(parse_node_type("unknown"), Err(ModeError::InvalidValue { field, .. }) if field == "type")
+        );
+    }
+
+    #[test]
+    fn test_parse_node_relationship_all_variants() {
+        assert!(matches!(
+            parse_node_relationship("elaborates"),
+            Ok(NodeRelationship::Elaborates)
+        ));
+        assert!(matches!(
+            parse_node_relationship("supports"),
+            Ok(NodeRelationship::Supports)
+        ));
+        assert!(matches!(
+            parse_node_relationship("challenges"),
+            Ok(NodeRelationship::Challenges)
+        ));
+        assert!(matches!(
+            parse_node_relationship("synthesizes"),
+            Ok(NodeRelationship::Synthesizes)
+        ));
+    }
+
+    #[test]
+    fn test_parse_node_relationship_invalid() {
+        assert!(
+            matches!(parse_node_relationship("unknown"), Err(ModeError::InvalidValue { field, .. }) if field == "relationship")
+        );
+    }
+
+    #[test]
+    fn test_parse_complexity_all_variants() {
         assert!(matches!(parse_complexity("low"), Ok(ComplexityLevel::Low)));
-        assert!(parse_complexity("invalid").is_err());
+        assert!(matches!(
+            parse_complexity("medium"),
+            Ok(ComplexityLevel::Medium)
+        ));
+        assert!(matches!(
+            parse_complexity("high"),
+            Ok(ComplexityLevel::High)
+        ));
     }
 
     #[test]
-    fn test_parse_prune_reason() {
+    fn test_parse_complexity_invalid() {
+        assert!(
+            matches!(parse_complexity("extreme"), Err(ModeError::InvalidValue { field, .. }) if field == "complexity")
+        );
+    }
+
+    #[test]
+    fn test_parse_recommendation_all_variants() {
+        assert!(matches!(
+            parse_recommendation("expand"),
+            Ok(NodeRecommendation::Expand)
+        ));
+        assert!(matches!(
+            parse_recommendation("keep"),
+            Ok(NodeRecommendation::Keep)
+        ));
+        assert!(matches!(
+            parse_recommendation("prune"),
+            Ok(NodeRecommendation::Prune)
+        ));
+    }
+
+    #[test]
+    fn test_parse_recommendation_invalid() {
+        assert!(
+            matches!(parse_recommendation("unknown"), Err(ModeError::InvalidValue { field, .. }) if field == "recommendation")
+        );
+    }
+
+    #[test]
+    fn test_parse_prune_reason_all_variants() {
         assert!(matches!(
             parse_prune_reason("low_score"),
             Ok(PruneReason::LowScore)
         ));
         assert!(matches!(
+            parse_prune_reason("redundant"),
+            Ok(PruneReason::Redundant)
+        ));
+        assert!(matches!(
             parse_prune_reason("dead_end"),
             Ok(PruneReason::DeadEnd)
+        ));
+        assert!(matches!(
+            parse_prune_reason("off_topic"),
+            Ok(PruneReason::OffTopic)
         ));
     }
 
     #[test]
-    fn test_get_str() {
-        let json: serde_json::Value = serde_json::json!({"name": "test"});
-        assert_eq!(get_str(&json, "name").unwrap(), "test");
-        assert!(get_str(&json, "missing").is_err());
+    fn test_parse_prune_reason_invalid() {
+        assert!(
+            matches!(parse_prune_reason("unknown"), Err(ModeError::InvalidValue { field, .. }) if field == "reason")
+        );
     }
 
     #[test]
-    fn test_get_f64() {
-        let json: serde_json::Value = serde_json::json!({"score": 0.75});
-        let result = get_f64(&json, "score").unwrap();
-        assert!((result - 0.75).abs() < f64::EPSILON);
+    fn test_parse_prune_impact_all_variants() {
+        assert!(matches!(parse_prune_impact("none"), Ok(PruneImpact::None)));
+        assert!(matches!(
+            parse_prune_impact("minor"),
+            Ok(PruneImpact::Minor)
+        ));
+        assert!(matches!(
+            parse_prune_impact("moderate"),
+            Ok(PruneImpact::Moderate)
+        ));
+    }
+
+    #[test]
+    fn test_parse_prune_impact_invalid() {
+        assert!(
+            matches!(parse_prune_impact("severe"), Err(ModeError::InvalidValue { field, .. }) if field == "impact")
+        );
+    }
+
+    #[test]
+    fn test_parse_suggested_action_all_variants() {
+        assert!(matches!(
+            parse_suggested_action("expand"),
+            Ok(SuggestedAction::Expand)
+        ));
+        assert!(matches!(
+            parse_suggested_action("refine"),
+            Ok(SuggestedAction::Refine)
+        ));
+        assert!(matches!(
+            parse_suggested_action("aggregate"),
+            Ok(SuggestedAction::Aggregate)
+        ));
+    }
+
+    #[test]
+    fn test_parse_suggested_action_invalid() {
+        assert!(
+            matches!(parse_suggested_action("unknown"), Err(ModeError::InvalidValue { field, .. }) if field == "suggested_action")
+        );
+    }
+
+    // ========================================================================
+    // Init parser tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_root_success() {
+        let json = json!({
+            "root": {
+                "id": "node-1",
+                "content": "Main problem",
+                "score": 0.85,
+                "type": "root"
+            }
+        });
+
+        let result = parse_root(&json).unwrap();
+        assert_eq!(result.id, "node-1");
+        assert_eq!(result.content, "Main problem");
+        assert!((result.score - 0.85).abs() < f64::EPSILON);
+        assert!(matches!(result.node_type, NodeType::Root));
+    }
+
+    #[test]
+    fn test_parse_root_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_root(&json), Err(ModeError::MissingField { field }) if field == "root")
+        );
+    }
+
+    #[test]
+    fn test_parse_root_missing_id() {
+        let json = json!({
+            "root": {
+                "content": "test",
+                "score": 0.5,
+                "type": "root"
+            }
+        });
+        assert!(
+            matches!(parse_root(&json), Err(ModeError::MissingField { field }) if field == "id")
+        );
+    }
+
+    #[test]
+    fn test_parse_expansion_directions_success() {
+        let json = json!({
+            "expansion_directions": [
+                {"direction": "explore causes", "potential": 0.9},
+                {"direction": "examine effects", "potential": 0.8}
+            ]
+        });
+
+        let result = parse_expansion_directions(&json).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].direction, "explore causes");
+        assert!((result[0].potential - 0.9).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_expansion_directions_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_expansion_directions(&json), Err(ModeError::MissingField { field }) if field == "expansion_directions")
+        );
+    }
+
+    #[test]
+    fn test_parse_graph_metadata_success() {
+        let json = json!({
+            "graph_metadata": {
+                "complexity": "high",
+                "estimated_depth": 5
+            }
+        });
+
+        let result = parse_graph_metadata(&json).unwrap();
+        assert!(matches!(result.complexity, ComplexityLevel::High));
+        assert_eq!(result.estimated_depth, 5);
+    }
+
+    #[test]
+    fn test_parse_graph_metadata_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_graph_metadata(&json), Err(ModeError::MissingField { field }) if field == "graph_metadata")
+        );
+    }
+
+    // ========================================================================
+    // Generate parser tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_children_success() {
+        let json = json!({
+            "children": [
+                {
+                    "id": "child-1",
+                    "content": "First child",
+                    "score": 0.75,
+                    "type": "reasoning",
+                    "relationship": "elaborates"
+                },
+                {
+                    "id": "child-2",
+                    "content": "Second child",
+                    "score": 0.8,
+                    "type": "evidence",
+                    "relationship": "supports"
+                }
+            ]
+        });
+
+        let result = parse_children(&json).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, "child-1");
+        assert!(matches!(result[0].node_type, NodeType::Reasoning));
+        assert!(matches!(
+            result[0].relationship,
+            NodeRelationship::Elaborates
+        ));
+        assert!(matches!(result[1].relationship, NodeRelationship::Supports));
+    }
+
+    #[test]
+    fn test_parse_children_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_children(&json), Err(ModeError::MissingField { field }) if field == "children")
+        );
+    }
+
+    #[test]
+    fn test_parse_children_missing_relationship() {
+        let json = json!({
+            "children": [{
+                "id": "child-1",
+                "content": "test",
+                "score": 0.5,
+                "type": "reasoning"
+            }]
+        });
+        assert!(
+            matches!(parse_children(&json), Err(ModeError::MissingField { field }) if field == "relationship")
+        );
+    }
+
+    // ========================================================================
+    // Score parser tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_node_scores_success() {
+        let json = json!({
+            "scores": {
+                "relevance": 0.9,
+                "coherence": 0.85,
+                "depth": 0.8,
+                "novelty": 0.75,
+                "overall": 0.82
+            }
+        });
+
+        let result = parse_node_scores(&json).unwrap();
+        assert!((result.relevance - 0.9).abs() < f64::EPSILON);
+        assert!((result.overall - 0.82).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_node_scores_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_node_scores(&json), Err(ModeError::MissingField { field }) if field == "scores")
+        );
+    }
+
+    #[test]
+    fn test_parse_node_scores_missing_field() {
+        let json = json!({
+            "scores": {
+                "relevance": 0.9,
+                "coherence": 0.85,
+                "depth": 0.8,
+                "overall": 0.82
+            }
+        });
+        assert!(
+            matches!(parse_node_scores(&json), Err(ModeError::MissingField { field }) if field == "novelty")
+        );
+    }
+
+    #[test]
+    fn test_parse_node_assessment_success() {
+        let json = json!({
+            "assessment": {
+                "strengths": ["Clear reasoning", "Good evidence"],
+                "weaknesses": ["Missing context"],
+                "recommendation": "expand"
+            }
+        });
+
+        let result = parse_node_assessment(&json).unwrap();
+        assert_eq!(result.strengths.len(), 2);
+        assert_eq!(result.weaknesses.len(), 1);
+        assert!(matches!(result.recommendation, NodeRecommendation::Expand));
+    }
+
+    #[test]
+    fn test_parse_node_assessment_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_node_assessment(&json), Err(ModeError::MissingField { field }) if field == "assessment")
+        );
+    }
+
+    // ========================================================================
+    // Aggregate parser tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_synthesis_success() {
+        let json = json!({
+            "synthesis": {
+                "id": "synth-1",
+                "content": "Combined insight",
+                "score": 0.88,
+                "type": "synthesis"
+            }
+        });
+
+        let result = parse_synthesis(&json).unwrap();
+        assert_eq!(result.id, "synth-1");
+        assert!(matches!(result.node_type, NodeType::Synthesis));
+    }
+
+    #[test]
+    fn test_parse_synthesis_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_synthesis(&json), Err(ModeError::MissingField { field }) if field == "synthesis")
+        );
+    }
+
+    #[test]
+    fn test_parse_integration_notes_success() {
+        let json = json!({
+            "integration_notes": {
+                "common_themes": ["Theme A", "Theme B"],
+                "complementary_aspects": ["Aspect 1"],
+                "resolved_contradictions": []
+            }
+        });
+
+        let result = parse_integration_notes(&json).unwrap();
+        assert_eq!(result.common_themes.len(), 2);
+        assert_eq!(result.complementary_aspects.len(), 1);
+        assert!(result.resolved_contradictions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_integration_notes_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_integration_notes(&json), Err(ModeError::MissingField { field }) if field == "integration_notes")
+        );
+    }
+
+    // ========================================================================
+    // Refine parser tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_critique_success() {
+        let json = json!({
+            "critique": {
+                "issues": ["Issue 1"],
+                "missing_elements": ["Element A", "Element B"],
+                "unclear_aspects": []
+            }
+        });
+
+        let result = parse_critique(&json).unwrap();
+        assert_eq!(result.issues.len(), 1);
+        assert_eq!(result.missing_elements.len(), 2);
+        assert!(result.unclear_aspects.is_empty());
+    }
+
+    #[test]
+    fn test_parse_critique_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_critique(&json), Err(ModeError::MissingField { field }) if field == "critique")
+        );
+    }
+
+    #[test]
+    fn test_parse_refined_node_success() {
+        let json = json!({
+            "refined_node": {
+                "id": "refined-1",
+                "content": "Improved reasoning",
+                "score": 0.92,
+                "type": "refined"
+            }
+        });
+
+        let result = parse_refined_node(&json).unwrap();
+        assert_eq!(result.id, "refined-1");
+        assert!(matches!(result.node_type, NodeType::Refined));
+    }
+
+    #[test]
+    fn test_parse_refined_node_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_refined_node(&json), Err(ModeError::MissingField { field }) if field == "refined_node")
+        );
+    }
+
+    // ========================================================================
+    // Prune parser tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_prune_candidates_success() {
+        let json = json!({
+            "prune_candidates": [
+                {
+                    "node_id": "node-5",
+                    "reason": "low_score",
+                    "confidence": 0.9,
+                    "impact": "minor"
+                },
+                {
+                    "node_id": "node-7",
+                    "reason": "redundant",
+                    "confidence": 0.85,
+                    "impact": "none"
+                }
+            ]
+        });
+
+        let result = parse_prune_candidates(&json).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0].reason, PruneReason::LowScore));
+        assert!(matches!(result[0].impact, PruneImpact::Minor));
+        assert!(matches!(result[1].reason, PruneReason::Redundant));
+    }
+
+    #[test]
+    fn test_parse_prune_candidates_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_prune_candidates(&json), Err(ModeError::MissingField { field }) if field == "prune_candidates")
+        );
+    }
+
+    // ========================================================================
+    // Finalize parser tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_best_paths_success() {
+        let json = json!({
+            "best_paths": [
+                {
+                    "path": ["node-1", "node-2", "node-3"],
+                    "path_quality": 0.88,
+                    "key_insight": "Main conclusion"
+                }
+            ]
+        });
+
+        let result = parse_best_paths(&json).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].path.len(), 3);
+        assert!((result[0].path_quality - 0.88).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_best_paths_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_best_paths(&json), Err(ModeError::MissingField { field }) if field == "best_paths")
+        );
+    }
+
+    #[test]
+    fn test_parse_conclusions_success() {
+        let json = json!({
+            "conclusions": [
+                {
+                    "conclusion": "Final answer",
+                    "confidence": 0.92,
+                    "supporting_nodes": ["node-1", "node-3"]
+                }
+            ]
+        });
+
+        let result = parse_conclusions(&json).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].conclusion, "Final answer");
+        assert_eq!(result[0].supporting_nodes.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_conclusions_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_conclusions(&json), Err(ModeError::MissingField { field }) if field == "conclusions")
+        );
+    }
+
+    #[test]
+    fn test_parse_session_quality_success() {
+        let json = json!({
+            "session_quality": {
+                "depth_achieved": 0.85,
+                "breadth_achieved": 0.8,
+                "coherence": 0.9,
+                "overall": 0.85
+            }
+        });
+
+        let result = parse_session_quality(&json).unwrap();
+        assert!((result.depth_achieved - 0.85).abs() < f64::EPSILON);
+        assert!((result.overall - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_session_quality_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_session_quality(&json), Err(ModeError::MissingField { field }) if field == "session_quality")
+        );
+    }
+
+    // ========================================================================
+    // State parser tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_structure_success() {
+        let json = json!({
+            "structure": {
+                "total_nodes": 15,
+                "depth": 4,
+                "branches": 3,
+                "pruned_count": 2
+            }
+        });
+
+        let result = parse_structure(&json).unwrap();
+        assert_eq!(result.total_nodes, 15);
+        assert_eq!(result.depth, 4);
+        assert_eq!(result.pruned_count, 2);
+    }
+
+    #[test]
+    fn test_parse_structure_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_structure(&json), Err(ModeError::MissingField { field }) if field == "structure")
+        );
+    }
+
+    #[test]
+    fn test_parse_frontiers_success() {
+        let json = json!({
+            "frontiers": [
+                {
+                    "node_id": "node-8",
+                    "potential": 0.85,
+                    "suggested_action": "expand"
+                },
+                {
+                    "node_id": "node-12",
+                    "potential": 0.7,
+                    "suggested_action": "refine"
+                }
+            ]
+        });
+
+        let result = parse_frontiers(&json).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(matches!(
+            result[0].suggested_action,
+            SuggestedAction::Expand
+        ));
+        assert!(matches!(
+            result[1].suggested_action,
+            SuggestedAction::Refine
+        ));
+    }
+
+    #[test]
+    fn test_parse_frontiers_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_frontiers(&json), Err(ModeError::MissingField { field }) if field == "frontiers")
+        );
+    }
+
+    #[test]
+    fn test_parse_metrics_success() {
+        let json = json!({
+            "metrics": {
+                "average_score": 0.78,
+                "max_score": 0.95,
+                "coverage": 0.85
+            }
+        });
+
+        let result = parse_metrics(&json).unwrap();
+        assert!((result.average_score - 0.78).abs() < f64::EPSILON);
+        assert!((result.max_score - 0.95).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_metrics_missing() {
+        let json = json!({});
+        assert!(
+            matches!(parse_metrics(&json), Err(ModeError::MissingField { field }) if field == "metrics")
+        );
     }
 }

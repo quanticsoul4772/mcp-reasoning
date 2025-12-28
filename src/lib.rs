@@ -70,7 +70,11 @@ mod test_utils;
 ///
 /// This module is hidden from documentation but available for doctests to use.
 /// It provides simple mock implementations that don't require external resources.
+///
+/// Coverage is excluded because doctests run in a separate binary and don't contribute
+/// to llvm-cov measurements for the main library.
 #[doc(hidden)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub mod doctest_helpers {
     use crate::error::{ModeError, StorageError};
     use crate::traits::{

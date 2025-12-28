@@ -612,4 +612,152 @@ mod tests {
         let measured = result.measured_improvement.unwrap();
         assert!(measured > 0.0 && measured < 0.15);
     }
+
+    #[test]
+    fn test_execute_prompt_tune_no_params() {
+        let mut executor = Executor::new();
+        let action = create_test_action(ActionType::PromptTune);
+
+        let result = executor.execute(action);
+
+        assert!(!result.success);
+        assert!(result.message.contains("No parameters provided"));
+    }
+
+    #[test]
+    fn test_execute_threshold_adjust_no_params() {
+        let mut executor = Executor::new();
+        let action = create_test_action(ActionType::ThresholdAdjust);
+
+        let result = executor.execute(action);
+
+        assert!(!result.success);
+        assert!(result.message.contains("No parameters provided"));
+    }
+
+    #[test]
+    fn test_execute_threshold_adjust_no_value() {
+        let mut executor = Executor::new();
+        let mut action = create_test_action(ActionType::ThresholdAdjust);
+        action = action.with_parameters(serde_json::json!({
+            "threshold_key": "confidence"
+            // Missing "value"
+        }));
+
+        let result = executor.execute(action);
+
+        assert!(!result.success);
+        assert!(result.message.contains("No value provided"));
+    }
+
+    #[test]
+    fn test_rollback_prompt_tune() {
+        let mut executor = Executor::new();
+
+        // Set up a previous prompt value
+        executor
+            .config_mut()
+            .set("prompt:test_prompt", serde_json::json!("Original template"));
+
+        let mut action = SelfImprovementAction::new(
+            "prompt-rollback-test",
+            ActionType::PromptTune,
+            "Test prompt tune",
+            "Testing",
+            0.1,
+        );
+        action = action.with_parameters(serde_json::json!({
+            "prompt_key": "test_prompt",
+            "template": "New template"
+        }));
+
+        executor.execute(action);
+
+        // Verify new value
+        assert_eq!(
+            executor.config().get("prompt:test_prompt"),
+            Some(&serde_json::json!("New template"))
+        );
+
+        // Rollback (note: rollback for prompt tune doesn't fully restore in current impl)
+        let result = executor.rollback("prompt-rollback-test");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_rollback_threshold_adjust() {
+        let mut executor = Executor::new();
+
+        // Set up a previous threshold value
+        executor
+            .config_mut()
+            .set("threshold:test_threshold", serde_json::json!(0.7));
+
+        let mut action = SelfImprovementAction::new(
+            "threshold-rollback-test",
+            ActionType::ThresholdAdjust,
+            "Test threshold adjust",
+            "Testing",
+            0.1,
+        );
+        action = action.with_parameters(serde_json::json!({
+            "threshold_key": "test_threshold",
+            "value": 0.9
+        }));
+
+        executor.execute(action);
+
+        // Verify new value
+        assert_eq!(
+            executor.config().get("threshold:test_threshold"),
+            Some(&serde_json::json!(0.9))
+        );
+
+        // Rollback
+        let result = executor.rollback("threshold-rollback-test");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_executor_default() {
+        let executor = Executor::default();
+        assert!(executor.config().values.is_empty());
+    }
+
+    #[test]
+    fn test_execution_result_fields() {
+        let mut executor = Executor::new();
+        let mut action = create_test_action(ActionType::LogObservation);
+        action = action.with_parameters(serde_json::json!({"note": "test"}));
+
+        let result = executor.execute(action);
+
+        assert!(result.success);
+        assert!(result.message.contains("Observation logged"));
+        assert_eq!(result.measured_improvement, Some(0.0));
+        assert_eq!(result.action.action_type, ActionType::LogObservation);
+    }
+
+    #[test]
+    fn test_config_state_default() {
+        let config = ConfigState::default();
+        assert!(config.values.is_empty());
+    }
+
+    #[test]
+    fn test_execution_record_fields() {
+        let mut executor = Executor::new();
+        let mut action = create_test_action(ActionType::ConfigAdjust);
+        action = action.with_parameters(serde_json::json!({"test_key": 42}));
+
+        executor.execute(action);
+
+        let history = executor.history();
+        assert_eq!(history.len(), 1);
+
+        let record = &history[0];
+        assert_eq!(record.action_id, "test-action");
+        assert_eq!(record.action_type, ActionType::ConfigAdjust);
+        assert!(record.timestamp > 0);
+    }
 }

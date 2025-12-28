@@ -21,18 +21,45 @@ A high-performance MCP server that adds structured reasoning capabilities to Cla
 ## Architecture
 
 ```
-┌─────────────┐     stdin/stdout    ┌─────────────────┐
-│ Claude Code │◀───────────────────▶│   MCP Server    │──────▶ Anthropic API
-│ or Desktop  │      JSON-RPC       │     (Rust)      │        (Claude)
-└─────────────┘                     └────────┬────────┘
-                                             │
-                    ┌────────────────────────┼────────────────────────┐
-                    │                        │                        │
-                    ▼                        ▼                        ▼
-             ┌──────────┐            ┌──────────────┐         ┌────────────┐
-             │  SQLite  │            │   Metrics    │         │    Self    │
-             │ Storage  │            │  Collector   │         │ Improvement│
-             └──────────┘            └──────────────┘         └────────────┘
+                 ╔═══════════════════════════════════╗
+                 ║       MCP REASONING SERVER        ║
+                 ╚═══════════════════════════════════╝
+
+┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
+│  Claude Code    │◄───────►│    Transport    │────────►│  Anthropic API  │
+│  or Desktop     │ JSON-RPC│  (stdio/HTTP)   │         │    (Claude)     │
+└─────────────────┘         └────────┬────────┘         └─────────────────┘
+                                     │
+                                     ▼
+                            ┌─────────────────┐
+                            │   Tool Router   │
+                            │   (15 tools)    │
+                            └────────┬────────┘
+          ┌──────────────────────────┼──────────────────────────┐
+          │                          │                          │
+          ▼                          ▼                          ▼
+┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
+│   CORE REASONING    │  │   ANALYSIS TOOLS    │  │ ADVANCED REASONING  │
+├─────────────────────┤  ├─────────────────────┤  ├─────────────────────┤
+│ Linear   │ Tree     │  │ Detect   │ Decision │  │ Timeline │ MCTS     │
+│ Divergent│ Reflect  │  │ Evidence │          │  │ Counter- │ Presets  │
+│ Auto     │ Chkpoint │  │          │          │  │ factual  │ Metrics  │
+│ Graph-of-Thoughts   │  │                     │  │                     │
+└──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
+           │                        │                        │
+           └────────────────────────┼────────────────────────┘
+                                    │
+           ┌────────────────────────┴────────────────────────┐
+           │                                                 │
+           ▼                                                 ▼
+┌─────────────────────────┐              ┌─────────────────────────────────┐
+│      SQLite Storage     │◄── metrics ─►│    SELF-IMPROVEMENT SYSTEM      │
+├─────────────────────────┤              ├─────────────────────────────────┤
+│ Sessions  │ Thoughts    │              │ Monitor → Analyze → Execute →   │
+│ Branches  │ Graphs      │              │    │        Learn    │          │
+│ Checkpoints             │              │    └─► SAFETY ◄──────┘          │
+│                         │              │   (Circuit Breaker, Allowlist)  │
+└─────────────────────────┘              └─────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -240,29 +267,58 @@ Run a preset:
 
 ## Self-Improvement System
 
-The server includes a 4-phase autonomous optimization loop:
+The server includes a 4-phase autonomous optimization loop with comprehensive safety mechanisms:
 
 ```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌────────┐
-│ Monitor  │───▶│ Analyzer │───▶│ Executor │───▶│ Learner│
-└──────────┘    └──────────┘    └──────────┘    └────────┘
-     │                               │
-     │         ┌──────────────┐      │
-     └────────▶│Circuit Breaker│◀────┘
-               └──────────────┘
+╔═════════════════════════════════════════════════════════════════════════════╗
+║                    SELF-IMPROVEMENT SYSTEM (4-Phase Loop)                   ║
+╠═════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  ┌───────────┐     ┌───────────┐     ┌───────────┐     ┌───────────┐       ║
+║  │  MONITOR  │────►│  ANALYZER │────►│  EXECUTOR │────►│  LEARNER  │──┐    ║
+║  ├───────────┤     ├───────────┤     ├───────────┤     ├───────────┤  │    ║
+║  │ • Metrics │     │ • LLM     │     │ • Apply   │     │ • Reward  │  │    ║
+║  │ • Anomaly │     │   Diagnosis│    │   Action  │     │   Calc    │  │    ║
+║  │ • Errors  │     │ • Root    │     │ • Rollback│     │ • Update  │  │    ║
+║  │ • Latency │     │   Cause   │     │   Support │     │   Baseline│  │    ║
+║  │ • Quality │     │ • Propose │     │           │     │           │  │    ║
+║  └─────┬─────┘     └───────────┘     └─────┬─────┘     └───────────┘  │    ║
+║        │                                   │                          │    ║
+║        │    ╔═════════════════════════════════════════════════╗      │    ║
+║        │    ║            SAFETY MECHANISMS                    ║      │    ║
+║        │    ╠══════════════════════╦══════════════════════════╣      │    ║
+║        │    ║   Circuit Breaker    ║      Allowlist           ║      │    ║
+║        └───►║   ────────────────   ║   ────────────────       ║◄─────┘    ║
+║             ║   Halts on failures  ║   Validates actions      ║           ║
+║             ╠══════════════════════╬══════════════════════════╣           ║
+║             ║   Rate Limiting      ║   Approval Gate          ║           ║
+║             ║   ────────────────   ║   ────────────────       ║           ║
+║             ║   Max actions/period ║   Human-in-loop (opt)    ║           ║
+║             ╚══════════════════════╩══════════════════════════╝           ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+                                    ▲                          │
+                                    │      feedback loop       │
+                                    └──────────────────────────┘
 ```
 
-**Phases:**
-1. **Monitor** - Collect metrics and detect anomalies (error rates, latency, quality scores)
-2. **Analyze** - LLM-powered diagnosis and action proposal
-3. **Execute** - Apply approved actions with rollback capability
-4. **Learn** - Extract lessons and update baselines
+**Phase Details:**
+
+| Phase | Function | Key Capabilities |
+|-------|----------|------------------|
+| **Monitor** | Collect & detect | Metrics aggregation, anomaly detection, error tracking, latency monitoring |
+| **Analyzer** | Diagnose & propose | LLM-powered root cause analysis, action proposal generation |
+| **Executor** | Apply & protect | Action execution with rollback support, state preservation |
+| **Learner** | Extract & improve | Reward calculation, baseline updates, pattern learning |
 
 **Safety Mechanisms:**
-- **Circuit Breaker** - Halts operations after consecutive failures
-- **Allowlist** - Validates actions against permitted types and parameters
-- **Rate Limiting** - Prevents excessive actions per time period
-- **Approval Gate** - Optional human approval before execution
+
+| Mechanism | Protection | Trigger |
+|-----------|------------|---------|
+| **Circuit Breaker** | Halts operations | Consecutive failures exceed threshold |
+| **Allowlist** | Validates actions | Every action checked against permitted types/params |
+| **Rate Limiting** | Prevents overload | Actions exceed count per time period |
+| **Approval Gate** | Human oversight | High-risk actions (optional, configurable) |
 
 ## Development
 

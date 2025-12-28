@@ -288,5 +288,16 @@ pub mod tests {
         assert!(result.is_err());
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn test_get_pool() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        let pool = storage.get_pool();
+
+        // Verify the pool works by running a simple query
+        let result = sqlx::query("SELECT 1 as value").fetch_one(&pool).await;
+        assert!(result.is_ok());
+    }
+
     use chrono::Datelike;
 }

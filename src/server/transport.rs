@@ -65,6 +65,7 @@ impl StdioTransport {
     ///
     /// Returns an error if the server fails to start or encounters
     /// a communication error.
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub async fn serve(
         self,
         server: ReasoningServer,
