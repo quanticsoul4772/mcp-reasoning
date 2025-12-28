@@ -215,12 +215,14 @@ pub struct MetricsContext {
 // ============================================================================
 
 /// Anthropic API calls for self-improvement.
-pub struct AnthropicCalls<C: AnthropicClientTrait> {
+///
+/// The `Send + Sync` bounds ensure thread-safe sharing across async executors.
+pub struct AnthropicCalls<C: AnthropicClientTrait + Send + Sync> {
     client: Arc<C>,
     max_tokens: u32,
 }
 
-impl<C: AnthropicClientTrait> AnthropicCalls<C> {
+impl<C: AnthropicClientTrait + Send + Sync> AnthropicCalls<C> {
     /// Create a new instance.
     pub fn new(client: Arc<C>, max_tokens: u32) -> Self {
         Self { client, max_tokens }
