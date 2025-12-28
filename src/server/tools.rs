@@ -19,6 +19,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::AppState;
+use crate::modes::{DecisionMode, DetectMode, GraphMode};
 
 /// Macro to implement `IntoContents` for response types by serializing to JSON.
 macro_rules! impl_into_contents {
@@ -955,14 +956,164 @@ impl ReasoningServer {
         description = "Graph reasoning: init/generate/score/aggregate/refine/prune/finalize/state operations."
     )]
     async fn reasoning_graph(&self, #[tool(aggr)] req: GraphRequest) -> GraphResponse {
-        GraphResponse {
-            session_id: req.session_id,
+        let mode = GraphMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let session_id = req.session_id;
+        let content = req.content.as_deref().unwrap_or("");
+        let result = match req.operation.as_str() {
+            "init" => {
+                let sid = session_id.clone();
+                mode.init(content, Some(session_id.clone()))
+                    .await
+                    .map(move |r| GraphResponse {
+                        session_id: sid,
+                        node_id: Some(r.root.id),
+                        nodes: None,
+                        aggregated_insight: None,
+                        conclusions: None,
+                        state: None,
+                    })
+            }
+            "generate" => {
+                let sid = session_id.clone();
+                mode.generate(content, Some(session_id.clone()))
+                    .await
+                    .map(move |r| GraphResponse {
+                        session_id: sid,
+                        node_id: None,
+                        nodes: Some(
+                            r.children
+                                .into_iter()
+                                .map(|n| GraphNode {
+                                    id: n.id,
+                                    content: n.content,
+                                    score: Some(n.score),
+                                    depth: None,
+                                    parent_id: None,
+                                })
+                                .collect(),
+                        ),
+                        aggregated_insight: None,
+                        conclusions: None,
+                        state: None,
+                    })
+            }
+            "score" => {
+                let sid = session_id.clone();
+                mode.score(content, Some(session_id.clone()))
+                    .await
+                    .map(move |r| GraphResponse {
+                        session_id: sid,
+                        node_id: Some(r.node_id),
+                        nodes: None,
+                        aggregated_insight: None,
+                        conclusions: None,
+                        state: None,
+                    })
+            }
+            "aggregate" => {
+                let sid = session_id.clone();
+                mode.aggregate(content, Some(session_id.clone()))
+                    .await
+                    .map(move |r| GraphResponse {
+                        session_id: sid,
+                        node_id: None,
+                        nodes: None,
+                        aggregated_insight: Some(r.synthesis.content),
+                        conclusions: None,
+                        state: None,
+                    })
+            }
+            "refine" => {
+                let sid = session_id.clone();
+                mode.refine(content, Some(session_id.clone()))
+                    .await
+                    .map(move |r| GraphResponse {
+                        session_id: sid,
+                        node_id: Some(r.refined_node.id),
+                        nodes: None,
+                        aggregated_insight: None,
+                        conclusions: None,
+                        state: None,
+                    })
+            }
+            "prune" => {
+                let sid = session_id.clone();
+                mode.prune(content, Some(session_id.clone()))
+                    .await
+                    .map(move |r| GraphResponse {
+                        session_id: sid,
+                        node_id: None,
+                        nodes: None,
+                        aggregated_insight: None,
+                        conclusions: None,
+                        state: Some(GraphState {
+                            total_nodes: 0,
+                            active_nodes: 0,
+                            max_depth: 0,
+                            pruned_count: r.prune_candidates.len() as u32,
+                        }),
+                    })
+            }
+            "finalize" => {
+                let sid = session_id.clone();
+                mode.finalize(content, Some(session_id.clone()))
+                    .await
+                    .map(move |r| GraphResponse {
+                        session_id: sid,
+                        node_id: None,
+                        nodes: None,
+                        aggregated_insight: None,
+                        conclusions: Some(
+                            r.conclusions.into_iter().map(|c| c.conclusion).collect(),
+                        ),
+                        state: None,
+                    })
+            }
+            "state" => {
+                let sid = session_id.clone();
+                mode.state(content, Some(session_id.clone()))
+                    .await
+                    .map(move |r| GraphResponse {
+                        session_id: sid,
+                        node_id: None,
+                        nodes: None,
+                        aggregated_insight: None,
+                        conclusions: None,
+                        state: Some(GraphState {
+                            total_nodes: r.structure.total_nodes,
+                            active_nodes: r.structure.total_nodes - r.structure.pruned_count,
+                            max_depth: r.structure.depth,
+                            pruned_count: r.structure.pruned_count,
+                        }),
+                    })
+            }
+            _ => {
+                return GraphResponse {
+                    session_id,
+                    node_id: None,
+                    nodes: None,
+                    aggregated_insight: Some(format!(
+                        "ERROR: unknown operation: {}",
+                        req.operation
+                    )),
+                    conclusions: None,
+                    state: None,
+                }
+            }
+        };
+
+        result.unwrap_or_else(|e| GraphResponse {
+            session_id,
             node_id: None,
             nodes: None,
-            aggregated_insight: None,
+            aggregated_insight: Some(format!("ERROR: {e}")),
             conclusions: None,
             state: None,
-        }
+        })
     }
 
     #[tool(
@@ -970,11 +1121,85 @@ impl ReasoningServer {
         description = "Detect cognitive biases and logical fallacies in reasoning."
     )]
     async fn reasoning_detect(&self, #[tool(aggr)] req: DetectRequest) -> DetectResponse {
-        let _ = req;
-        DetectResponse {
-            detections: vec![],
-            summary: None,
-            overall_quality: None,
+        let mode = DetectMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let content = req.content.as_deref().unwrap_or("");
+        let detect_type = req.detect_type.as_str();
+
+        match detect_type {
+            "biases" => match mode.biases(content, req.session_id).await {
+                Ok(resp) => DetectResponse {
+                    detections: resp
+                        .biases_detected
+                        .into_iter()
+                        .map(|b| Detection {
+                            detection_type: b.bias,
+                            category: None, // Biases don't have categories
+                            severity: format!("{:?}", b.severity).to_lowercase(),
+                            confidence: resp.overall_assessment.reasoning_quality,
+                            evidence: b.evidence,
+                            explanation: b.impact,
+                            remediation: Some(b.debiasing),
+                        })
+                        .collect(),
+                    summary: Some(format!(
+                        "{} biases detected. Most severe: {}. Debiased version available.",
+                        resp.overall_assessment.bias_count, resp.overall_assessment.most_severe
+                    )),
+                    overall_quality: Some(resp.overall_assessment.reasoning_quality),
+                },
+                Err(e) => DetectResponse {
+                    detections: vec![],
+                    summary: Some(format!("Error detecting biases: {e}")),
+                    overall_quality: None,
+                },
+            },
+            "fallacies" => match mode.fallacies(content, req.session_id).await {
+                Ok(resp) => DetectResponse {
+                    detections: resp
+                        .fallacies_detected
+                        .into_iter()
+                        .map(|f| Detection {
+                            detection_type: f.fallacy,
+                            category: Some(format!("{:?}", f.category).to_lowercase()),
+                            severity: if resp.overall_assessment.argument_strength < 0.4 {
+                                "high".to_string()
+                            } else if resp.overall_assessment.argument_strength < 0.7 {
+                                "medium".to_string()
+                            } else {
+                                "low".to_string()
+                            },
+                            confidence: resp.overall_assessment.argument_strength,
+                            evidence: f.passage,
+                            explanation: f.explanation,
+                            remediation: Some(f.correction),
+                        })
+                        .collect(),
+                    summary: Some(format!(
+                        "{} fallacies detected. Most critical: {}. Argument validity: {:?}",
+                        resp.overall_assessment.fallacy_count,
+                        resp.overall_assessment.most_critical,
+                        resp.argument_structure.validity
+                    )),
+                    overall_quality: Some(resp.overall_assessment.argument_strength),
+                },
+                Err(e) => DetectResponse {
+                    detections: vec![],
+                    summary: Some(format!("Error detecting fallacies: {e}")),
+                    overall_quality: None,
+                },
+            },
+            _ => DetectResponse {
+                detections: vec![],
+                summary: Some(format!(
+                    "Unknown detect type '{}'. Use 'biases' or 'fallacies'.",
+                    detect_type
+                )),
+                overall_quality: None,
+            },
         }
     }
 
@@ -983,14 +1208,164 @@ impl ReasoningServer {
         description = "Decision analysis: weighted/pairwise/topsis scoring or perspectives stakeholder mapping."
     )]
     async fn reasoning_decision(&self, #[tool(aggr)] req: DecisionRequest) -> DecisionResponse {
-        let _ = req;
-        DecisionResponse {
-            recommendation: String::new(),
-            rankings: None,
-            stakeholder_map: None,
-            conflicts: None,
-            alignments: None,
-            rationale: None,
+        let mode = DecisionMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let content = req
+            .question
+            .as_deref()
+            .or(req.topic.as_deref())
+            .or(req.context.as_deref())
+            .unwrap_or("");
+        let decision_type = req.decision_type.as_deref().unwrap_or("weighted");
+
+        match decision_type {
+            "weighted" => match mode.weighted(content, req.session_id).await {
+                Ok(resp) => DecisionResponse {
+                    recommendation: resp
+                        .ranking
+                        .first()
+                        .map(|r| r.option.clone())
+                        .unwrap_or_default(),
+                    rankings: Some(
+                        resp.ranking
+                            .into_iter()
+                            .map(|r| RankedOption {
+                                option: r.option,
+                                score: r.score,
+                                rank: r.rank,
+                            })
+                            .collect(),
+                    ),
+                    stakeholder_map: None,
+                    conflicts: None,
+                    alignments: None,
+                    rationale: Some(resp.sensitivity_notes),
+                },
+                Err(e) => DecisionResponse {
+                    recommendation: format!("ERROR: {e}"),
+                    rankings: None,
+                    stakeholder_map: None,
+                    conflicts: None,
+                    alignments: None,
+                    rationale: None,
+                },
+            },
+            "pairwise" => match mode.pairwise(content, req.session_id).await {
+                Ok(resp) => DecisionResponse {
+                    recommendation: resp
+                        .ranking
+                        .first()
+                        .map(|r| r.option.clone())
+                        .unwrap_or_default(),
+                    rankings: Some(
+                        resp.ranking
+                            .into_iter()
+                            .map(|r| RankedOption {
+                                option: r.option,
+                                score: f64::from(r.wins),
+                                rank: r.rank,
+                            })
+                            .collect(),
+                    ),
+                    stakeholder_map: None,
+                    conflicts: None,
+                    alignments: None,
+                    rationale: None,
+                },
+                Err(e) => DecisionResponse {
+                    recommendation: format!("ERROR: {e}"),
+                    rankings: None,
+                    stakeholder_map: None,
+                    conflicts: None,
+                    alignments: None,
+                    rationale: None,
+                },
+            },
+            "topsis" => match mode.topsis(content, req.session_id).await {
+                Ok(resp) => DecisionResponse {
+                    recommendation: resp
+                        .ranking
+                        .first()
+                        .map(|r| r.option.clone())
+                        .unwrap_or_default(),
+                    rankings: Some(
+                        resp.ranking
+                            .into_iter()
+                            .map(|r| RankedOption {
+                                option: r.option,
+                                score: r.closeness,
+                                rank: r.rank,
+                            })
+                            .collect(),
+                    ),
+                    stakeholder_map: None,
+                    conflicts: None,
+                    alignments: None,
+                    rationale: None,
+                },
+                Err(e) => DecisionResponse {
+                    recommendation: format!("ERROR: {e}"),
+                    rankings: None,
+                    stakeholder_map: None,
+                    conflicts: None,
+                    alignments: None,
+                    rationale: None,
+                },
+            },
+            "perspectives" => match mode.perspectives(content, req.session_id).await {
+                Ok(resp) => DecisionResponse {
+                    recommendation: resp.balanced_recommendation.option.clone(),
+                    rankings: None,
+                    stakeholder_map: Some(StakeholderMap {
+                        key_players: resp
+                            .stakeholders
+                            .iter()
+                            .filter(|s| s.influence_level == crate::modes::InfluenceLevel::High)
+                            .map(|s| s.name.clone())
+                            .collect(),
+                        keep_satisfied: vec![],
+                        keep_informed: resp
+                            .stakeholders
+                            .iter()
+                            .filter(|s| s.influence_level == crate::modes::InfluenceLevel::Medium)
+                            .map(|s| s.name.clone())
+                            .collect(),
+                        minimal_effort: resp
+                            .stakeholders
+                            .iter()
+                            .filter(|s| s.influence_level == crate::modes::InfluenceLevel::Low)
+                            .map(|s| s.name.clone())
+                            .collect(),
+                    }),
+                    conflicts: Some(resp.conflicts.into_iter().map(|c| c.issue).collect()),
+                    alignments: Some(
+                        resp.alignments
+                            .into_iter()
+                            .map(|a| a.common_ground)
+                            .collect(),
+                    ),
+                    rationale: Some(resp.balanced_recommendation.rationale),
+                },
+                Err(e) => DecisionResponse {
+                    recommendation: format!("ERROR: {e}"),
+                    rankings: None,
+                    stakeholder_map: None,
+                    conflicts: None,
+                    alignments: None,
+                    rationale: None,
+                },
+            },
+            _ => DecisionResponse {
+                recommendation: format!("ERROR: unknown type: {decision_type}"),
+                rankings: None,
+                stakeholder_map: None,
+                conflicts: None,
+                alignments: None,
+                rationale: None,
+            },
         }
     }
 

@@ -2,6 +2,8 @@
 
 #![allow(clippy::missing_errors_doc)]
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use crate::error::StorageError;
@@ -74,6 +76,41 @@ impl StorageTrait for SqliteStorage {
         session_id: &str,
     ) -> Result<Vec<StoredCheckpoint>, StorageError> {
         Self::get_checkpoints(self, session_id).await
+    }
+}
+
+/// Blanket implementation for `Arc<SqliteStorage>` to allow sharing storage across threads.
+#[async_trait]
+impl StorageTrait for Arc<SqliteStorage> {
+    async fn get_session(&self, id: &str) -> Result<Option<Session>, StorageError> {
+        self.as_ref().get_session(id).await
+    }
+
+    async fn get_or_create_session(&self, id: Option<String>) -> Result<Session, StorageError> {
+        self.as_ref().get_or_create_session(id).await
+    }
+
+    async fn save_thought(&self, thought: &Thought) -> Result<(), StorageError> {
+        self.as_ref().save_thought(thought).await
+    }
+
+    async fn get_thoughts(&self, session_id: &str) -> Result<Vec<Thought>, StorageError> {
+        self.as_ref().get_thoughts(session_id).await
+    }
+
+    async fn save_checkpoint(&self, checkpoint: &StoredCheckpoint) -> Result<(), StorageError> {
+        self.as_ref().save_checkpoint(checkpoint).await
+    }
+
+    async fn get_checkpoint(&self, id: &str) -> Result<Option<StoredCheckpoint>, StorageError> {
+        self.as_ref().get_checkpoint(id).await
+    }
+
+    async fn get_checkpoints(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<StoredCheckpoint>, StorageError> {
+        self.as_ref().get_checkpoints(session_id).await
     }
 }
 

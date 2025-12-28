@@ -9,13 +9,18 @@
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::uninlined_format_args)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use reqwest::Client;
 
-use super::config::ClientConfig;
-use super::types::{ApiRequest, ApiResponse, ContentBlock, ReasoningResponse, ToolUseResult};
-use crate::error::AnthropicError;
+use super::config::{ClientConfig, DEFAULT_MODEL};
+use super::types::{
+    ApiMessage, ApiRequest, ApiResponse, ContentBlock, ReasoningResponse, ToolUseResult,
+};
+use crate::error::{AnthropicError, ModeError};
+use crate::traits::{AnthropicClientTrait, CompletionConfig, CompletionResponse, Message, Usage};
 
 /// Maximum request size in bytes (100KB).
 pub const MAX_REQUEST_BYTES: usize = 100_000;
@@ -253,6 +258,73 @@ impl AnthropicClient {
         }
 
         Ok(result)
+    }
+}
+
+// ============================================================================
+// AnthropicClientTrait implementations
+// ============================================================================
+
+/// Convert trait types to API types and call the underlying client.
+#[async_trait]
+impl AnthropicClientTrait for AnthropicClient {
+    async fn complete(
+        &self,
+        messages: Vec<Message>,
+        config: CompletionConfig,
+    ) -> Result<CompletionResponse, ModeError> {
+        // Convert messages to API format
+        let api_messages: Vec<ApiMessage> = messages
+            .into_iter()
+            .map(|m| {
+                if m.role == "user" {
+                    ApiMessage::user(&m.content)
+                } else {
+                    ApiMessage::assistant(&m.content)
+                }
+            })
+            .collect();
+
+        // Build API request using the default model
+        let max_tokens = config.max_tokens.unwrap_or(4096);
+        let mut request = ApiRequest::new(DEFAULT_MODEL, max_tokens, api_messages);
+
+        if let Some(temp) = config.temperature {
+            request = request.with_temperature(f64::from(temp));
+        }
+
+        if let Some(system) = config.system_prompt.as_ref() {
+            request = request.with_system(system);
+        }
+
+        // Call the underlying API method (not the trait method)
+        let response = Self::complete(self, request)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: e.to_string(),
+            })?;
+
+        // Convert to trait response
+        Ok(CompletionResponse::new(
+            response.raw_text,
+            Usage::new(
+                response.usage.input_tokens,
+                response.usage.output_tokens,
+            ),
+        ))
+    }
+}
+
+/// Blanket implementation for Arc<AnthropicClient>.
+#[async_trait]
+impl AnthropicClientTrait for Arc<AnthropicClient> {
+    async fn complete(
+        &self,
+        messages: Vec<Message>,
+        config: CompletionConfig,
+    ) -> Result<CompletionResponse, ModeError> {
+        // Explicitly call the trait method on the inner AnthropicClient
+        <AnthropicClient as AnthropicClientTrait>::complete(self.as_ref(), messages, config).await
     }
 }
 
