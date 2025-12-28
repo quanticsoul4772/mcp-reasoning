@@ -667,24 +667,30 @@ fn parse_param_value(value: Option<&serde_json::Value>) -> Result<ParamValue, Mo
 }
 
 fn parse_scope(scope: Option<&String>) -> Result<ConfigScope, ModeError> {
-    let scope = scope.map_or("global", String::as_str);
+    let scope_str = scope.map_or("global", String::as_str);
 
-    if scope == "global" {
-        return Ok(ConfigScope::Global);
-    }
+    let config_scope = if scope_str == "global" {
+        ConfigScope::Global
+    } else if let Some(mode) = scope_str.strip_prefix("mode:") {
+        ConfigScope::Mode(mode.to_string())
+    } else if let Some(tool) = scope_str.strip_prefix("tool:") {
+        ConfigScope::Tool(tool.to_string())
+    } else {
+        return Err(ModeError::InvalidValue {
+            field: "scope".into(),
+            reason: format!("Invalid scope format: {scope_str}"),
+        });
+    };
 
-    if let Some(mode) = scope.strip_prefix("mode:") {
-        return Ok(ConfigScope::Mode(mode.to_string()));
-    }
+    // Validate mode/tool names against known values
+    config_scope
+        .validate()
+        .map_err(|reason| ModeError::InvalidValue {
+            field: "scope".into(),
+            reason,
+        })?;
 
-    if let Some(tool) = scope.strip_prefix("tool:") {
-        return Ok(ConfigScope::Tool(tool.to_string()));
-    }
-
-    Err(ModeError::InvalidValue {
-        field: "scope".into(),
-        reason: format!("Invalid scope: {scope}"),
-    })
+    Ok(config_scope)
 }
 
 fn parse_resource_type(resource: &str) -> Result<ResourceType, ModeError> {
@@ -1098,7 +1104,8 @@ mod tests {
 
     #[test]
     fn test_parse_learning_response_no_pattern() {
-        let response = r#"{"lessons": [], "recommendations": [], "pattern": null, "confidence": 0.5}"#;
+        let response =
+            r#"{"lessons": [], "recommendations": [], "pattern": null, "confidence": 0.5}"#;
         let result = parse_learning_response(response);
         assert!(result.is_ok());
         let learning = result.unwrap();
@@ -1188,7 +1195,8 @@ mod tests {
 
     #[test]
     fn test_parse_action_response_no_op() {
-        let response = r#"{"action_type": "no_op", "reason": "Transient issue", "rationale": "Wait and see"}"#;
+        let response =
+            r#"{"action_type": "no_op", "reason": "Transient issue", "rationale": "Wait and see"}"#;
         let result = parse_action_response(response);
         assert!(result.is_ok());
         let action = result.unwrap();

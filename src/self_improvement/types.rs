@@ -286,6 +286,66 @@ impl std::fmt::Display for ConfigScope {
     }
 }
 
+impl ConfigScope {
+    /// Known valid reasoning mode names.
+    const VALID_MODES: &'static [&'static str] = &[
+        "linear",
+        "tree",
+        "divergent",
+        "reflection",
+        "checkpoint",
+        "auto",
+        "graph",
+        "detect",
+        "decision",
+        "evidence",
+        "timeline",
+        "mcts",
+        "counterfactual",
+    ];
+
+    /// Validate that Mode/Tool variants contain known values.
+    ///
+    /// - `Mode` must be a known reasoning mode (case-insensitive)
+    /// - `Tool` must follow the pattern `reasoning_<mode>`
+    /// - `Global` is always valid
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if valid, `Err(reason)` if invalid.
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            Self::Global => Ok(()),
+            Self::Mode(mode_str) => {
+                let normalized = mode_str.to_lowercase();
+                if Self::VALID_MODES.contains(&normalized.as_str()) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "Unknown mode '{}'. Valid modes: {}",
+                        mode_str,
+                        Self::VALID_MODES.join(", ")
+                    ))
+                }
+            }
+            Self::Tool(tool_str) => {
+                // Tools should follow pattern: reasoning_<mode>
+                match tool_str.strip_prefix("reasoning_") {
+                    Some(mode_part) if Self::VALID_MODES.contains(&mode_part) => Ok(()),
+                    Some(_) => Err(format!(
+                        "Unknown tool '{}'. Tool name should be reasoning_<mode>",
+                        tool_str
+                    )),
+                    None => Err(format!(
+                        "Invalid tool format '{}'. Expected 'reasoning_<mode>'",
+                        tool_str
+                    )),
+                }
+            }
+        }
+    }
+}
+
 // ============================================================================
 // ResourceType (DESIGN.md 14.2) - Future use (R8/R9)
 // ============================================================================
@@ -1397,6 +1457,59 @@ mod tests {
             ConfigScope::Tool("reasoning_linear".into()).to_string(),
             "tool:reasoning_linear"
         );
+    }
+
+    #[test]
+    fn test_config_scope_validate_global() {
+        assert!(ConfigScope::Global.validate().is_ok());
+    }
+
+    #[test]
+    fn test_config_scope_validate_known_modes() {
+        for mode in ConfigScope::VALID_MODES {
+            let scope = ConfigScope::Mode(mode.to_string());
+            assert!(scope.validate().is_ok(), "Mode '{mode}' should be valid");
+        }
+    }
+
+    #[test]
+    fn test_config_scope_validate_mode_case_insensitive() {
+        assert!(ConfigScope::Mode("LINEAR".into()).validate().is_ok());
+        assert!(ConfigScope::Mode("Linear".into()).validate().is_ok());
+        assert!(ConfigScope::Mode("tree".into()).validate().is_ok());
+    }
+
+    #[test]
+    fn test_config_scope_validate_unknown_mode() {
+        let result = ConfigScope::Mode("unknown".into()).validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown mode"));
+    }
+
+    #[test]
+    fn test_config_scope_validate_known_tools() {
+        for mode in ConfigScope::VALID_MODES {
+            let tool_name = format!("reasoning_{mode}");
+            let scope = ConfigScope::Tool(tool_name.clone());
+            assert!(
+                scope.validate().is_ok(),
+                "Tool '{tool_name}' should be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn test_config_scope_validate_invalid_tool_format() {
+        let result = ConfigScope::Tool("invalid_tool".into()).validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid tool format"));
+    }
+
+    #[test]
+    fn test_config_scope_validate_unknown_tool_mode() {
+        let result = ConfigScope::Tool("reasoning_unknown".into()).validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown tool"));
     }
 
     // DiagnosisStatus tests

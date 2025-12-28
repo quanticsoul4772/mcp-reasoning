@@ -740,7 +740,10 @@ mod tests {
         });
         let result = parse_recommendation(&json);
         assert!(result.is_ok());
-        assert!(matches!(result.unwrap().action, RecommendedAction::Continue));
+        assert!(matches!(
+            result.unwrap().action,
+            RecommendedAction::Continue
+        ));
     }
 
     #[test]
@@ -754,7 +757,10 @@ mod tests {
         });
         let result = parse_recommendation(&json);
         assert!(result.is_ok());
-        assert!(matches!(result.unwrap().action, RecommendedAction::Terminate));
+        assert!(matches!(
+            result.unwrap().action,
+            RecommendedAction::Terminate
+        ));
     }
 
     #[test]
@@ -840,7 +846,10 @@ mod tests {
         });
         let result = parse_alternatives(&json);
         assert!(result.is_ok());
-        assert!(matches!(result.unwrap()[0].action, AlternativeAction::Prune));
+        assert!(matches!(
+            result.unwrap()[0].action,
+            AlternativeAction::Prune
+        ));
     }
 
     #[test]
@@ -854,6 +863,9 @@ mod tests {
         });
         let result = parse_recommendation(&json);
         assert!(result.is_ok());
-        assert!(matches!(result.unwrap().action, RecommendedAction::Backtrack));
+        assert!(matches!(
+            result.unwrap().action,
+            RecommendedAction::Backtrack
+        ));
     }
 }

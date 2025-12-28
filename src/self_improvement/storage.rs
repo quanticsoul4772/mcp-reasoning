@@ -260,6 +260,59 @@ impl SelfImprovementStorage {
         Ok(())
     }
 
+    /// Batch insert invocation records.
+    ///
+    /// Uses chunked inserts to respect SQLite's 999 variable limit.
+    /// Returns the total number of records inserted.
+    pub async fn batch_insert_invocations(
+        &self,
+        records: &[InvocationRecord],
+    ) -> Result<u64, StorageError> {
+        // SQLite supports up to 999 variables per statement
+        // Each record uses 6 bind variables: id, tool_name, latency_ms, success, quality_score, created_at
+        const VARS_PER_RECORD: usize = 6;
+        const MAX_VARS: usize = 999;
+        const BATCH_SIZE: usize = MAX_VARS / VARS_PER_RECORD; // 166
+
+        if records.is_empty() {
+            return Ok(0);
+        }
+
+        let mut total_inserted = 0u64;
+
+        for chunk in records.chunks(BATCH_SIZE) {
+            let placeholders: String = chunk
+                .iter()
+                .map(|_| "(?, ?, ?, ?, ?, ?)")
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let sql = format!(
+                "INSERT INTO invocations (id, tool_name, latency_ms, success, quality_score, created_at) VALUES {placeholders}"
+            );
+
+            let mut query = sqlx::query(&sql);
+            for record in chunk {
+                query = query
+                    .bind(&record.id)
+                    .bind(&record.tool_name)
+                    .bind(record.latency_ms)
+                    .bind(record.success)
+                    .bind(record.quality_score)
+                    .bind(record.created_at.to_rfc3339());
+            }
+
+            let result = query
+                .execute(&self.pool)
+                .await
+                .map_err(|e| query_error(format!("Batch insert failed: {e}")))?;
+
+            total_inserted += result.rows_affected();
+        }
+
+        Ok(total_inserted)
+    }
+
     /// Get recent invocations.
     pub async fn get_recent_invocations(
         &self,
@@ -631,6 +684,60 @@ impl SelfImprovementStorage {
         .map_err(|e| query_error(e.to_string()))?;
 
         Ok(())
+    }
+
+    /// Batch insert learning records.
+    ///
+    /// Uses chunked inserts to respect SQLite's 999 variable limit.
+    /// Returns the total number of records inserted.
+    pub async fn batch_insert_learnings(
+        &self,
+        records: &[LearningRecord],
+    ) -> Result<u64, StorageError> {
+        // Each record uses 8 bind variables
+        const VARS_PER_RECORD: usize = 8;
+        const MAX_VARS: usize = 999;
+        const BATCH_SIZE: usize = MAX_VARS / VARS_PER_RECORD; // 124
+
+        if records.is_empty() {
+            return Ok(0);
+        }
+
+        let mut total_inserted = 0u64;
+
+        for chunk in records.chunks(BATCH_SIZE) {
+            let placeholders: String = chunk
+                .iter()
+                .map(|_| "(?, ?, ?, ?, ?, ?, ?, ?)")
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let sql = format!(
+                "INSERT INTO learnings (id, action_id, reward_value, reward_breakdown_json, confidence, lessons_json, recommendations_json, created_at) VALUES {placeholders}"
+            );
+
+            let mut query = sqlx::query(&sql);
+            for record in chunk {
+                query = query
+                    .bind(&record.id)
+                    .bind(&record.action_id)
+                    .bind(record.reward_value)
+                    .bind(&record.reward_breakdown_json)
+                    .bind(record.confidence)
+                    .bind(&record.lessons_json)
+                    .bind(&record.recommendations_json)
+                    .bind(record.created_at.to_rfc3339());
+            }
+
+            let result = query
+                .execute(&self.pool)
+                .await
+                .map_err(|e| query_error(format!("Batch insert failed: {e}")))?;
+
+            total_inserted += result.rows_affected();
+        }
+
+        Ok(total_inserted)
     }
 
     /// Get learning by action ID.
@@ -1419,22 +1526,26 @@ mod tests {
     async fn test_get_actions_by_outcome() {
         let storage = test_storage().await;
 
-        // Setup diagnosis
+        // Setup two diagnoses (each action needs unique diagnosis due to unique constraint)
         let trigger = TriggerMetric::QualityScore {
             observed: 0.6,
             baseline: 0.8,
             minimum: 0.7,
         };
         let suggested_action = SuggestedAction::no_op("wait", Duration::from_secs(60));
-        let diagnosis =
-            DiagnosisRecord::from_diagnosis(&trigger, "Test", None, &suggested_action, None)
+        let diagnosis1 =
+            DiagnosisRecord::from_diagnosis(&trigger, "Test 1", None, &suggested_action, None)
                 .unwrap();
-        storage.insert_diagnosis(&diagnosis).await.unwrap();
+        let diagnosis2 =
+            DiagnosisRecord::from_diagnosis(&trigger, "Test 2", None, &suggested_action, None)
+                .unwrap();
+        storage.insert_diagnosis(&diagnosis1).await.unwrap();
+        storage.insert_diagnosis(&diagnosis2).await.unwrap();
 
-        // Insert multiple actions
+        // Insert actions with different diagnoses (unique constraint on diagnosis_id)
         let action1 = ActionRecord {
             id: uuid::Uuid::new_v4().to_string(),
-            diagnosis_id: diagnosis.id.clone(),
+            diagnosis_id: diagnosis1.id.clone(),
             action_type: "no_op".to_string(),
             action_json: "{}".to_string(),
             outcome: ActionStatus::Completed,
@@ -1447,7 +1558,7 @@ mod tests {
 
         let action2 = ActionRecord {
             id: uuid::Uuid::new_v4().to_string(),
-            diagnosis_id: diagnosis.id.clone(),
+            diagnosis_id: diagnosis2.id.clone(),
             action_type: "no_op".to_string(),
             action_json: "{}".to_string(),
             outcome: ActionStatus::Failed,
@@ -1751,6 +1862,111 @@ mod tests {
     fn test_parse_datetime_with_offset() {
         let result = parse_datetime("2024-06-15T14:30:00+05:30");
         assert!(result.is_ok());
+    }
+
+    // Batch insert tests
+    #[tokio::test]
+    #[serial]
+    async fn test_batch_insert_invocations_empty() {
+        let storage = test_storage().await;
+        let count = storage.batch_insert_invocations(&[]).await.unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_batch_insert_invocations_single() {
+        let storage = test_storage().await;
+        let records = vec![InvocationRecord::new("tool1", 100, true, Some(0.9))];
+        let count = storage.batch_insert_invocations(&records).await.unwrap();
+        assert_eq!(count, 1);
+
+        let retrieved = storage.get_recent_invocations(10).await.unwrap();
+        assert_eq!(retrieved.len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_batch_insert_invocations_multiple() {
+        let storage = test_storage().await;
+        let records: Vec<InvocationRecord> = (0..50)
+            .map(|i| InvocationRecord::new(format!("tool_{}", i % 5), 100 + i, i % 3 != 0, None))
+            .collect();
+
+        let count = storage.batch_insert_invocations(&records).await.unwrap();
+        assert_eq!(count, 50);
+
+        let retrieved = storage.get_recent_invocations(100).await.unwrap();
+        assert_eq!(retrieved.len(), 50);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_batch_insert_invocations_exceeds_batch_size() {
+        let storage = test_storage().await;
+        // Create more than BATCH_SIZE (166) records to test chunking
+        let records: Vec<InvocationRecord> = (0..200)
+            .map(|i| InvocationRecord::new(format!("tool_{}", i % 10), i, true, Some(0.8)))
+            .collect();
+
+        let count = storage.batch_insert_invocations(&records).await.unwrap();
+        assert_eq!(count, 200);
+
+        let retrieved = storage.get_recent_invocations(250).await.unwrap();
+        assert_eq!(retrieved.len(), 200);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_batch_insert_learnings_empty() {
+        let storage = test_storage().await;
+        let count = storage.batch_insert_learnings(&[]).await.unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_batch_insert_learnings_multiple() {
+        let storage = test_storage().await;
+
+        // Setup required foreign key references
+        let trigger = TriggerMetric::ErrorRate {
+            observed: 0.1,
+            baseline: 0.05,
+            threshold: 0.08,
+        };
+        let suggested_action = SuggestedAction::no_op("wait", Duration::from_secs(60));
+        let diagnosis =
+            DiagnosisRecord::from_diagnosis(&trigger, "Test", None, &suggested_action, None)
+                .unwrap();
+        storage.insert_diagnosis(&diagnosis).await.unwrap();
+
+        let action_record = ActionRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            diagnosis_id: diagnosis.id.clone(),
+            action_type: "no_op".to_string(),
+            action_json: "{}".to_string(),
+            outcome: ActionStatus::Completed,
+            pre_metrics_json: "{}".to_string(),
+            post_metrics_json: None,
+            execution_time_ms: 100,
+            error_message: None,
+            created_at: Utc::now(),
+        };
+        let action_id = action_record.id.clone();
+        storage.insert_action(&action_record).await.unwrap();
+
+        // Create learning records
+        let reward = NormalizedReward::new(0.5, RewardBreakdown::new(0.3, 0.5, 0.7), 0.85);
+        let records: Vec<LearningRecord> = (0..10)
+            .map(|_| {
+                LearningRecord::from_reward(&action_id, &reward, Some(vec!["lesson".into()]), None)
+                    .unwrap()
+            })
+            .collect();
+
+        let count = storage.batch_insert_learnings(&records).await.unwrap();
+        assert_eq!(count, 10);
     }
 
     use chrono::Datelike;

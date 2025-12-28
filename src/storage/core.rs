@@ -21,6 +21,14 @@ pub struct SqliteStorage {
 }
 
 impl SqliteStorage {
+    /// Get a clone of the connection pool.
+    ///
+    /// Useful for creating additional storage instances that share the connection pool.
+    #[must_use]
+    pub fn get_pool(&self) -> SqlitePool {
+        self.pool.clone()
+    }
+
     /// Create a new `SQLite` storage instance.
     ///
     /// # Arguments
@@ -89,15 +97,28 @@ impl SqliteStorage {
     }
 
     /// Run database migrations.
+    ///
+    /// Migrations are run in order. Each migration is idempotent (uses IF NOT EXISTS/IF EXISTS).
     pub(crate) async fn run_migrations(&self) -> Result<(), StorageError> {
-        let schema = include_str!("../../migrations/001_initial_schema.sql");
-
-        sqlx::query(schema).execute(&self.pool).await.map_err(|e| {
-            StorageError::MigrationFailed {
+        // Migration 001: Initial schema
+        let schema_001 = include_str!("../../migrations/001_initial_schema.sql");
+        sqlx::query(schema_001)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::MigrationFailed {
                 version: "001".to_string(),
-                message: format!("Failed to run migrations: {e}"),
-            }
-        })?;
+                message: format!("Failed to run migration 001: {e}"),
+            })?;
+
+        // Migration 002: Unique constraint on si_actions.diagnosis_id
+        let schema_002 = include_str!("../../migrations/002_si_actions_unique_diagnosis.sql");
+        sqlx::query(schema_002)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::MigrationFailed {
+                version: "002".to_string(),
+                message: format!("Failed to run migration 002: {e}"),
+            })?;
 
         Ok(())
     }

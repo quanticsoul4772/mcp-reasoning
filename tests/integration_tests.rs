@@ -606,3 +606,217 @@ async fn test_in_memory_storage() {
 
     assert_eq!(thoughts.len(), 1);
 }
+
+// ============================================================================
+// Self-Improvement System Integration Tests
+// ============================================================================
+
+use mcp_reasoning::self_improvement::{
+    ActionRecord, ActionStatus, DiagnosisRecord, InvocationRecord, LearningRecord,
+    NormalizedReward, RewardBreakdown, SelfImprovementStorage, SuggestedAction, TriggerMetric,
+};
+use std::time::Duration;
+
+#[tokio::test]
+#[serial]
+async fn test_self_improvement_full_cycle() {
+    let (storage, _temp_dir) = create_test_storage().await;
+    let si_storage = SelfImprovementStorage::new(storage.get_pool());
+
+    // Phase 1: Record invocations (Monitor phase)
+    let invocation = InvocationRecord::new("reasoning_linear", 150, true, Some(0.85));
+    si_storage
+        .insert_invocation(&invocation)
+        .await
+        .expect("Failed to insert invocation");
+
+    // Verify invocation recorded
+    let invocations = si_storage
+        .get_recent_invocations(10)
+        .await
+        .expect("Failed to get invocations");
+    assert_eq!(invocations.len(), 1);
+    assert_eq!(invocations[0].tool_name, "reasoning_linear");
+
+    // Phase 2: Create diagnosis (Analyzer phase)
+    let trigger = TriggerMetric::ErrorRate {
+        observed: 0.12,
+        baseline: 0.05,
+        threshold: 0.10,
+    };
+    let suggested_action = SuggestedAction::no_op("Monitor situation", Duration::from_secs(300));
+    let diagnosis = DiagnosisRecord::from_diagnosis(
+        &trigger,
+        "Elevated error rate",
+        None,
+        &suggested_action,
+        None,
+    )
+    .expect("Failed to create diagnosis");
+
+    si_storage
+        .insert_diagnosis(&diagnosis)
+        .await
+        .expect("Failed to insert diagnosis");
+
+    // Verify diagnosis recorded
+    let pending = si_storage
+        .get_pending_diagnoses()
+        .await
+        .expect("Failed to get diagnoses");
+    assert_eq!(pending.len(), 1);
+
+    // Phase 3: Execute action (Executor phase)
+    let action = ActionRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        diagnosis_id: diagnosis.id.clone(),
+        action_type: "no_op".to_string(),
+        action_json: serde_json::to_string(&suggested_action).unwrap(),
+        outcome: ActionStatus::Completed,
+        pre_metrics_json: r#"{"error_rate":0.12}"#.to_string(),
+        post_metrics_json: Some(r#"{"error_rate":0.08}"#.to_string()),
+        execution_time_ms: 50,
+        error_message: None,
+        created_at: chrono::Utc::now(),
+    };
+
+    si_storage
+        .insert_action(&action)
+        .await
+        .expect("Failed to insert action");
+
+    // Verify action recorded
+    let retrieved_action = si_storage
+        .get_action(&action.id)
+        .await
+        .expect("Failed to get action");
+    assert!(retrieved_action.is_some());
+    assert_eq!(retrieved_action.unwrap().outcome, ActionStatus::Completed);
+
+    // Phase 4: Record learning (Learner phase)
+    let reward = NormalizedReward::new(0.7, RewardBreakdown::new(0.6, 0.8, 0.7), 0.9);
+    let learning = LearningRecord::from_reward(
+        &action.id,
+        &reward,
+        Some(vec!["Action was effective".to_string()]),
+        Some(vec!["Continue monitoring".to_string()]),
+    )
+    .expect("Failed to create learning");
+
+    si_storage
+        .insert_learning(&learning)
+        .await
+        .expect("Failed to insert learning");
+
+    // Verify learning recorded
+    let retrieved_learning = si_storage
+        .get_learning_by_action(&action.id)
+        .await
+        .expect("Failed to get learning");
+    assert!(retrieved_learning.is_some());
+    assert!((retrieved_learning.unwrap().reward_value - 0.7).abs() < f64::EPSILON);
+}
+
+#[tokio::test]
+#[serial]
+async fn test_batch_invocations_performance() {
+    let (storage, _temp_dir) = create_test_storage().await;
+    let si_storage = SelfImprovementStorage::new(storage.get_pool());
+
+    // Create batch of invocations simulating high traffic
+    let records: Vec<InvocationRecord> = (0..500)
+        .map(|i| {
+            InvocationRecord::new(
+                format!(
+                    "reasoning_{}",
+                    ["linear", "tree", "divergent", "graph"][i % 4]
+                ),
+                50 + (i % 100) as i64,
+                i % 10 != 0, // 90% success rate
+                Some(0.7 + (i % 30) as f64 * 0.01),
+            )
+        })
+        .collect();
+
+    let inserted = si_storage
+        .batch_insert_invocations(&records)
+        .await
+        .expect("Failed to batch insert");
+    assert_eq!(inserted, 500);
+
+    // Verify all records inserted
+    let retrieved = si_storage
+        .get_recent_invocations(1000)
+        .await
+        .expect("Failed to get invocations");
+    assert_eq!(retrieved.len(), 500);
+
+    // Verify tool distribution
+    let linear_count = retrieved
+        .iter()
+        .filter(|r| r.tool_name == "reasoning_linear")
+        .count();
+    assert_eq!(linear_count, 125); // 500 / 4 modes
+}
+
+#[tokio::test]
+#[serial]
+async fn test_unique_diagnosis_action_constraint() {
+    let (storage, _temp_dir) = create_test_storage().await;
+    let si_storage = SelfImprovementStorage::new(storage.get_pool());
+
+    // Create diagnosis
+    let trigger = TriggerMetric::Latency {
+        observed_p95_ms: 500,
+        baseline_ms: 200,
+        threshold_ms: 400,
+    };
+    let suggested_action = SuggestedAction::no_op("Wait", Duration::from_secs(60));
+    let diagnosis =
+        DiagnosisRecord::from_diagnosis(&trigger, "High latency", None, &suggested_action, None)
+            .expect("Failed to create diagnosis");
+
+    si_storage
+        .insert_diagnosis(&diagnosis)
+        .await
+        .expect("Failed to insert diagnosis");
+
+    // Insert first action
+    let action1 = ActionRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        diagnosis_id: diagnosis.id.clone(),
+        action_type: "no_op".to_string(),
+        action_json: "{}".to_string(),
+        outcome: ActionStatus::Proposed,
+        pre_metrics_json: "{}".to_string(),
+        post_metrics_json: None,
+        execution_time_ms: 0,
+        error_message: None,
+        created_at: chrono::Utc::now(),
+    };
+
+    si_storage
+        .insert_action(&action1)
+        .await
+        .expect("First action should succeed");
+
+    // Attempt duplicate action for same diagnosis
+    let action2 = ActionRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        diagnosis_id: diagnosis.id.clone(), // Same diagnosis_id
+        action_type: "no_op".to_string(),
+        action_json: "{}".to_string(),
+        outcome: ActionStatus::Proposed,
+        pre_metrics_json: "{}".to_string(),
+        post_metrics_json: None,
+        execution_time_ms: 0,
+        error_message: None,
+        created_at: chrono::Utc::now(),
+    };
+
+    let result = si_storage.insert_action(&action2).await;
+    assert!(
+        result.is_err(),
+        "Duplicate diagnosis_id should fail due to unique constraint"
+    );
+}

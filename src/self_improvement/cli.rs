@@ -899,7 +899,10 @@ mod tests {
             "abc".to_string(),
         ];
         let result = SelfImproveCommands::parse(&args);
-        assert!(matches!(result, Err(CommandParseError::InvalidValue { .. })));
+        assert!(matches!(
+            result,
+            Err(CommandParseError::InvalidValue { .. })
+        ));
     }
 
     // Parse history unknown flag
@@ -929,7 +932,9 @@ mod tests {
             flag: "--limit".into(),
             value: "abc".into(),
         };
-        assert!(err.to_string().contains("Invalid value 'abc' for '--limit'"));
+        assert!(err
+            .to_string()
+            .contains("Invalid value 'abc' for '--limit'"));
     }
 
     // Test CommandParseError is Error
