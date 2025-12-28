@@ -1,57 +1,57 @@
 # MCP Reasoning Server
 
-An MCP server that adds structured reasoning capabilities to Claude Code and Claude Desktop.
+A high-performance MCP server that adds structured reasoning capabilities to Claude Code and Claude Desktop. Built in Rust with direct Anthropic API integration.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+[![Tests](https://img.shields.io/badge/Tests-1372%20passing-brightgreen.svg)](#development)
 
 ## Features
 
-- **Structured Reasoning** - Linear, tree-based, and graph-based reasoning patterns
+- **15 Structured Reasoning Tools** - Linear, tree-based, graph-based, and advanced reasoning patterns
 - **Decision Analysis** - Weighted scoring, pairwise comparison, TOPSIS, stakeholder mapping
-- **Bias Detection** - Identify cognitive biases and logical fallacies in arguments
-- **Counterfactual Analysis** - What-if scenarios using Pearl's causal framework
-- **Session Persistence** - Save and restore reasoning state across sessions
-- **Built-in Workflows** - Pre-configured presets for common reasoning tasks
-- **Self-Improvement** - 4-phase optimization loop (Monitor → Analyze → Execute → Learn) with circuit breaker safety
+- **Bias & Fallacy Detection** - Identify cognitive biases and logical fallacies with remediation suggestions
+- **Counterfactual Analysis** - What-if scenarios using Pearl's causal framework (Ladder of Causation)
+- **Monte Carlo Tree Search** - UCB1-guided exploration with auto-backtracking
+- **Session Persistence** - Save and restore reasoning state with checkpoints across sessions
+- **Built-in Workflow Presets** - Pre-configured workflows for code review, debugging, and architecture decisions
+- **Self-Improvement System** - 4-phase optimization loop (Monitor → Analyze → Execute → Learn) with circuit breaker safety
+- **Extended Thinking** - Configurable thinking budgets (standard/deep/maximum) for complex reasoning
 
 ## Architecture
 
 ```
-┌─────────────┐     stdin      ┌─────────────────┐
-│ Claude Code │───────────────▶│   MCP Server    │──────▶ Anthropic API
-│ or Desktop  │◀───────────────│     (Rust)      │
-└─────────────┘     stdout     └────────┬────────┘
-                                        │
-                                        ▼
-                                     SQLite
+┌─────────────┐     stdin/stdout    ┌─────────────────┐
+│ Claude Code │◀───────────────────▶│   MCP Server    │──────▶ Anthropic API
+│ or Desktop  │      JSON-RPC       │     (Rust)      │        (Claude)
+└─────────────┘                     └────────┬────────┘
+                                             │
+                    ┌────────────────────────┼────────────────────────┐
+                    │                        │                        │
+                    ▼                        ▼                        ▼
+             ┌──────────┐            ┌──────────────┐         ┌────────────┐
+             │  SQLite  │            │   Metrics    │         │    Self    │
+             │ Storage  │            │  Collector   │         │ Improvement│
+             └──────────┘            └──────────────┘         └────────────┘
 ```
 
-## Installation
+## Quick Start
 
 ### Prerequisites
 
-- Rust 1.75+ (for async traits)
-- Anthropic API key
+- **Rust 1.75+** (for async traits)
+- **Anthropic API key**
 
-### Build from Source
+### Installation
 
 ```bash
+# Clone and build
 git clone https://github.com/quanticsoul4772/mcp-reasoning.git
 cd mcp-reasoning
 cargo build --release
+
+# Binary will be at target/release/mcp-reasoning
 ```
-
-The binary will be at `target/release/mcp-reasoning`.
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | - | Your Anthropic API key |
-| `DATABASE_PATH` | No | `./data/reasoning.db` | SQLite database path |
-| `LOG_LEVEL` | No | `info` | Logging level (error/warn/info/debug/trace) |
-| `REQUEST_TIMEOUT_MS` | No | `30000` | Request timeout in milliseconds |
-| `MAX_RETRIES` | No | `3` | Maximum API retry attempts |
 
 ### Claude Code Integration
 
@@ -79,47 +79,57 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
+## Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | - | Your Anthropic API key |
+| `DATABASE_PATH` | No | `./data/reasoning.db` | SQLite database path |
+| `LOG_LEVEL` | No | `info` | Logging level (error/warn/info/debug/trace) |
+| `REQUEST_TIMEOUT_MS` | No | `30000` | Request timeout in milliseconds |
+| `MAX_RETRIES` | No | `3` | Maximum API retry attempts |
+
 ## The 15 Reasoning Tools
 
 ### Core Reasoning (6 tools)
 
-| Tool | Description |
-|------|-------------|
-| `reasoning_linear` | Sequential step-by-step reasoning with confidence scoring |
-| `reasoning_tree` | Branching exploration (create/focus/list/complete) |
-| `reasoning_divergent` | Multi-perspective generation with force_rebellion mode |
-| `reasoning_reflection` | Meta-cognitive analysis (process/evaluate) |
-| `reasoning_checkpoint` | State management (create/list/restore) |
-| `reasoning_auto` | Automatic mode selection based on content |
+| Tool | Description | Key Operations |
+|------|-------------|----------------|
+| `reasoning_linear` | Sequential step-by-step reasoning with confidence scoring | Single-pass with next step suggestion |
+| `reasoning_tree` | Branching exploration for multi-path analysis | create, focus, list, complete |
+| `reasoning_divergent` | Multi-perspective generation with assumption challenges | force_rebellion mode for contrarian views |
+| `reasoning_reflection` | Meta-cognitive analysis and iterative refinement | process, evaluate |
+| `reasoning_checkpoint` | State management for backtracking | create, list, restore |
+| `reasoning_auto` | Intelligent mode selection based on content | Automatic routing |
 
 ### Graph Reasoning (1 tool)
 
-| Tool | Description |
-|------|-------------|
-| `reasoning_graph` | Graph-of-Thoughts with 8 operations: init, generate, score, aggregate, refine, prune, finalize, state |
+| Tool | Description | Operations |
+|------|-------------|------------|
+| `reasoning_graph` | Graph-of-Thoughts for complex reasoning chains | init, generate, score, aggregate, refine, prune, finalize, state |
 
 ### Analysis Tools (3 tools)
 
-| Tool | Description |
-|------|-------------|
-| `reasoning_detect` | Cognitive bias and logical fallacy detection |
-| `reasoning_decision` | Decision analysis (weighted/pairwise/topsis/perspectives) |
-| `reasoning_evidence` | Evidence evaluation with Bayesian updates |
+| Tool | Description | Types |
+|------|-------------|-------|
+| `reasoning_detect` | Cognitive bias and logical fallacy detection | biases, fallacies |
+| `reasoning_decision` | Multi-criteria decision analysis | weighted, pairwise, topsis, perspectives |
+| `reasoning_evidence` | Evidence evaluation with Bayesian updates | assess, probabilistic |
 
 ### Advanced Reasoning (3 tools)
 
-| Tool | Description |
-|------|-------------|
-| `reasoning_timeline` | Temporal reasoning (create/branch/compare/merge) |
-| `reasoning_mcts` | Monte Carlo Tree Search with UCB1 exploration |
-| `reasoning_counterfactual` | What-if analysis using Pearl's Ladder of Causation |
+| Tool | Description | Operations |
+|------|-------------|------------|
+| `reasoning_timeline` | Temporal reasoning with branching timelines | create, branch, compare, merge |
+| `reasoning_mcts` | Monte Carlo Tree Search with UCB1 exploration | explore, auto_backtrack |
+| `reasoning_counterfactual` | What-if causal analysis (Pearl's Ladder) | association, intervention, counterfactual |
 
 ### Infrastructure (2 tools)
 
-| Tool | Description |
-|------|-------------|
-| `reasoning_preset` | Pre-defined reasoning workflows (list/run) |
-| `reasoning_metrics` | Usage metrics and observability |
+| Tool | Description | Operations |
+|------|-------------|------------|
+| `reasoning_preset` | Pre-defined reasoning workflows | list, run |
+| `reasoning_metrics` | Usage metrics and observability | summary, by_mode, invocations, fallbacks, config |
 
 ## Usage Examples
 
@@ -148,7 +158,7 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-### Divergent Perspectives
+### Divergent Perspectives with Force Rebellion
 
 ```json
 {
@@ -156,20 +166,22 @@ Add to `claude_desktop_config.json`:
   "arguments": {
     "content": "Should we migrate to a new database technology?",
     "num_perspectives": 4,
-    "force_rebellion": true
+    "force_rebellion": true,
+    "challenge_assumptions": true
   }
 }
 ```
 
-### Decision Analysis
+### Decision Analysis (TOPSIS)
 
 ```json
 {
   "tool": "reasoning_decision",
   "arguments": {
-    "type": "weighted",
+    "type": "topsis",
     "question": "Which cloud provider should we choose?",
-    "options": ["AWS", "GCP", "Azure"]
+    "options": ["AWS", "GCP", "Azure"],
+    "context": "Mid-size startup, ML-heavy workloads"
   }
 }
 ```
@@ -183,6 +195,20 @@ Add to `claude_desktop_config.json`:
     "scenario": "Our startup chose Python for the backend",
     "intervention": "What if we had chosen Rust instead?",
     "analysis_depth": "counterfactual"
+  }
+}
+```
+
+### Monte Carlo Tree Search
+
+```json
+{
+  "tool": "reasoning_mcts",
+  "arguments": {
+    "operation": "explore",
+    "content": "Design an optimal caching strategy",
+    "iterations": 50,
+    "simulation_depth": 5
   }
 }
 ```
@@ -212,6 +238,32 @@ Run a preset:
 }
 ```
 
+## Self-Improvement System
+
+The server includes a 4-phase autonomous optimization loop:
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌────────┐
+│ Monitor  │───▶│ Analyzer │───▶│ Executor │───▶│ Learner│
+└──────────┘    └──────────┘    └──────────┘    └────────┘
+     │                               │
+     │         ┌──────────────┐      │
+     └────────▶│Circuit Breaker│◀────┘
+               └──────────────┘
+```
+
+**Phases:**
+1. **Monitor** - Collect metrics and detect anomalies (error rates, latency, quality scores)
+2. **Analyze** - LLM-powered diagnosis and action proposal
+3. **Execute** - Apply approved actions with rollback capability
+4. **Learn** - Extract lessons and update baselines
+
+**Safety Mechanisms:**
+- **Circuit Breaker** - Halts operations after consecutive failures
+- **Allowlist** - Validates actions against permitted types and parameters
+- **Rate Limiting** - Prevents excessive actions per time period
+- **Approval Gate** - Optional human approval before execution
+
 ## Development
 
 ### Build Commands
@@ -220,11 +272,14 @@ Run a preset:
 # Debug build
 cargo build
 
-# Release build
+# Release build (optimized)
 cargo build --release
 
-# Run tests
+# Run all tests (1,372 tests)
 cargo test
+
+# Run specific test module
+cargo test modes::linear
 
 # Check formatting
 cargo fmt --check
@@ -233,35 +288,75 @@ cargo fmt --check
 cargo clippy -- -D warnings
 
 # Run with coverage (requires cargo-llvm-cov)
-cargo llvm-cov --fail-under-lines 100
+cargo llvm-cov
 ```
 
 ### Project Structure
 
 ```
 src/
-├── main.rs              # Entry point
-├── lib.rs               # Module declarations
+├── main.rs              # Entry point (<100 lines)
+├── lib.rs               # Module declarations + lints
 ├── traits.rs            # Core traits (AnthropicClientTrait, StorageTrait)
-├── error/               # Error types
-├── config/              # Configuration
+├── error/               # Unified error types (thiserror)
+├── config/              # Configuration + validation
 ├── anthropic/           # Anthropic API client
+│   ├── client.rs        # HTTP client with retry + backoff
+│   ├── types.rs         # Request/Response types
+│   ├── config.rs        # Model + thinking configuration
+│   └── streaming.rs     # SSE stream handling
 ├── storage/             # SQLite persistence
+│   ├── core.rs          # Connection pool + migrations
+│   ├── session.rs       # Session CRUD
+│   ├── thought.rs       # Thought CRUD
+│   ├── branch.rs        # Branch management
+│   ├── checkpoint.rs    # Checkpoint storage
+│   └── graph.rs         # Graph node/edge storage
 ├── prompts/             # Mode-specific prompts
-├── modes/               # Reasoning mode implementations
-├── server/              # MCP server infrastructure
+├── modes/               # 13 reasoning mode implementations
+│   ├── linear.rs        # Sequential reasoning
+│   ├── tree.rs          # Branching exploration
+│   ├── divergent.rs     # Multi-perspective
+│   ├── graph/           # Graph-of-Thoughts
+│   ├── decision/        # Decision analysis
+│   ├── detect/          # Bias/fallacy detection
+│   ├── evidence/        # Evidence evaluation
+│   ├── timeline/        # Temporal reasoning
+│   ├── mcts/            # Monte Carlo Tree Search
+│   └── counterfactual.rs# Causal analysis
+├── server/              # MCP server infrastructure (rmcp)
 ├── presets/             # Built-in workflow presets
-├── metrics/             # Usage metrics
-└── self_improvement/    # Self-optimization system
+├── metrics/             # Usage metrics collection
+└── self_improvement/    # 4-phase optimization system
+    ├── monitor.rs       # Metric collection
+    ├── analyzer.rs      # LLM diagnosis
+    ├── executor.rs      # Action execution
+    ├── learner.rs       # Lesson extraction
+    ├── circuit_breaker.rs # Safety mechanism
+    └── allowlist.rs     # Action validation
 ```
 
-### Code Quality
+### Code Quality Standards
 
-- Zero unsafe code (`#![forbid(unsafe_code)]`)
-- No panics in production paths
-- 100% test coverage enforced
-- Max 500 lines per file
-- Structured logging via tracing
+- **Zero unsafe code** - `#![forbid(unsafe_code)]` enforced
+- **No panics** - No `.unwrap()` or `.expect()` in production paths
+- **1,372 tests** - Comprehensive unit and integration test coverage
+- **Max 500 lines per file** - Enforced for maintainability
+- **Structured logging** - Via `tracing` crate, logs to stderr
+- **Clippy pedantic** - All pedantic lints enabled as warnings
+
+### Extended Thinking Budgets
+
+| Mode | Thinking Budget | Use Case |
+|------|-----------------|----------|
+| Linear, Tree, Auto, Checkpoint | None (fast) | Quick operations |
+| Divergent, Graph | Standard (4096 tokens) | Creative exploration |
+| Reflection, Decision, Evidence | Deep (8192 tokens) | Analytical work |
+| Counterfactual, MCTS | Maximum (16384 tokens) | Complex reasoning |
+
+## API Reference
+
+For detailed API documentation, see the [Design Document](docs/DESIGN.md).
 
 ## License
 
@@ -270,12 +365,14 @@ MIT
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Ensure all tests pass with `cargo test`
-4. Ensure clippy passes with `cargo clippy -- -D warnings`
-5. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Ensure all tests pass (`cargo test`)
+4. Ensure clippy passes (`cargo clippy -- -D warnings`)
+5. Commit your changes (use conventional commits)
+6. Submit a pull request
 
 ## Acknowledgments
 
 - Built on the [rmcp](https://crates.io/crates/rmcp) MCP SDK
-- Inspired by structured reasoning research and Graph-of-Thoughts
+- Inspired by structured reasoning research, Graph-of-Thoughts, and Monte Carlo Tree Search
+- Uses Pearl's Ladder of Causation for counterfactual analysis
