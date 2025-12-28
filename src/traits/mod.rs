@@ -5,7 +5,7 @@
 //! - [`StorageTrait`]: Database operations abstraction
 //! - [`TimeProvider`]: Time abstraction for testing
 //!
-//! It also re-exports shared types from the [`types`] submodule.
+//! It also re-exports shared types from the `types` submodule.
 //!
 //! # Mocking
 //!
