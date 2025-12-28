@@ -10,6 +10,7 @@ An MCP server that adds structured reasoning capabilities to Claude Code and Cla
 - **Counterfactual Analysis** - What-if scenarios using Pearl's causal framework
 - **Session Persistence** - Save and restore reasoning state across sessions
 - **Built-in Workflows** - Pre-configured presets for common reasoning tasks
+- **Self-Improvement** - 4-phase optimization loop (Monitor → Analyze → Execute → Learn) with circuit breaker safety
 
 ## Architecture
 
