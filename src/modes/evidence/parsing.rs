@@ -50,8 +50,8 @@ pub fn parse_evidence_pieces(json: &serde_json::Value) -> Result<Vec<EvidencePie
                     return Err(ModeError::InvalidValue {
                         field: "source_type".to_string(),
                         reason: format!(
-                            "must be primary, secondary, tertiary, or anecdotal, got {source_type_str}"
-                        ),
+                        "must be primary, secondary, tertiary, or anecdotal, got {source_type_str}"
+                    ),
                     })
                 }
             };
@@ -92,9 +92,11 @@ pub fn parse_credibility(piece: &serde_json::Value) -> Result<Credibility, ModeE
 }
 
 pub fn parse_quality(piece: &serde_json::Value) -> Result<EvidenceQuality, ModeError> {
-    let qual = piece.get("quality").ok_or_else(|| ModeError::MissingField {
-        field: "quality".to_string(),
-    })?;
+    let qual = piece
+        .get("quality")
+        .ok_or_else(|| ModeError::MissingField {
+            field: "quality".to_string(),
+        })?;
 
     let relevance = get_f64(qual, "relevance")?;
     let strength = get_f64(qual, "strength")?;
@@ -249,9 +251,7 @@ pub fn parse_belief_update(json: &serde_json::Value) -> Result<BeliefUpdate, Mod
         _ => {
             return Err(ModeError::InvalidValue {
                 field: "direction".to_string(),
-                reason: format!(
-                    "must be increase, decrease, or unchanged, got {direction_str}"
-                ),
+                reason: format!("must be increase, decrease, or unchanged, got {direction_str}"),
             })
         }
     };
@@ -270,9 +270,7 @@ pub fn parse_belief_update(json: &serde_json::Value) -> Result<BeliefUpdate, Mod
         _ => {
             return Err(ModeError::InvalidValue {
                 field: "magnitude".to_string(),
-                reason: format!(
-                    "must be strong, moderate, or slight, got {magnitude_str}"
-                ),
+                reason: format!("must be strong, moderate, or slight, got {magnitude_str}"),
             })
         }
     };

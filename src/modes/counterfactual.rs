@@ -302,7 +302,10 @@ where
     // Private Helpers
     // ========================================================================
 
-    async fn get_or_create_session(&self, session_id: Option<String>) -> Result<Session, ModeError> {
+    async fn get_or_create_session(
+        &self,
+        session_id: Option<String>,
+    ) -> Result<Session, ModeError> {
         self.storage
             .get_or_create_session(session_id)
             .await
@@ -335,11 +338,9 @@ where
             }
         };
 
-        let vars = q
-            .get("variables")
-            .ok_or_else(|| ModeError::MissingField {
-                field: "variables".to_string(),
-            })?;
+        let vars = q.get("variables").ok_or_else(|| ModeError::MissingField {
+            field: "variables".to_string(),
+        })?;
 
         let variables = CausalVariables {
             cause: Self::get_str(vars, "cause")?,
@@ -409,9 +410,11 @@ where
     }
 
     fn parse_analysis(json: &serde_json::Value) -> Result<CausalAnalysis, ModeError> {
-        let a = json.get("analysis").ok_or_else(|| ModeError::MissingField {
-            field: "analysis".to_string(),
-        })?;
+        let a = json
+            .get("analysis")
+            .ok_or_else(|| ModeError::MissingField {
+                field: "analysis".to_string(),
+            })?;
 
         let assoc = a
             .get("association_level")
@@ -597,9 +600,11 @@ mod tests {
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
 
-        mock_storage
-            .expect_get_or_create_session()
-            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test-session".to_string()))));
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_counterfactual_response();
@@ -612,7 +617,10 @@ mod tests {
 
         let mode = CounterfactualMode::new(mock_storage, mock_client);
         let result = mode
-            .analyze("Would the treatment have helped?", Some("test-session".to_string()))
+            .analyze(
+                "Would the treatment have helped?",
+                Some("test-session".to_string()),
+            )
             .await;
 
         assert!(result.is_ok());
@@ -682,7 +690,9 @@ mod tests {
         let mode = CounterfactualMode::new(mock_storage, mock_client);
         let result = mode.analyze("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "ladder_rung"));
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "ladder_rung")
+        );
     }
 
     #[tokio::test]
@@ -736,7 +746,9 @@ mod tests {
         let mode = CounterfactualMode::new(mock_storage, mock_client);
         let result = mode.analyze("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "confidence"));
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "confidence")
+        );
     }
 
     #[tokio::test]

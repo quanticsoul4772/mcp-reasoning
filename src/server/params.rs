@@ -42,7 +42,9 @@ pub enum TreeOperation {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TreeParams {
     /// Tree operation to perform.
-    #[schemars(description = "create=start exploration, focus=select branch, list=show branches, complete=finish branch")]
+    #[schemars(
+        description = "create=start exploration, focus=select branch, list=show branches, complete=finish branch"
+    )]
     #[serde(default)]
     pub operation: TreeOperation,
 
@@ -118,7 +120,9 @@ pub enum ReflectionOperation {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ReflectionParams {
     /// Reflection operation to perform.
-    #[schemars(description = "process=reflect on content/thought, evaluate=assess session quality")]
+    #[schemars(
+        description = "process=reflect on content/thought, evaluate=assess session quality"
+    )]
     #[serde(default)]
     pub operation: ReflectionOperation,
 
@@ -167,7 +171,9 @@ pub enum CheckpointOperation {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CheckpointParams {
     /// Checkpoint operation to perform.
-    #[schemars(description = "create=save state, list=show checkpoints, restore=return to checkpoint")]
+    #[schemars(
+        description = "create=save state, list=show checkpoints, restore=return to checkpoint"
+    )]
     pub operation: CheckpointOperation,
 
     /// Session ID (required).
@@ -269,7 +275,9 @@ const fn default_prune_threshold() -> f64 {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GraphParams {
     /// Graph operation to perform.
-    #[schemars(description = "init=create graph, generate=expand nodes, score=evaluate, aggregate=merge, refine=improve, prune=remove weak, finalize=extract conclusions, state=show structure")]
+    #[schemars(
+        description = "init=create graph, generate=expand nodes, score=evaluate, aggregate=merge, refine=improve, prune=remove weak, finalize=extract conclusions, state=show structure"
+    )]
     pub operation: GraphOperation,
 
     /// Session ID (required).
@@ -327,7 +335,9 @@ pub enum DetectType {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DetectParams {
     /// Detection type.
-    #[schemars(description = "biases=cognitive bias detection, fallacies=logical fallacy detection")]
+    #[schemars(
+        description = "biases=cognitive bias detection, fallacies=logical fallacy detection"
+    )]
     #[serde(rename = "type")]
     pub detect_type: DetectType,
 
@@ -405,7 +415,9 @@ pub struct StakeholderDef {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DecisionParams {
     /// Decision type.
-    #[schemars(description = "weighted=scored ranking, pairwise=direct comparison, topsis=ideal point, perspectives=stakeholder analysis")]
+    #[schemars(
+        description = "weighted=scored ranking, pairwise=direct comparison, topsis=ideal point, perspectives=stakeholder analysis"
+    )]
     #[serde(rename = "type", default)]
     pub decision_type: DecisionType,
 
@@ -485,7 +497,9 @@ pub struct EvidencePieceDef {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EvidenceParams {
     /// Evidence type.
-    #[schemars(description = "assess=evidence quality evaluation, probabilistic=Bayesian belief update")]
+    #[schemars(
+        description = "assess=evidence quality evaluation, probabilistic=Bayesian belief update"
+    )]
     #[serde(rename = "type", default)]
     pub evidence_type: EvidenceType,
 
@@ -545,7 +559,9 @@ pub enum MergeStrategy {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TimelineParams {
     /// Timeline operation to perform.
-    #[schemars(description = "create=new timeline, branch=fork path, compare=analyze branches, merge=combine branches")]
+    #[schemars(
+        description = "create=new timeline, branch=fork path, compare=analyze branches, merge=combine branches"
+    )]
     pub operation: TimelineOperation,
 
     /// Content for create/branch.
@@ -601,7 +617,9 @@ pub enum MctsOperation {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MctsParams {
     /// MCTS operation to perform.
-    #[schemars(description = "explore=MCTS search with UCB1, auto_backtrack=quality-triggered backtracking")]
+    #[schemars(
+        description = "explore=MCTS search with UCB1, auto_backtrack=quality-triggered backtracking"
+    )]
     #[serde(default)]
     pub operation: MctsOperation,
 
@@ -777,7 +795,9 @@ pub enum MetricsQuery {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MetricsParams {
     /// Metrics query type.
-    #[schemars(description = "summary=all stats, by_mode=mode stats, invocations=call history, fallbacks=fallback usage, config=debug info")]
+    #[schemars(
+        description = "summary=all stats, by_mode=mode stats, invocations=call history, fallbacks=fallback usage, config=debug info"
+    )]
     pub query: MetricsQuery,
 
     /// Mode name (for `by_mode` query).

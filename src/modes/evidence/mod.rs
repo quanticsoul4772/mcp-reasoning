@@ -213,7 +213,10 @@ where
     // Private Helpers
     // ========================================================================
 
-    async fn get_or_create_session(&self, session_id: Option<String>) -> Result<Session, ModeError> {
+    async fn get_or_create_session(
+        &self,
+        session_id: Option<String>,
+    ) -> Result<Session, ModeError> {
         self.storage
             .get_or_create_session(session_id)
             .await
@@ -312,9 +315,11 @@ mod tests {
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
 
-        mock_storage
-            .expect_get_or_create_session()
-            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test-session".to_string()))));
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_assess_response();
@@ -394,7 +399,9 @@ mod tests {
         let mode = EvidenceMode::new(mock_storage, mock_client);
         let result = mode.assess("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "source_type"));
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "source_type")
+        );
     }
 
     #[tokio::test]
@@ -420,7 +427,9 @@ mod tests {
         let mode = EvidenceMode::new(mock_storage, mock_client);
         let result = mode.assess("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "confidence_in_conclusion"));
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "confidence_in_conclusion")
+        );
     }
 
     #[tokio::test]
@@ -449,9 +458,11 @@ mod tests {
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
 
-        mock_storage
-            .expect_get_or_create_session()
-            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test-session".to_string()))));
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_probabilistic_response();
@@ -513,7 +524,9 @@ mod tests {
         let mode = EvidenceMode::new(mock_storage, mock_client);
         let result = mode.probabilistic("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "direction"));
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "direction")
+        );
     }
 
     #[tokio::test]
@@ -542,7 +555,9 @@ mod tests {
         let mode = EvidenceMode::new(mock_storage, mock_client);
         let result = mode.probabilistic("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "magnitude"));
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "magnitude")
+        );
     }
 
     // ========================================================================

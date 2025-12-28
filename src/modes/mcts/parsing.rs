@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use crate::error::ModeError;
 
 use super::types::{
-    AlternativeAction, AlternativeOption, BacktrackDecision, Backpropagation, Expansion,
+    AlternativeAction, AlternativeOption, Backpropagation, BacktrackDecision, Expansion,
     FrontierNode, NewNode, QualityAssessment, QualityTrend, Recommendation, RecommendedAction,
     SearchStatus, SelectedNode,
 };
@@ -104,7 +104,9 @@ pub fn parse_backpropagation(json: &serde_json::Value) -> Result<Backpropagation
 
     let updated_nodes = get_string_array(b, "updated_nodes")?;
 
-    let changes_obj = b.get("value_changes").and_then(serde_json::Value::as_object);
+    let changes_obj = b
+        .get("value_changes")
+        .and_then(serde_json::Value::as_object);
 
     let value_changes = changes_obj.map_or_else(HashMap::new, |obj| {
         obj.iter()

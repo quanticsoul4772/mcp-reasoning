@@ -20,17 +20,15 @@ pub fn parse_analysis(json: &serde_json::Value) -> Result<ReasoningAnalysis, Mod
             field: "analysis".to_string(),
         })?;
 
-    let strengths = parse_string_array(analysis_json, "strengths").ok_or_else(|| {
-        ModeError::MissingField {
+    let strengths =
+        parse_string_array(analysis_json, "strengths").ok_or_else(|| ModeError::MissingField {
             field: "analysis.strengths".to_string(),
-        }
-    })?;
+        })?;
 
-    let weaknesses = parse_string_array(analysis_json, "weaknesses").ok_or_else(|| {
-        ModeError::MissingField {
+    let weaknesses =
+        parse_string_array(analysis_json, "weaknesses").ok_or_else(|| ModeError::MissingField {
             field: "analysis.weaknesses".to_string(),
-        }
-    })?;
+        })?;
 
     let gaps = parse_string_array(analysis_json, "gaps");
 
@@ -91,11 +89,11 @@ pub fn parse_improvements(json: &serde_json::Value) -> Result<Vec<Improvement>, 
 
 /// Parse session assessment from JSON.
 pub fn parse_session_assessment(json: &serde_json::Value) -> Result<SessionAssessment, ModeError> {
-    let assessment_json = json
-        .get("session_assessment")
-        .ok_or_else(|| ModeError::MissingField {
-            field: "session_assessment".to_string(),
-        })?;
+    let assessment_json =
+        json.get("session_assessment")
+            .ok_or_else(|| ModeError::MissingField {
+                field: "session_assessment".to_string(),
+            })?;
 
     let overall_quality = assessment_json
         .get("overall_quality")

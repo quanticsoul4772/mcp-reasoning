@@ -24,7 +24,7 @@ mod parsing;
 mod types;
 
 pub use types::{
-    AlternativeAction, AlternativeOption, BacktrackDecision, BacktrackResponse, Backpropagation,
+    AlternativeAction, AlternativeOption, Backpropagation, BacktrackDecision, BacktrackResponse,
     Expansion, ExploreResponse, FrontierNode, NewNode, QualityAssessment, QualityTrend,
     Recommendation, RecommendedAction, SearchStatus, SelectedNode,
 };
@@ -304,9 +304,11 @@ mod tests {
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
 
-        mock_storage
-            .expect_get_or_create_session()
-            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test-session".to_string()))));
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_explore_response();
@@ -346,9 +348,11 @@ mod tests {
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
 
-        mock_storage
-            .expect_get_or_create_session()
-            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test-session".to_string()))));
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_backtrack_response();

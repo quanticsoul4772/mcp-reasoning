@@ -239,11 +239,7 @@ where
             })?;
 
         Ok(ScoreResponse::new(
-            thought_id,
-            session.id,
-            node_id,
-            scores,
-            assessment,
+            thought_id, session.id, node_id, scores, assessment,
         ))
     }
 
@@ -547,12 +543,7 @@ where
             })?;
 
         Ok(StateResponse::new(
-            thought_id,
-            session.id,
-            structure,
-            frontiers,
-            metrics,
-            next_steps,
+            thought_id, session.id, structure, frontiers, metrics, next_steps,
         ))
     }
 
@@ -560,7 +551,10 @@ where
     // Private Helpers
     // ========================================================================
 
-    async fn get_or_create_session(&self, session_id: Option<String>) -> Result<Session, ModeError> {
+    async fn get_or_create_session(
+        &self,
+        session_id: Option<String>,
+    ) -> Result<Session, ModeError> {
         self.storage
             .get_or_create_session(session_id)
             .await
@@ -687,9 +681,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_init_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.init("Topic", Some("test".to_string())).await;
@@ -710,9 +704,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_generate_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.generate("Parent", None).await;
@@ -733,9 +727,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_score_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.score("Node", None).await;
@@ -756,9 +750,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_aggregate_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.aggregate("Nodes", None).await;
@@ -777,9 +771,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_refine_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.refine("Node", None).await;
@@ -798,9 +792,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_prune_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.prune("Graph", None).await;
@@ -821,9 +815,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_finalize_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.finalize("Graph", None).await;
@@ -842,9 +836,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_state_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.state("Graph", None).await;

@@ -32,6 +32,7 @@ mod tools;
 mod transport;
 mod types;
 
+pub use mcp::McpServer;
 pub use params::{
     AnalysisDepth, AutoParams, CausalModelDef, CausalRelationship, CheckpointOperation,
     CheckpointParams, CounterfactualParams, DecisionCriterion, DecisionParams, DecisionType,
@@ -53,6 +54,5 @@ pub use tools::{
     ReflectionResponse, StakeholderMap, TimelineBranch, TimelineRequest, TimelineResponse,
     TreeRequest, TreeResponse,
 };
-pub use mcp::McpServer;
 pub use transport::{StdioTransport, TransportConfig};
 pub use types::AppState;

@@ -856,7 +856,10 @@ impl ReasoningServer {
 
 #[tool(tool_box)]
 impl ReasoningServer {
-    #[tool(name = "reasoning_linear", description = "Process a thought and get a logical continuation with confidence scoring.")]
+    #[tool(
+        name = "reasoning_linear",
+        description = "Process a thought and get a logical continuation with confidence scoring."
+    )]
     async fn reasoning_linear(&self, #[tool(aggr)] req: LinearRequest) -> LinearResponse {
         // TODO: Implement mode call
         LinearResponse {
@@ -868,7 +871,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_tree", description = "Branching exploration: create=start with 2-4 paths, focus=select branch, list=show branches, complete=mark finished.")]
+    #[tool(
+        name = "reasoning_tree",
+        description = "Branching exploration: create=start with 2-4 paths, focus=select branch, list=show branches, complete=mark finished."
+    )]
     async fn reasoning_tree(&self, #[tool(aggr)] req: TreeRequest) -> TreeResponse {
         TreeResponse {
             session_id: req.session_id.unwrap_or_default(),
@@ -878,7 +884,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_divergent", description = "Generate novel perspectives with assumption challenges and optional force_rebellion mode.")]
+    #[tool(
+        name = "reasoning_divergent",
+        description = "Generate novel perspectives with assumption challenges and optional force_rebellion mode."
+    )]
     async fn reasoning_divergent(&self, #[tool(aggr)] req: DivergentRequest) -> DivergentResponse {
         DivergentResponse {
             thought_id: String::new(),
@@ -889,8 +898,14 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_reflection", description = "Analyze and improve reasoning: process=iterative refinement, evaluate=session assessment.")]
-    async fn reasoning_reflection(&self, #[tool(aggr)] req: ReflectionRequest) -> ReflectionResponse {
+    #[tool(
+        name = "reasoning_reflection",
+        description = "Analyze and improve reasoning: process=iterative refinement, evaluate=session assessment."
+    )]
+    async fn reasoning_reflection(
+        &self,
+        #[tool(aggr)] req: ReflectionRequest,
+    ) -> ReflectionResponse {
         let _ = req;
         ReflectionResponse {
             quality_score: 0.0,
@@ -905,8 +920,14 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_checkpoint", description = "Save and restore reasoning state: create=save, list=show, restore=return to checkpoint.")]
-    async fn reasoning_checkpoint(&self, #[tool(aggr)] req: CheckpointRequest) -> CheckpointResponse {
+    #[tool(
+        name = "reasoning_checkpoint",
+        description = "Save and restore reasoning state: create=save, list=show, restore=return to checkpoint."
+    )]
+    async fn reasoning_checkpoint(
+        &self,
+        #[tool(aggr)] req: CheckpointRequest,
+    ) -> CheckpointResponse {
         CheckpointResponse {
             session_id: req.session_id,
             checkpoint_id: None,
@@ -915,7 +936,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_auto", description = "Analyze content and route to optimal reasoning mode.")]
+    #[tool(
+        name = "reasoning_auto",
+        description = "Analyze content and route to optimal reasoning mode."
+    )]
     async fn reasoning_auto(&self, #[tool(aggr)] req: AutoRequest) -> AutoResponse {
         let _ = req;
         AutoResponse {
@@ -926,7 +950,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_graph", description = "Graph reasoning: init/generate/score/aggregate/refine/prune/finalize/state operations.")]
+    #[tool(
+        name = "reasoning_graph",
+        description = "Graph reasoning: init/generate/score/aggregate/refine/prune/finalize/state operations."
+    )]
     async fn reasoning_graph(&self, #[tool(aggr)] req: GraphRequest) -> GraphResponse {
         GraphResponse {
             session_id: req.session_id,
@@ -938,7 +965,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_detect", description = "Detect cognitive biases and logical fallacies in reasoning.")]
+    #[tool(
+        name = "reasoning_detect",
+        description = "Detect cognitive biases and logical fallacies in reasoning."
+    )]
     async fn reasoning_detect(&self, #[tool(aggr)] req: DetectRequest) -> DetectResponse {
         let _ = req;
         DetectResponse {
@@ -948,7 +978,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_decision", description = "Decision analysis: weighted/pairwise/topsis scoring or perspectives stakeholder mapping.")]
+    #[tool(
+        name = "reasoning_decision",
+        description = "Decision analysis: weighted/pairwise/topsis scoring or perspectives stakeholder mapping."
+    )]
     async fn reasoning_decision(&self, #[tool(aggr)] req: DecisionRequest) -> DecisionResponse {
         let _ = req;
         DecisionResponse {
@@ -961,7 +994,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_evidence", description = "Evaluate evidence: assess=credibility scoring, probabilistic=Bayesian belief update.")]
+    #[tool(
+        name = "reasoning_evidence",
+        description = "Evaluate evidence: assess=credibility scoring, probabilistic=Bayesian belief update."
+    )]
     async fn reasoning_evidence(&self, #[tool(aggr)] req: EvidenceRequest) -> EvidenceResponse {
         let _ = req;
         EvidenceResponse {
@@ -976,7 +1012,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_timeline", description = "Temporal reasoning: create/branch/compare/merge operations.")]
+    #[tool(
+        name = "reasoning_timeline",
+        description = "Temporal reasoning: create/branch/compare/merge operations."
+    )]
     async fn reasoning_timeline(&self, #[tool(aggr)] req: TimelineRequest) -> TimelineResponse {
         let _ = req;
         TimelineResponse {
@@ -988,7 +1027,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_mcts", description = "MCTS: explore=UCB1-guided search, auto_backtrack=quality-triggered backtracking.")]
+    #[tool(
+        name = "reasoning_mcts",
+        description = "MCTS: explore=UCB1-guided search, auto_backtrack=quality-triggered backtracking."
+    )]
     async fn reasoning_mcts(&self, #[tool(aggr)] req: MctsRequest) -> MctsResponse {
         MctsResponse {
             session_id: req.session_id.unwrap_or_default(),
@@ -999,8 +1041,14 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_counterfactual", description = "What-if analysis using Pearl's Ladder of Causation.")]
-    async fn reasoning_counterfactual(&self, #[tool(aggr)] req: CounterfactualRequest) -> CounterfactualResponse {
+    #[tool(
+        name = "reasoning_counterfactual",
+        description = "What-if analysis using Pearl's Ladder of Causation."
+    )]
+    async fn reasoning_counterfactual(
+        &self,
+        #[tool(aggr)] req: CounterfactualRequest,
+    ) -> CounterfactualResponse {
         CounterfactualResponse {
             counterfactual_outcome: String::new(),
             causal_chain: vec![],
@@ -1014,7 +1062,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_preset", description = "Execute pre-defined reasoning workflows: list=show presets, run=execute workflow.")]
+    #[tool(
+        name = "reasoning_preset",
+        description = "Execute pre-defined reasoning workflows: list=show presets, run=execute workflow."
+    )]
     async fn reasoning_preset(&self, #[tool(aggr)] req: PresetRequest) -> PresetResponse {
         let _ = req;
         PresetResponse {
@@ -1024,7 +1075,10 @@ impl ReasoningServer {
         }
     }
 
-    #[tool(name = "reasoning_metrics", description = "Query metrics: summary/by_mode/invocations/fallbacks/config.")]
+    #[tool(
+        name = "reasoning_metrics",
+        description = "Query metrics: summary/by_mode/invocations/fallbacks/config."
+    )]
     async fn reasoning_metrics(&self, #[tool(aggr)] req: MetricsRequest) -> MetricsResponse {
         let _ = req;
         MetricsResponse {

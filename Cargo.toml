@@ -64,6 +64,7 @@ pretty_assertions = "1"
 test-case = "3"
 serial_test = "3"
 wiremock = "0.6"
+tempfile = "3"
 
 # Compile-time assertions
 static_assertions = "1.1"

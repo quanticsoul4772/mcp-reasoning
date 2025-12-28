@@ -50,10 +50,12 @@ pub fn parse_scores(
 
     let mut result = HashMap::new();
     for (option, scores_val) in obj {
-        let scores_obj = scores_val.as_object().ok_or_else(|| ModeError::InvalidValue {
-            field: "scores".to_string(),
-            reason: format!("Expected object for {option}"),
-        })?;
+        let scores_obj = scores_val
+            .as_object()
+            .ok_or_else(|| ModeError::InvalidValue {
+                field: "scores".to_string(),
+                reason: format!("Expected object for {option}"),
+            })?;
 
         let mut option_scores = HashMap::new();
         for (criterion, score) in scores_obj {
@@ -307,7 +309,9 @@ pub fn parse_distances(
     Ok(result)
 }
 
-pub fn parse_relative_closeness(json: &serde_json::Value) -> Result<HashMap<String, f64>, ModeError> {
+pub fn parse_relative_closeness(
+    json: &serde_json::Value,
+) -> Result<HashMap<String, f64>, ModeError> {
     let obj = json
         .get("relative_closeness")
         .and_then(serde_json::Value::as_object)

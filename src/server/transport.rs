@@ -71,13 +71,11 @@ impl StdioTransport {
     ) -> Result<RunningService<RoleServer, ReasoningServer>, AppError> {
         let (stdin, stdout) = stdio();
 
-        serve_server(server, (stdin, stdout))
-            .await
-            .map_err(|e| {
-                AppError::Mcp(crate::error::McpError::Internal {
-                    message: e.to_string(),
-                })
+        serve_server(server, (stdin, stdout)).await.map_err(|e| {
+            AppError::Mcp(crate::error::McpError::Internal {
+                message: e.to_string(),
             })
+        })
     }
 }
 

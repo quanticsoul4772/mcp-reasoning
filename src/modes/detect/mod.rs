@@ -231,7 +231,10 @@ where
     // Private Helpers
     // ========================================================================
 
-    async fn get_or_create_session(&self, session_id: Option<String>) -> Result<Session, ModeError> {
+    async fn get_or_create_session(
+        &self,
+        session_id: Option<String>,
+    ) -> Result<Session, ModeError> {
         self.storage
             .get_or_create_session(session_id)
             .await
@@ -315,9 +318,11 @@ mod tests {
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
 
-        mock_storage
-            .expect_get_or_create_session()
-            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test-session".to_string()))));
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_biases_response();
@@ -511,9 +516,11 @@ mod tests {
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
 
-        mock_storage
-            .expect_get_or_create_session()
-            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test-session".to_string()))));
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_fallacies_response();
@@ -538,7 +545,10 @@ mod tests {
             response.fallacies_detected[0].category,
             FallacyCategory::Informal
         );
-        assert_eq!(response.argument_structure.validity, ArgumentValidity::Invalid);
+        assert_eq!(
+            response.argument_structure.validity,
+            ArgumentValidity::Invalid
+        );
         assert_eq!(response.overall_assessment.fallacy_count, 1);
     }
 
@@ -681,7 +691,10 @@ mod tests {
             },
         );
         assert_eq!(response.thought_id, "t-1");
-        assert_eq!(response.argument_structure.validity, ArgumentValidity::Valid);
+        assert_eq!(
+            response.argument_structure.validity,
+            ArgumentValidity::Valid
+        );
     }
 
     #[test]

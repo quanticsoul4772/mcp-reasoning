@@ -35,9 +35,7 @@ pub fn parse_events(json: &serde_json::Value) -> Result<Vec<TimelineEvent>, Mode
                 _ => {
                     return Err(ModeError::InvalidValue {
                         field: "type".to_string(),
-                        reason: format!(
-                            "must be event, state, or decision_point, got {type_str}"
-                        ),
+                        reason: format!("must be event, state, or decision_point, got {type_str}"),
                     })
                 }
             };
@@ -272,7 +270,9 @@ pub fn parse_robust_strategies(json: &serde_json::Value) -> Result<Vec<RobustStr
         .collect()
 }
 
-pub fn parse_fragile_strategies(json: &serde_json::Value) -> Result<Vec<FragileStrategy>, ModeError> {
+pub fn parse_fragile_strategies(
+    json: &serde_json::Value,
+) -> Result<Vec<FragileStrategy>, ModeError> {
     let arr = json
         .get("fragile_strategies")
         .and_then(serde_json::Value::as_array)

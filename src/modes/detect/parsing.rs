@@ -172,8 +172,8 @@ pub fn parse_fallacies(json: &serde_json::Value) -> Result<Vec<DetectedFallacy>,
                     return Err(ModeError::InvalidValue {
                         field: "category".to_string(),
                         reason: format!(
-                            "must be formal, informal, relevance, or presumption, got {category_str}"
-                        ),
+                        "must be formal, informal, relevance, or presumption, got {category_str}"
+                    ),
                     })
                 }
             };
@@ -252,9 +252,7 @@ pub fn parse_argument_structure(json: &serde_json::Value) -> Result<ArgumentStru
         _ => {
             return Err(ModeError::InvalidValue {
                 field: "validity".to_string(),
-                reason: format!(
-                    "must be valid, invalid, or partially_valid, got {validity_str}"
-                ),
+                reason: format!("must be valid, invalid, or partially_valid, got {validity_str}"),
             })
         }
     };

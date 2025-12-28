@@ -245,10 +245,7 @@ where
         let thought = Thought::new(
             &thought_id,
             &session.id,
-            format!(
-                "Timeline compare: {} differences",
-                key_differences.len()
-            ),
+            format!("Timeline compare: {} differences", key_differences.len()),
             "timeline_compare",
             0.8,
         );
@@ -345,7 +342,10 @@ where
     // Private Helpers
     // ========================================================================
 
-    async fn get_or_create_session(&self, session_id: Option<String>) -> Result<Session, ModeError> {
+    async fn get_or_create_session(
+        &self,
+        session_id: Option<String>,
+    ) -> Result<Session, ModeError> {
         self.storage
             .get_or_create_session(session_id)
             .await
@@ -488,9 +488,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_create_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = TimelineMode::new(mock_storage, mock_client);
         let result = mode.create("Scenario", Some("test".to_string())).await;
@@ -512,9 +512,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_branch_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = TimelineMode::new(mock_storage, mock_client);
         let result = mode.branch("Decision", None).await;
@@ -535,9 +535,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_compare_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = TimelineMode::new(mock_storage, mock_client);
         let result = mode.compare("Branches", None).await;
@@ -558,9 +558,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_merge_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = TimelineMode::new(mock_storage, mock_client);
         let result = mode.merge("Exploration", None).await;

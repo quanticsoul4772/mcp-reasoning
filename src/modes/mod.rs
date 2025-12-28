@@ -61,9 +61,8 @@ pub use decision::{
     TopsisCreterion, TopsisDistances, TopsisRank, TopsisResponse, WeightedResponse,
 };
 pub use detect::{
-    ArgumentStructure, ArgumentValidity, BiasAssessment, BiasSeverity, BiasesResponse,
-    DetectMode, DetectedBias, DetectedFallacy, FallaciesResponse, FallacyAssessment,
-    FallacyCategory,
+    ArgumentStructure, ArgumentValidity, BiasAssessment, BiasSeverity, BiasesResponse, DetectMode,
+    DetectedBias, DetectedFallacy, FallaciesResponse, FallacyAssessment, FallacyCategory,
 };
 pub use divergent::{DivergentMode, DivergentResponse, Perspective};
 pub use evidence::{
@@ -81,7 +80,7 @@ pub use graph::{
 };
 pub use linear::{LinearMode, LinearResponse};
 pub use mcts::{
-    AlternativeAction, AlternativeOption, BacktrackDecision, BacktrackResponse, Backpropagation,
+    AlternativeAction, AlternativeOption, Backpropagation, BacktrackDecision, BacktrackResponse,
     Expansion, ExploreResponse, FrontierNode, MctsMode, NewNode, QualityAssessment, QualityTrend,
     Recommendation, RecommendedAction, SearchStatus, SelectedNode,
 };

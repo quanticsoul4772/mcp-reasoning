@@ -201,11 +201,10 @@ where
                 }
             })?;
 
-        let key_insights = parse_string_array(&json, "key_insights").ok_or_else(|| {
-            ModeError::MissingField {
+        let key_insights =
+            parse_string_array(&json, "key_insights").ok_or_else(|| ModeError::MissingField {
                 field: "key_insights".to_string(),
-            }
-        })?;
+            })?;
 
         let recommendations = parse_string_array(&json, "recommendations").ok_or_else(|| {
             ModeError::MissingField {

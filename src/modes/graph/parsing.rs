@@ -8,7 +8,8 @@ use super::types::{
     ChildNode, ComplexityLevel, ExpansionDirection, FrontierNodeInfo, GraphConclusion,
     GraphMetadata, GraphMetrics, GraphPath, GraphStructure, IntegrationNotes, NodeAssessment,
     NodeCritique, NodeRecommendation, NodeRelationship, NodeScores, NodeType, PruneCandidate,
-    PruneImpact, PruneReason, RefinedNode, RootNode, SessionQuality, SuggestedAction, SynthesisNode,
+    PruneImpact, PruneReason, RefinedNode, RootNode, SessionQuality, SuggestedAction,
+    SynthesisNode,
 };
 
 // ============================================================================
@@ -154,11 +155,9 @@ pub fn parse_suggested_action(s: &str) -> Result<SuggestedAction, ModeError> {
 // ============================================================================
 
 pub fn parse_root(json: &serde_json::Value) -> Result<RootNode, ModeError> {
-    let r = json
-        .get("root")
-        .ok_or_else(|| ModeError::MissingField {
-            field: "root".to_string(),
-        })?;
+    let r = json.get("root").ok_or_else(|| ModeError::MissingField {
+        field: "root".to_string(),
+    })?;
 
     let type_str = get_str(r, "type")?;
     let node_type = parse_node_type(&type_str)?;
@@ -243,11 +242,9 @@ pub fn parse_children(json: &serde_json::Value) -> Result<Vec<ChildNode>, ModeEr
 // ============================================================================
 
 pub fn parse_node_scores(json: &serde_json::Value) -> Result<NodeScores, ModeError> {
-    let s = json
-        .get("scores")
-        .ok_or_else(|| ModeError::MissingField {
-            field: "scores".to_string(),
-        })?;
+    let s = json.get("scores").ok_or_else(|| ModeError::MissingField {
+        field: "scores".to_string(),
+    })?;
 
     Ok(NodeScores {
         relevance: get_f64(s, "relevance")?,
@@ -476,11 +473,9 @@ pub fn parse_frontiers(json: &serde_json::Value) -> Result<Vec<FrontierNodeInfo>
 }
 
 pub fn parse_metrics(json: &serde_json::Value) -> Result<GraphMetrics, ModeError> {
-    let m = json
-        .get("metrics")
-        .ok_or_else(|| ModeError::MissingField {
-            field: "metrics".to_string(),
-        })?;
+    let m = json.get("metrics").ok_or_else(|| ModeError::MissingField {
+        field: "metrics".to_string(),
+    })?;
 
     Ok(GraphMetrics {
         average_score: get_f64(m, "average_score")?,

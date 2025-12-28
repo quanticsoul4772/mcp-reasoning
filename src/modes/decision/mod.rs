@@ -343,7 +343,10 @@ where
     // Private Helpers
     // ========================================================================
 
-    async fn get_or_create_session(&self, session_id: Option<String>) -> Result<Session, ModeError> {
+    async fn get_or_create_session(
+        &self,
+        session_id: Option<String>,
+    ) -> Result<Session, ModeError> {
         self.storage
             .get_or_create_session(session_id)
             .await
@@ -464,12 +467,14 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_weighted_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = DecisionMode::new(mock_storage, mock_client);
-        let result = mode.weighted("Compare options", Some("test".to_string())).await;
+        let result = mode
+            .weighted("Compare options", Some("test".to_string()))
+            .await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -488,9 +493,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_pairwise_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = DecisionMode::new(mock_storage, mock_client);
         let result = mode.pairwise("A vs B", None).await;
@@ -512,9 +517,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_topsis_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = DecisionMode::new(mock_storage, mock_client);
         let result = mode.topsis("Decide", None).await;
@@ -536,9 +541,9 @@ mod tests {
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let resp = mock_perspectives_response();
-        mock_client.expect_complete().returning(move |_, _| {
-            Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200)))
-        });
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = DecisionMode::new(mock_storage, mock_client);
         let result = mode.perspectives("Stakeholder analysis", None).await;
@@ -601,7 +606,9 @@ mod tests {
         let mode = DecisionMode::new(mock_storage, mock_client);
         let result = mode.pairwise("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "preferred"));
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "preferred")
+        );
     }
 
     #[tokio::test]
