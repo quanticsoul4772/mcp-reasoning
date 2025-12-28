@@ -189,13 +189,13 @@ Add to `claude_desktop_config.json`:
 
 ## Built-in Presets
 
-| Preset | Description |
-|--------|-------------|
-| `problem_solving` | Structured problem decomposition workflow |
-| `decision_making` | Multi-criteria decision analysis |
-| `creative_exploration` | Divergent thinking with synthesis |
-| `critical_analysis` | Bias detection and evidence evaluation |
-| `strategic_planning` | Timeline-based strategic reasoning |
+| Preset | Category | Description |
+|--------|----------|-------------|
+| `code-review` | CodeQuality | Analyze code with bias detection and alternative approaches |
+| `debug-analysis` | Analysis | Hypothesis-driven debugging with evidence evaluation |
+| `architecture-decision` | Decision | Multi-factor architectural decision making |
+| `strategic-decision` | Decision | Stakeholder-aware strategic planning with risk assessment |
+| `evidence-conclusion` | Research | Evidence-based research synthesis |
 
 Run a preset:
 
@@ -204,9 +204,9 @@ Run a preset:
   "tool": "reasoning_preset",
   "arguments": {
     "operation": "run",
-    "preset_id": "problem_solving",
+    "preset_id": "code-review",
     "inputs": {
-      "problem": "How to reduce technical debt while maintaining velocity?"
+      "code": "function example() { ... }"
     }
   }
 }
