@@ -59,11 +59,11 @@ async fn test_linear_then_tree_workflow() {
     // Tree branches
     for i in 1..=3 {
         let branch = Thought::new(
-            &format!("tree-branch-{i}"),
+            format!("tree-branch-{i}"),
             &session.id,
-            &format!("Branch {i} exploration"),
+            format!("Branch {i} exploration"),
             "tree",
-            0.75 + (i as f64 * 0.02),
+            f64::from(i).mul_add(0.02, 0.75),
         );
         storage.save_thought(&branch).await.expect("Failed to save");
     }
@@ -96,7 +96,7 @@ async fn test_divergent_perspectives() {
 
     for (perspective, content, confidence) in perspectives {
         let thought = Thought::new(
-            &format!("perspective-{perspective}"),
+            format!("perspective-{perspective}"),
             &session.id,
             content,
             "divergent",
@@ -181,7 +181,7 @@ async fn test_mixed_mode_session() {
 
     for (i, (mode, content, confidence)) in modes_and_content.iter().enumerate() {
         let thought = Thought::new(
-            &format!("thought-{i}"),
+            format!("thought-{i}"),
             &session.id,
             *content,
             *mode,
@@ -221,7 +221,7 @@ async fn test_graph_thoughts() {
 
     for (i, (content, confidence)) in nodes.iter().enumerate() {
         let thought = Thought::new(
-            &format!("node-{i}"),
+            format!("node-{i}"),
             &session.id,
             *content,
             "graph",

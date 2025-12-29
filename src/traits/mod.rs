@@ -234,7 +234,7 @@ mod tests {
     // RealTimeProvider Tests
     #[test]
     fn test_real_time_provider_default() {
-        let provider = RealTimeProvider::default();
+        let provider = RealTimeProvider;
         let now = provider.now();
         let diff = Utc::now() - now;
         assert!(diff.num_seconds() < 1);

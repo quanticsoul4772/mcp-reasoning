@@ -28,7 +28,7 @@ fn anthropic_response(text: &str) -> serde_json::Value {
     })
 }
 
-/// Create test AppState with mocked Anthropic client.
+/// Create test `AppState` with mocked Anthropic client.
 async fn create_test_state(server: &MockServer) -> AppState {
     let storage = SqliteStorage::new_in_memory().await.unwrap();
     let client_config = ClientConfig::default()
@@ -78,7 +78,7 @@ async fn test_linear_mode_success() {
     let mode = LinearMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.process("Test content", None, None).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert_eq!(
@@ -210,7 +210,7 @@ async fn test_tree_mode_create_success() {
     let mut mode = TreeMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.create("Test exploration topic", None, Some(2)).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert!(response.branches.is_some());
@@ -252,7 +252,7 @@ async fn test_divergent_mode_success() {
     let result = mode
         .process("Test topic", None, Some(2), false, false)
         .await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert_eq!(response.perspectives.len(), 2);
@@ -289,7 +289,7 @@ async fn test_auto_mode_selection() {
     let mode = AutoMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.select("Analyze this simple problem", None).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert_eq!(response.selected_mode.to_string(), "linear");
@@ -333,7 +333,7 @@ async fn test_reflection_mode_process() {
     let mode = ReflectionMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.process("Some reasoning to improve", None).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert!(!response.analysis.strengths.is_empty());
@@ -385,7 +385,7 @@ async fn test_detect_mode_biases() {
     let mode = DetectMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.biases("Some biased reasoning to analyze", None).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert!(!response.biases_detected.is_empty());
@@ -437,7 +437,7 @@ async fn test_detect_mode_fallacies() {
     let mode = DetectMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.fallacies("Some argument with fallacies", None).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert!(!response.fallacies_detected.is_empty());
@@ -500,7 +500,7 @@ async fn test_evidence_mode_assess() {
     let mode = EvidenceMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.assess("Evidence to assess for claim X", None).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert!(!response.evidence_pieces.is_empty());
@@ -563,7 +563,7 @@ async fn test_evidence_mode_probabilistic() {
             None,
         )
         .await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert!(response.posterior.probability > response.prior.probability);
@@ -619,7 +619,7 @@ async fn test_decision_mode_weighted() {
     let result = mode
         .weighted("Choose between A and B based on cost and quality", None)
         .await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert_eq!(response.ranking.len(), 2);
@@ -670,7 +670,7 @@ async fn test_graph_mode_init() {
     let mode = GraphMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.init("Test topic for graph exploration", None).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert_eq!(response.root.content, "Main topic");
@@ -720,7 +720,7 @@ async fn test_timeline_mode_create() {
     let mode = TimelineMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.create("Scenario to analyze temporally", None).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert!(!response.events.is_empty());
@@ -779,7 +779,7 @@ async fn test_mcts_mode_explore() {
     let mode = MctsMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.explore("Current search state", None).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert!(!response.expansion.new_nodes.is_empty());
@@ -855,7 +855,7 @@ async fn test_counterfactual_mode_analyze() {
     let mode = CounterfactualMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
     let result = mode.analyze("What if X had been different?", None).await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
     assert_eq!(
@@ -901,7 +901,7 @@ async fn test_checkpoint_mode_create_and_list() {
             "Resume here",
         )
         .await;
-    assert!(result.is_ok(), "Expected success, got: {:?}", result);
+    assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     // List checkpoints
     let list_result = mode.list(&session.id).await;
@@ -923,7 +923,7 @@ mod server_tests {
         TreeRequest,
     };
 
-    /// Helper to create a ReasoningServer for testing.
+    /// Helper to create a `ReasoningServer` for testing.
     async fn create_server(mock_server: &MockServer) -> ReasoningServer {
         let state = create_test_state(mock_server).await;
         ReasoningServer::new(Arc::new(state))

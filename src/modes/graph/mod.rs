@@ -989,7 +989,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_with_node_id_lookup() {
-        use crate::storage::{GraphNodeType, StoredGraphNode};
+        use crate::storage::StoredGraphNode;
 
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
@@ -1062,7 +1062,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_state_from_storage() {
-        use crate::storage::{GraphEdgeType, StoredGraphEdge, StoredGraphNode};
+        use crate::storage::{StoredGraphEdge, StoredGraphNode};
 
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();

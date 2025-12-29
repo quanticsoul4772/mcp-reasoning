@@ -974,7 +974,7 @@ mod tests {
 
     #[test]
     fn test_format_duration_exact_days() {
-        assert_eq!(format_duration(Duration::from_secs(172800)), "2d");
+        assert_eq!(format_duration(Duration::from_secs(172_800)), "2d");
     }
 
     // Output types serialization tests

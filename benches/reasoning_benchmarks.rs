@@ -4,7 +4,7 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
-fn reasoning_benchmarks(_c: &mut Criterion) {
+const fn reasoning_benchmarks(_c: &mut Criterion) {
     // Placeholder - benchmarks will be added as modes are implemented
 }
 

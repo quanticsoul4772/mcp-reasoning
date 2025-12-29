@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn test_extract_json_raw_array() {
-        let json = r#"[1, 2, 3]"#;
+        let json = r"[1, 2, 3]";
         let result = extract_json(json);
         assert!(result.is_ok());
         let value = result.expect("should parse");
@@ -505,8 +505,8 @@ That's all!"#;
 
     #[test]
     fn test_extract_json_empty_code_block() {
-        let json = r#"```json
-```"#;
+        let json = r"```json
+```";
         let result = extract_json(json);
         assert!(result.is_err());
     }

@@ -2,7 +2,7 @@
 //!
 //! Tests the tree mode branching workflow using storage-only operations.
 //! Note: Full workflow tests with wiremock require careful node ID coordination
-//! which is tested in the unit tests for TreeMode.
+//! which is tested in the unit tests for `TreeMode`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

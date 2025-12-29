@@ -856,7 +856,7 @@ mod tests {
 
     #[test]
     fn test_tree_params_defaults() {
-        let json = r#"{}"#;
+        let json = r"{}";
         let params: TreeParams = serde_json::from_str(json).expect("deserialize");
         assert_eq!(params.operation, TreeOperation::Create);
         assert_eq!(params.num_branches, 3);
@@ -888,7 +888,7 @@ mod tests {
 
     #[test]
     fn test_reflection_params_defaults() {
-        let json = r#"{}"#;
+        let json = r"{}";
         let params: ReflectionParams = serde_json::from_str(json).expect("deserialize");
         assert_eq!(params.max_iterations, 3);
         assert!((params.quality_threshold - 0.8).abs() < f64::EPSILON);
@@ -967,7 +967,7 @@ mod tests {
 
     #[test]
     fn test_mcts_params_defaults() {
-        let json = r#"{}"#;
+        let json = r"{}";
         let params: MctsParams = serde_json::from_str(json).expect("deserialize");
         assert_eq!(params.operation, MctsOperation::Explore);
         assert_eq!(params.iterations, 10);

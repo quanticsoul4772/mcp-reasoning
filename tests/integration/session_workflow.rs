@@ -95,11 +95,11 @@ async fn test_multi_thought_workflow() {
     // Save multiple thoughts in sequence
     for i in 1..=5 {
         let thought = Thought::new(
-            &format!("thought-{i}"),
+            format!("thought-{i}"),
             &session.id,
-            &format!("Thought content {i}"),
+            format!("Thought content {i}"),
             "linear",
-            0.80 + (i as f64 * 0.02),
+            f64::from(i).mul_add(0.02, 0.80),
         );
         storage
             .save_thought(&thought)

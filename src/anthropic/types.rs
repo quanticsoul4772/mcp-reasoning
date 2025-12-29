@@ -753,7 +753,7 @@ mod tests {
     #[test]
     fn test_content_part_image_url() {
         let part = ContentPart::image_url("http://example.com/img.png");
-        assert!(part.len() > 0);
+        assert!(!part.is_empty());
     }
 
     #[test]

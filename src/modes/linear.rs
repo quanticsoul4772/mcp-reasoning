@@ -353,7 +353,7 @@ mod tests {
         // Session should be created with generated ID when none provided
         mock_storage
             .expect_get_or_create_session()
-            .withf(|id| id.is_none())
+            .withf(std::option::Option::is_none)
             .returning(|_| Ok(Session::new(generate_session_id())));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
@@ -381,7 +381,7 @@ mod tests {
 
         mock_storage
             .expect_get_or_create_session()
-            .withf(|id| id.as_ref().map(|s| s.as_str()) == Some("existing-session"))
+            .withf(|id| id.as_ref().map(std::string::String::as_str) == Some("existing-session"))
             .returning(|id| Ok(Session::new(id.unwrap())));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 

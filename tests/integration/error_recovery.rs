@@ -4,8 +4,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use mcp_reasoning::config::Config;
-use mcp_reasoning::error::ConfigError;
 use mcp_reasoning::storage::SqliteStorage;
 use mcp_reasoning::traits::{StorageTrait, Thought};
 use serial_test::serial;
@@ -246,9 +244,9 @@ async fn test_concurrent_session_access() {
             let sid = session_id.clone();
             tokio::spawn(async move {
                 let thought = Thought::new(
-                    &format!("concurrent-{i}"),
+                    format!("concurrent-{i}"),
                     &sid,
-                    &format!("Concurrent thought {i}"),
+                    format!("Concurrent thought {i}"),
                     "linear",
                     0.80,
                 );

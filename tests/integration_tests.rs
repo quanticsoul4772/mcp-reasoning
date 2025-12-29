@@ -501,9 +501,9 @@ async fn test_checkpoint_list_for_session() {
     // Create multiple checkpoints
     for i in 1..=3 {
         let checkpoint = mcp_reasoning::storage::StoredCheckpoint::new(
-            &format!("checkpoint-{i}"),
+            format!("checkpoint-{i}"),
             &session.id,
-            &format!("Checkpoint {i}"),
+            format!("Checkpoint {i}"),
             "{}",
         );
         storage
@@ -735,7 +735,7 @@ async fn test_batch_invocations_performance() {
                 ),
                 50 + (i % 100) as i64,
                 i % 10 != 0, // 90% success rate
-                Some(0.7 + (i % 30) as f64 * 0.01),
+                Some(((i % 30) as f64).mul_add(0.01, 0.7)),
             )
         })
         .collect();

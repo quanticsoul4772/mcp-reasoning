@@ -1396,7 +1396,7 @@ mod tests {
         let dur_val = Some(serde_json::json!("2m"));
         let result = parse_param_value(dur_val.as_ref());
         assert!(result.is_ok());
-        assert!(matches!(result.unwrap(), ParamValue::DurationMs(120000)));
+        assert!(matches!(result.unwrap(), ParamValue::DurationMs(120_000)));
     }
 
     #[test]
@@ -1404,7 +1404,7 @@ mod tests {
         let dur_val = Some(serde_json::json!("1h"));
         let result = parse_param_value(dur_val.as_ref());
         assert!(result.is_ok());
-        assert!(matches!(result.unwrap(), ParamValue::DurationMs(3600000)));
+        assert!(matches!(result.unwrap(), ParamValue::DurationMs(3_600_000)));
     }
 
     #[test]

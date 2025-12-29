@@ -2,7 +2,7 @@
 //!
 //! Tests the checkpoint workflow using storage-only operations.
 //! Note: Full workflow tests with wiremock require careful coordination
-//! which is tested in the unit tests for CheckpointMode.
+//! which is tested in the unit tests for `CheckpointMode`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -143,9 +143,9 @@ async fn test_checkpoint_multiple_per_session() {
     // Create multiple checkpoints
     for i in 1..=3 {
         let cp = Thought::new(
-            &format!("checkpoint-{i}"),
+            format!("checkpoint-{i}"),
             &session.id,
-            &format!("Checkpoint at phase {i}"),
+            format!("Checkpoint at phase {i}"),
             "checkpoint",
             1.0,
         );

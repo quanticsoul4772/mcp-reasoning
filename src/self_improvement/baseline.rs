@@ -348,7 +348,7 @@ mod tests {
         let mut baseline = Baseline::with_defaults();
 
         for i in 0..9 {
-            baseline.update(i as f64);
+            baseline.update(f64::from(i));
             assert!(!baseline.is_valid(10));
         }
 
