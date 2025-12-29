@@ -512,14 +512,27 @@ src/
 - **Structured logging** - Via `tracing` crate, logs to stderr
 - **Clippy pedantic** - All pedantic lints enabled as warnings
 
-### Extended Thinking Budgets
+### Extended Thinking
 
-| Mode | Thinking Budget | Use Case |
-|------|-----------------|----------|
-| Linear, Tree, Auto, Checkpoint | None (fast) | Quick operations |
-| Divergent, Graph | Standard (4096 tokens) | Creative exploration |
-| Reflection, Decision, Evidence | Deep (8192 tokens) | Analytical work |
-| Counterfactual, MCTS | Maximum (16384 tokens) | Complex reasoning |
+The server uses Anthropic's extended thinking feature to allocate additional reasoning budget for complex tasks. Thinking budgets are automatically configured per mode based on task complexity.
+
+#### Thinking Budget Tiers
+
+| Tier | Budget | max_tokens | Modes |
+|------|--------|------------|-------|
+| **Fast** | None | 4096 | Linear, Tree, Auto, Checkpoint |
+| **Standard** | 4,096 tokens | 8,192 | Divergent, Graph (8 operations) |
+| **Deep** | 8,192 tokens | 16,384 | Reflection, Decision, Evidence, Detect, Timeline |
+| **Maximum** | 16,384 tokens | 32,768 | Counterfactual, MCTS |
+
+#### API Constraints
+
+The Anthropic API enforces two constraints when extended thinking is enabled:
+
+1. **Temperature**: Must be exactly 1 (the server handles this automatically)
+2. **max_tokens**: Must be greater than the thinking budget
+
+These constraints are handled automatically by the server - you don't need to configure anything.
 
 ## API Reference
 
