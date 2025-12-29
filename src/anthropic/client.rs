@@ -298,19 +298,17 @@ impl AnthropicClientTrait for AnthropicClient {
         }
 
         // Call the underlying API method (not the trait method)
-        let response = Self::complete(self, request)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: e.to_string(),
-            })?;
+        let response =
+            Self::complete(self, request)
+                .await
+                .map_err(|e| ModeError::ApiUnavailable {
+                    message: e.to_string(),
+                })?;
 
         // Convert to trait response
         Ok(CompletionResponse::new(
             response.raw_text,
-            Usage::new(
-                response.usage.input_tokens,
-                response.usage.output_tokens,
-            ),
+            Usage::new(response.usage.input_tokens, response.usage.output_tokens),
         ))
     }
 }

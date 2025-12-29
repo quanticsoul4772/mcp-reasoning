@@ -19,7 +19,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::types::AppState;
-use crate::modes::{DecisionMode, DetectMode, GraphMode};
+use crate::modes::{
+    AutoMode, CheckpointContext, CheckpointMode, DecisionMode, DetectMode, DivergentMode,
+    EvidenceMode, GraphMode, LinearMode, MctsMode, ReflectionMode, TimelineMode, TreeMode,
+};
 
 /// Macro to implement `IntoContents` for response types by serializing to JSON.
 macro_rules! impl_into_contents {
@@ -862,13 +865,28 @@ impl ReasoningServer {
         description = "Process a thought and get a logical continuation with confidence scoring."
     )]
     async fn reasoning_linear(&self, #[tool(aggr)] req: LinearRequest) -> LinearResponse {
-        // TODO: Implement mode call
-        LinearResponse {
-            thought_id: String::new(),
-            session_id: req.session_id.unwrap_or_default(),
-            content: String::new(),
-            confidence: 0.0,
-            next_step: None,
+        let mode = LinearMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let input_session_id = req.session_id.clone().unwrap_or_default();
+
+        match mode.process(&req.content, req.session_id, req.confidence).await {
+            Ok(resp) => LinearResponse {
+                thought_id: resp.thought_id,
+                session_id: resp.session_id,
+                content: resp.content,
+                confidence: resp.confidence,
+                next_step: resp.next_step,
+            },
+            Err(e) => LinearResponse {
+                thought_id: String::new(),
+                session_id: input_session_id,
+                content: format!("ERROR: {e}"),
+                confidence: 0.0,
+                next_step: None,
+            },
         }
     }
 
@@ -877,11 +895,125 @@ impl ReasoningServer {
         description = "Branching exploration: create=start with 2-4 paths, focus=select branch, list=show branches, complete=mark finished."
     )]
     async fn reasoning_tree(&self, #[tool(aggr)] req: TreeRequest) -> TreeResponse {
-        TreeResponse {
-            session_id: req.session_id.unwrap_or_default(),
-            branch_id: None,
-            branches: None,
-            recommendation: None,
+        let mut mode = TreeMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let operation = req.operation.as_deref().unwrap_or("create");
+        let session_id = req.session_id.clone().unwrap_or_default();
+
+        match operation {
+            "create" => {
+                let content = req.content.as_deref().unwrap_or("");
+                match mode.create(content, req.session_id, req.num_branches).await {
+                    Ok(resp) => TreeResponse {
+                        session_id: resp.session_id,
+                        branch_id: resp.branch_id,
+                        branches: resp.branches.map(|bs| {
+                            bs.into_iter()
+                                .map(|b| Branch {
+                                    id: b.id,
+                                    content: b.content,
+                                    score: b.score,
+                                    status: format!("{:?}", b.status).to_lowercase(),
+                                })
+                                .collect()
+                        }),
+                        recommendation: resp.recommendation,
+                    },
+                    Err(e) => TreeResponse {
+                        session_id,
+                        branch_id: None,
+                        branches: None,
+                        recommendation: Some(format!("ERROR: {e}")),
+                    },
+                }
+            }
+            "focus" => {
+                let branch_id = req.branch_id.as_deref().unwrap_or("");
+                match mode.focus(&session_id, branch_id).await {
+                    Ok(resp) => TreeResponse {
+                        session_id: resp.session_id,
+                        branch_id: resp.branch_id,
+                        branches: resp.branches.map(|bs| {
+                            bs.into_iter()
+                                .map(|b| Branch {
+                                    id: b.id,
+                                    content: b.content,
+                                    score: b.score,
+                                    status: format!("{:?}", b.status).to_lowercase(),
+                                })
+                                .collect()
+                        }),
+                        recommendation: resp.recommendation,
+                    },
+                    Err(e) => TreeResponse {
+                        session_id,
+                        branch_id: None,
+                        branches: None,
+                        recommendation: Some(format!("ERROR: {e}")),
+                    },
+                }
+            }
+            "list" => match mode.list(&session_id).await {
+                Ok(resp) => TreeResponse {
+                    session_id: resp.session_id,
+                    branch_id: resp.branch_id,
+                    branches: resp.branches.map(|bs| {
+                        bs.into_iter()
+                            .map(|b| Branch {
+                                id: b.id,
+                                content: b.content,
+                                score: b.score,
+                                status: format!("{:?}", b.status).to_lowercase(),
+                            })
+                            .collect()
+                    }),
+                    recommendation: resp.recommendation,
+                },
+                Err(e) => TreeResponse {
+                    session_id,
+                    branch_id: None,
+                    branches: None,
+                    recommendation: Some(format!("ERROR: {e}")),
+                },
+            },
+            "complete" => {
+                let branch_id = req.branch_id.as_deref().unwrap_or("");
+                let completed = req.completed.unwrap_or(true);
+                match mode.complete(&session_id, branch_id, completed).await {
+                    Ok(resp) => TreeResponse {
+                        session_id: resp.session_id,
+                        branch_id: resp.branch_id,
+                        branches: resp.branches.map(|bs| {
+                            bs.into_iter()
+                                .map(|b| Branch {
+                                    id: b.id,
+                                    content: b.content,
+                                    score: b.score,
+                                    status: format!("{:?}", b.status).to_lowercase(),
+                                })
+                                .collect()
+                        }),
+                        recommendation: resp.recommendation,
+                    },
+                    Err(e) => TreeResponse {
+                        session_id,
+                        branch_id: None,
+                        branches: None,
+                        recommendation: Some(format!("ERROR: {e}")),
+                    },
+                }
+            }
+            _ => TreeResponse {
+                session_id,
+                branch_id: None,
+                branches: None,
+                recommendation: Some(format!(
+                    "Unknown operation: {operation}. Use create/focus/list/complete."
+                )),
+            },
         }
     }
 
@@ -890,12 +1022,47 @@ impl ReasoningServer {
         description = "Generate novel perspectives with assumption challenges and optional force_rebellion mode."
     )]
     async fn reasoning_divergent(&self, #[tool(aggr)] req: DivergentRequest) -> DivergentResponse {
-        DivergentResponse {
-            thought_id: String::new(),
-            session_id: req.session_id.unwrap_or_default(),
-            perspectives: vec![],
-            challenged_assumptions: None,
-            synthesis: None,
+        let mode = DivergentMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let input_session_id = req.session_id.clone().unwrap_or_default();
+        let challenge = req.challenge_assumptions.unwrap_or(false);
+        let rebellion = req.force_rebellion.unwrap_or(false);
+
+        match mode
+            .process(
+                &req.content,
+                req.session_id,
+                req.num_perspectives,
+                challenge,
+                rebellion,
+            )
+            .await
+        {
+            Ok(resp) => DivergentResponse {
+                thought_id: resp.thought_id,
+                session_id: resp.session_id,
+                perspectives: resp
+                    .perspectives
+                    .into_iter()
+                    .map(|p| Perspective {
+                        viewpoint: p.viewpoint,
+                        content: p.content,
+                        novelty_score: p.novelty_score,
+                    })
+                    .collect(),
+                challenged_assumptions: resp.challenged_assumptions,
+                synthesis: resp.synthesis,
+            },
+            Err(e) => DivergentResponse {
+                thought_id: String::new(),
+                session_id: input_session_id,
+                perspectives: vec![],
+                challenged_assumptions: None,
+                synthesis: Some(format!("ERROR: {e}")),
+            },
         }
     }
 
@@ -907,17 +1074,87 @@ impl ReasoningServer {
         &self,
         #[tool(aggr)] req: ReflectionRequest,
     ) -> ReflectionResponse {
-        let _ = req;
-        ReflectionResponse {
-            quality_score: 0.0,
-            thought_id: None,
-            session_id: None,
-            iterations_used: None,
-            strengths: None,
-            weaknesses: None,
-            recommendations: None,
-            refined_content: None,
-            coherence_score: None,
+        let mode = ReflectionMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let operation = req.operation.as_deref().unwrap_or("process");
+
+        match operation {
+            "process" => {
+                let content = req.content.as_deref().unwrap_or("");
+                match mode.process(content, req.session_id).await {
+                    Ok(resp) => ReflectionResponse {
+                        quality_score: resp.confidence_improvement,
+                        thought_id: Some(resp.thought_id),
+                        session_id: Some(resp.session_id),
+                        iterations_used: Some(1),
+                        strengths: Some(resp.analysis.strengths),
+                        weaknesses: Some(resp.analysis.weaknesses),
+                        recommendations: Some(
+                            resp.improvements
+                                .into_iter()
+                                .map(|i| i.suggestion)
+                                .collect(),
+                        ),
+                        refined_content: Some(resp.refined_reasoning),
+                        coherence_score: None,
+                    },
+                    Err(e) => ReflectionResponse {
+                        quality_score: 0.0,
+                        thought_id: None,
+                        session_id: None,
+                        iterations_used: None,
+                        strengths: None,
+                        weaknesses: Some(vec![format!("ERROR: {e}")]),
+                        recommendations: None,
+                        refined_content: None,
+                        coherence_score: None,
+                    },
+                }
+            }
+            "evaluate" => {
+                let session_id = req.session_id.as_deref().unwrap_or("");
+                let summary = req.content.as_deref();
+                match mode.evaluate(session_id, summary).await {
+                    Ok(resp) => ReflectionResponse {
+                        quality_score: resp.session_assessment.overall_quality,
+                        thought_id: Some(resp.thought_id),
+                        session_id: Some(resp.session_id),
+                        iterations_used: None,
+                        strengths: Some(resp.strongest_elements),
+                        weaknesses: Some(resp.areas_for_improvement),
+                        recommendations: Some(resp.recommendations),
+                        refined_content: None,
+                        coherence_score: Some(resp.session_assessment.coherence),
+                    },
+                    Err(e) => ReflectionResponse {
+                        quality_score: 0.0,
+                        thought_id: None,
+                        session_id: None,
+                        iterations_used: None,
+                        strengths: None,
+                        weaknesses: Some(vec![format!("ERROR: {e}")]),
+                        recommendations: None,
+                        refined_content: None,
+                        coherence_score: None,
+                    },
+                }
+            }
+            _ => ReflectionResponse {
+                quality_score: 0.0,
+                thought_id: None,
+                session_id: None,
+                iterations_used: None,
+                strengths: None,
+                weaknesses: Some(vec![format!(
+                    "Unknown operation: {operation}. Use 'process' or 'evaluate'."
+                )]),
+                recommendations: None,
+                refined_content: None,
+                coherence_score: None,
+            },
         }
     }
 
@@ -929,11 +1166,101 @@ impl ReasoningServer {
         &self,
         #[tool(aggr)] req: CheckpointRequest,
     ) -> CheckpointResponse {
-        CheckpointResponse {
-            session_id: req.session_id,
-            checkpoint_id: None,
-            checkpoints: None,
-            restored_state: None,
+        let mode = CheckpointMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        match req.operation.as_str() {
+            "create" => {
+                let name = req.name.as_deref().unwrap_or("checkpoint");
+                let description = req.description.as_deref();
+                // Create a basic context - in a full implementation, this would be
+                // extracted from the session's current state
+                let context = CheckpointContext::new(
+                    vec![],
+                    req.new_direction.as_deref().unwrap_or("current exploration"),
+                    vec![],
+                );
+                let resumption_hint = "Resume from this point";
+
+                match mode
+                    .create(&req.session_id, name, description, context, resumption_hint)
+                    .await
+                {
+                    Ok(resp) => CheckpointResponse {
+                        session_id: resp.session_id,
+                        checkpoint_id: Some(resp.checkpoint_id),
+                        checkpoints: None,
+                        restored_state: None,
+                    },
+                    Err(e) => CheckpointResponse {
+                        session_id: req.session_id,
+                        checkpoint_id: None,
+                        checkpoints: None,
+                        restored_state: Some(serde_json::json!({"error": e.to_string()})),
+                    },
+                }
+            }
+            "list" => match mode.list(&req.session_id).await {
+                Ok(resp) => CheckpointResponse {
+                    session_id: resp.session_id,
+                    checkpoint_id: None,
+                    checkpoints: Some(
+                        resp.checkpoints
+                            .into_iter()
+                            .map(|c| Checkpoint {
+                                id: c.id,
+                                name: c.name,
+                                description: c.description,
+                                created_at: c.created_at,
+                                thought_count: c.thought_count as u32,
+                            })
+                            .collect(),
+                    ),
+                    restored_state: None,
+                },
+                Err(e) => CheckpointResponse {
+                    session_id: req.session_id,
+                    checkpoint_id: None,
+                    checkpoints: None,
+                    restored_state: Some(serde_json::json!({"error": e.to_string()})),
+                },
+            },
+            "restore" => {
+                let checkpoint_id = req.checkpoint_id.as_deref().unwrap_or("");
+                let new_direction = req.new_direction.as_deref();
+                match mode.restore(checkpoint_id, new_direction).await {
+                    Ok(resp) => CheckpointResponse {
+                        session_id: resp.session_id,
+                        checkpoint_id: Some(resp.checkpoint_id),
+                        checkpoints: None,
+                        restored_state: Some(serde_json::json!({
+                            "context": {
+                                "key_findings": resp.restored_state.context.key_findings,
+                                "current_focus": resp.restored_state.context.current_focus,
+                                "open_questions": resp.restored_state.context.open_questions
+                            },
+                            "thought_count": resp.restored_state.thought_count,
+                            "new_direction": resp.new_direction
+                        })),
+                    },
+                    Err(e) => CheckpointResponse {
+                        session_id: req.session_id,
+                        checkpoint_id: None,
+                        checkpoints: None,
+                        restored_state: Some(serde_json::json!({"error": e.to_string()})),
+                    },
+                }
+            }
+            _ => CheckpointResponse {
+                session_id: req.session_id,
+                checkpoint_id: None,
+                checkpoints: None,
+                restored_state: Some(serde_json::json!({
+                    "error": format!("Unknown operation: {}. Use 'create', 'list', or 'restore'.", req.operation)
+                })),
+            },
         }
     }
 
@@ -942,12 +1269,38 @@ impl ReasoningServer {
         description = "Analyze content and route to optimal reasoning mode."
     )]
     async fn reasoning_auto(&self, #[tool(aggr)] req: AutoRequest) -> AutoResponse {
-        let _ = req;
-        AutoResponse {
-            selected_mode: "linear".to_string(),
-            confidence: 0.0,
-            rationale: String::new(),
-            result: serde_json::Value::Null,
+        let mode = AutoMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        match mode.select(&req.content, req.session_id).await {
+            Ok(resp) => {
+                // Build result with mode info and parameters
+                let result = serde_json::json!({
+                    "thought_id": resp.thought_id,
+                    "session_id": resp.session_id,
+                    "characteristics": resp.characteristics,
+                    "suggested_parameters": resp.suggested_parameters,
+                    "alternative": resp.alternative_mode.map(|a| serde_json::json!({
+                        "mode": a.mode.to_string(),
+                        "reason": a.reason
+                    }))
+                });
+
+                AutoResponse {
+                    selected_mode: resp.selected_mode.to_string(),
+                    confidence: 0.85, // Default confidence for successful selection
+                    rationale: resp.reasoning,
+                    result,
+                }
+            }
+            Err(e) => AutoResponse {
+                selected_mode: "linear".to_string(),
+                confidence: 0.0,
+                rationale: format!("ERROR: {e}"),
+                result: serde_json::Value::Null,
+            },
         }
     }
 
@@ -1374,16 +1727,108 @@ impl ReasoningServer {
         description = "Evaluate evidence: assess=credibility scoring, probabilistic=Bayesian belief update."
     )]
     async fn reasoning_evidence(&self, #[tool(aggr)] req: EvidenceRequest) -> EvidenceResponse {
-        let _ = req;
-        EvidenceResponse {
-            overall_credibility: 0.0,
-            evidence_assessments: None,
-            posterior: None,
-            prior: None,
-            likelihood_ratio: None,
-            entropy: None,
-            confidence_interval: None,
-            synthesis: None,
+        let mode = EvidenceMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let evidence_type = req.evidence_type.as_deref().unwrap_or("assess");
+        let content = req
+            .claim
+            .as_deref()
+            .or(req.hypothesis.as_deref())
+            .or(req.context.as_deref())
+            .unwrap_or("");
+
+        match evidence_type {
+            "assess" => match mode.assess(content, req.session_id).await {
+                Ok(resp) => EvidenceResponse {
+                    overall_credibility: resp.confidence_in_conclusion,
+                    evidence_assessments: Some(
+                        resp.evidence_pieces
+                            .into_iter()
+                            .map(|p| EvidenceAssessment {
+                                content: p.summary,
+                                credibility_score: p.credibility.overall,
+                                source_tier: format!("{:?}", p.source_type),
+                                corroborated_by: None,
+                            })
+                            .collect(),
+                    ),
+                    posterior: None,
+                    prior: None,
+                    likelihood_ratio: None,
+                    entropy: None,
+                    confidence_interval: None,
+                    synthesis: Some(format!(
+                        "Strengths: {}. Weaknesses: {}. Gaps: {}",
+                        resp.overall_assessment.key_strengths.join(", "),
+                        resp.overall_assessment.key_weaknesses.join(", "),
+                        resp.overall_assessment.gaps.join(", ")
+                    )),
+                },
+                Err(e) => EvidenceResponse {
+                    overall_credibility: 0.0,
+                    evidence_assessments: None,
+                    posterior: None,
+                    prior: None,
+                    likelihood_ratio: None,
+                    entropy: None,
+                    confidence_interval: None,
+                    synthesis: Some(format!("ERROR: {e}")),
+                },
+            },
+            "probabilistic" => match mode.probabilistic(content, req.session_id).await {
+                Ok(resp) => {
+                    let likelihood_ratio = resp.evidence_analysis.first().map(|a| a.bayes_factor);
+                    EvidenceResponse {
+                        overall_credibility: resp.posterior.probability,
+                        evidence_assessments: Some(
+                            resp.evidence_analysis
+                                .into_iter()
+                                .map(|a| EvidenceAssessment {
+                                    content: a.evidence,
+                                    credibility_score: a.bayes_factor.min(1.0),
+                                    source_tier: "computed".to_string(),
+                                    corroborated_by: None,
+                                })
+                                .collect(),
+                        ),
+                        posterior: Some(resp.posterior.probability),
+                        prior: Some(resp.prior.probability),
+                        likelihood_ratio,
+                        entropy: None,
+                        confidence_interval: None,
+                        synthesis: Some(format!(
+                            "{} ({:?} {:?}). Sensitivity: {}",
+                            resp.belief_update.interpretation,
+                            resp.belief_update.direction,
+                            resp.belief_update.magnitude,
+                            resp.sensitivity
+                        )),
+                    }
+                }
+                Err(e) => EvidenceResponse {
+                    overall_credibility: 0.0,
+                    evidence_assessments: None,
+                    posterior: None,
+                    prior: None,
+                    likelihood_ratio: None,
+                    entropy: None,
+                    confidence_interval: None,
+                    synthesis: Some(format!("ERROR: {e}")),
+                },
+            },
+            _ => EvidenceResponse {
+                overall_credibility: 0.0,
+                evidence_assessments: None,
+                posterior: None,
+                prior: None,
+                likelihood_ratio: None,
+                entropy: None,
+                confidence_interval: None,
+                synthesis: Some(format!("Unknown evidence type: {evidence_type}")),
+            },
         }
     }
 
@@ -1392,13 +1837,129 @@ impl ReasoningServer {
         description = "Temporal reasoning: create/branch/compare/merge operations."
     )]
     async fn reasoning_timeline(&self, #[tool(aggr)] req: TimelineRequest) -> TimelineResponse {
-        let _ = req;
-        TimelineResponse {
-            timeline_id: String::new(),
-            branch_id: None,
-            branches: None,
-            comparison: None,
-            merged_content: None,
+        let mode = TimelineMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let content = req.content.as_deref().unwrap_or("");
+
+        match req.operation.as_str() {
+            "create" => match mode.create(content, req.session_id).await {
+                Ok(resp) => TimelineResponse {
+                    timeline_id: resp.timeline_id,
+                    branch_id: None,
+                    branches: None,
+                    comparison: None,
+                    merged_content: None,
+                },
+                Err(e) => TimelineResponse {
+                    timeline_id: format!("ERROR: {e}"),
+                    branch_id: None,
+                    branches: None,
+                    comparison: None,
+                    merged_content: None,
+                },
+            },
+            "branch" => match mode.branch(content, req.session_id).await {
+                Ok(resp) => TimelineResponse {
+                    timeline_id: String::new(),
+                    branch_id: Some(resp.branch_point.event_id.clone()),
+                    branches: Some(
+                        resp.branches
+                            .into_iter()
+                            .map(|b| TimelineBranch {
+                                id: b.id,
+                                label: Some(b.choice),
+                                content: b
+                                    .events
+                                    .into_iter()
+                                    .map(|e| e.description)
+                                    .collect::<Vec<_>>()
+                                    .join("; "),
+                                created_at: String::new(),
+                            })
+                            .collect(),
+                    ),
+                    comparison: Some(BranchComparison {
+                        divergence_points: vec![resp.branch_point.description],
+                        quality_differences: serde_json::json!({
+                            "most_likely_good_outcome": resp.comparison.most_likely_good_outcome,
+                            "highest_risk": resp.comparison.highest_risk
+                        }),
+                        convergence_opportunities: resp.comparison.key_differences,
+                    }),
+                    merged_content: None,
+                },
+                Err(e) => TimelineResponse {
+                    timeline_id: format!("ERROR: {e}"),
+                    branch_id: None,
+                    branches: None,
+                    comparison: None,
+                    merged_content: None,
+                },
+            },
+            "compare" => match mode.compare(content, req.session_id).await {
+                Ok(resp) => TimelineResponse {
+                    timeline_id: String::new(),
+                    branch_id: None,
+                    branches: None,
+                    comparison: Some(BranchComparison {
+                        divergence_points: vec![resp.divergence_point],
+                        quality_differences: serde_json::json!({
+                            "key_differences": resp.key_differences.iter().map(|d| {
+                                serde_json::json!({
+                                    "dimension": d.dimension,
+                                    "branch_1_value": d.branch_1_value,
+                                    "branch_2_value": d.branch_2_value,
+                                    "significance": d.significance
+                                })
+                            }).collect::<Vec<_>>(),
+                            "recommendation": {
+                                "preferred_branch": resp.recommendation.preferred_branch,
+                                "conditions": resp.recommendation.conditions,
+                                "key_factors": resp.recommendation.key_factors
+                            }
+                        }),
+                        convergence_opportunities: resp.branches_compared,
+                    }),
+                    merged_content: None,
+                },
+                Err(e) => TimelineResponse {
+                    timeline_id: format!("ERROR: {e}"),
+                    branch_id: None,
+                    branches: None,
+                    comparison: None,
+                    merged_content: None,
+                },
+            },
+            "merge" => match mode.merge(content, req.session_id).await {
+                Ok(resp) => TimelineResponse {
+                    timeline_id: String::new(),
+                    branch_id: None,
+                    branches: None,
+                    comparison: None,
+                    merged_content: Some(format!(
+                        "Synthesis: {}. Recommendations: {}",
+                        resp.synthesis,
+                        resp.recommendations.join("; ")
+                    )),
+                },
+                Err(e) => TimelineResponse {
+                    timeline_id: format!("ERROR: {e}"),
+                    branch_id: None,
+                    branches: None,
+                    comparison: None,
+                    merged_content: None,
+                },
+            },
+            _ => TimelineResponse {
+                timeline_id: format!("Unknown operation: {}", req.operation),
+                branch_id: None,
+                branches: None,
+                comparison: None,
+                merged_content: None,
+            },
         }
     }
 
@@ -1407,12 +1968,75 @@ impl ReasoningServer {
         description = "MCTS: explore=UCB1-guided search, auto_backtrack=quality-triggered backtracking."
     )]
     async fn reasoning_mcts(&self, #[tool(aggr)] req: MctsRequest) -> MctsResponse {
-        MctsResponse {
-            session_id: req.session_id.unwrap_or_default(),
-            best_path: None,
-            iterations_completed: None,
-            backtrack_suggestion: None,
-            executed: None,
+        let mode = MctsMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let operation = req.operation.as_deref().unwrap_or("explore");
+        let content = req.content.as_deref().unwrap_or("");
+        let input_session_id = req.session_id.clone().unwrap_or_default();
+
+        match operation {
+            "explore" => match mode.explore(content, req.session_id).await {
+                Ok(resp) => MctsResponse {
+                    session_id: resp.session_id,
+                    best_path: Some(
+                        resp.frontier_evaluation
+                            .into_iter()
+                            .map(|n| MctsNode {
+                                node_id: n.node_id,
+                                content: format!("UCB1: {:.3}", n.ucb1_score),
+                                ucb_score: n.ucb1_score,
+                                visits: n.visits,
+                            })
+                            .collect(),
+                    ),
+                    iterations_completed: Some(resp.search_status.total_simulations),
+                    backtrack_suggestion: None,
+                    executed: None,
+                },
+                Err(_) => MctsResponse {
+                    session_id: input_session_id.clone(),
+                    best_path: None,
+                    iterations_completed: None,
+                    backtrack_suggestion: None,
+                    executed: None,
+                },
+            },
+            "auto_backtrack" => {
+                match mode
+                    .auto_backtrack(content, Some(input_session_id.clone()))
+                    .await
+                {
+                    Ok(resp) => MctsResponse {
+                        session_id: resp.session_id,
+                        best_path: None,
+                        iterations_completed: None,
+                        backtrack_suggestion: Some(BacktrackSuggestion {
+                            should_backtrack: resp.backtrack_decision.should_backtrack,
+                            target_step: resp.backtrack_decision.depth_reduction,
+                            reason: Some(resp.backtrack_decision.reason),
+                            quality_drop: Some(resp.quality_assessment.decline_magnitude),
+                        }),
+                        executed: req.auto_execute,
+                    },
+                    Err(_) => MctsResponse {
+                        session_id: input_session_id.clone(),
+                        best_path: None,
+                        iterations_completed: None,
+                        backtrack_suggestion: None,
+                        executed: None,
+                    },
+                }
+            }
+            _ => MctsResponse {
+                session_id: input_session_id,
+                best_path: None,
+                iterations_completed: None,
+                backtrack_suggestion: None,
+                executed: None,
+            },
         }
     }
 
@@ -1424,16 +2048,61 @@ impl ReasoningServer {
         &self,
         #[tool(aggr)] req: CounterfactualRequest,
     ) -> CounterfactualResponse {
-        CounterfactualResponse {
-            counterfactual_outcome: String::new(),
-            causal_chain: vec![],
-            session_id: req.session_id,
-            original_scenario: req.scenario,
-            intervention_applied: req.intervention,
-            analysis_depth: "counterfactual".to_string(),
-            key_differences: vec![],
-            confidence: 0.0,
-            assumptions: vec![],
+        use crate::modes::CounterfactualMode;
+
+        let mode = CounterfactualMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        // Build content from scenario and intervention
+        let content = format!(
+            "Scenario: {}\nIntervention: {}",
+            req.scenario, req.intervention
+        );
+
+        // Map analysis_depth to ladder rung
+        let depth = req.analysis_depth.as_deref().unwrap_or("counterfactual");
+
+        match mode.analyze(&content, req.session_id.clone()).await {
+            Ok(resp) => {
+                // Build causal chain from edges
+                let causal_chain: Vec<CausalStep> = resp
+                    .causal_model
+                    .edges
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| CausalStep {
+                        step: i as u32 + 1,
+                        cause: e.from.clone(),
+                        effect: e.to.clone(),
+                        probability: resp.analysis.counterfactual_level.confidence,
+                    })
+                    .collect();
+
+                CounterfactualResponse {
+                    counterfactual_outcome: resp.analysis.counterfactual_level.outcome,
+                    causal_chain,
+                    session_id: Some(resp.session_id),
+                    original_scenario: req.scenario,
+                    intervention_applied: req.intervention,
+                    analysis_depth: depth.to_string(),
+                    key_differences: resp.conclusions.caveats,
+                    confidence: resp.analysis.counterfactual_level.confidence,
+                    assumptions: resp.causal_model.confounders,
+                }
+            }
+            Err(e) => CounterfactualResponse {
+                counterfactual_outcome: format!("ERROR: {e}"),
+                causal_chain: vec![],
+                session_id: req.session_id,
+                original_scenario: req.scenario,
+                intervention_applied: req.intervention,
+                analysis_depth: depth.to_string(),
+                key_differences: vec![],
+                confidence: 0.0,
+                assumptions: vec![],
+            },
         }
     }
 
@@ -1442,11 +2111,126 @@ impl ReasoningServer {
         description = "Execute pre-defined reasoning workflows: list=show presets, run=execute workflow."
     )]
     async fn reasoning_preset(&self, #[tool(aggr)] req: PresetRequest) -> PresetResponse {
-        let _ = req;
-        PresetResponse {
-            presets: None,
-            execution_result: None,
-            session_id: None,
+        match req.operation.as_str() {
+            "list" => {
+                // List available presets, optionally filtered by category
+                let presets: Vec<PresetInfo> = self
+                    .state
+                    .presets
+                    .list()
+                    .iter()
+                    .filter(|p| {
+                        req.category
+                            .as_ref()
+                            .is_none_or(|cat| p.category.to_string() == *cat)
+                    })
+                    .map(|p| PresetInfo {
+                        id: p.id.clone(),
+                        name: p.name.clone(),
+                        description: p.description.clone(),
+                        category: p.category.to_string(),
+                        required_inputs: p
+                            .steps
+                            .iter()
+                            .filter_map(|s| s.config.as_ref().map(|_| s.mode.clone()))
+                            .collect(),
+                    })
+                    .collect();
+
+                PresetResponse {
+                    presets: Some(presets),
+                    execution_result: None,
+                    session_id: None,
+                }
+            }
+            "run" => {
+                // Run a specific preset
+                let preset_id = match &req.preset_id {
+                    Some(id) => id.clone(),
+                    None => {
+                        return PresetResponse {
+                            presets: None,
+                            execution_result: Some(PresetExecution {
+                                preset_id: "unknown".to_string(),
+                                steps_completed: 0,
+                                total_steps: 0,
+                                step_results: vec![],
+                                final_output: serde_json::json!({
+                                    "error": "preset_id is required for run operation"
+                                }),
+                            }),
+                            session_id: req.session_id,
+                        };
+                    }
+                };
+
+                let preset = match self.state.presets.get(&preset_id) {
+                    Some(p) => p,
+                    None => {
+                        return PresetResponse {
+                            presets: None,
+                            execution_result: Some(PresetExecution {
+                                preset_id,
+                                steps_completed: 0,
+                                total_steps: 0,
+                                step_results: vec![],
+                                final_output: serde_json::json!({"error": "preset not found"}),
+                            }),
+                            session_id: req.session_id,
+                        };
+                    }
+                };
+
+                // Return preset info - actual execution would require running each step
+                let total_steps = preset.steps.len() as u32;
+                let step_results: Vec<serde_json::Value> = preset
+                    .steps
+                    .iter()
+                    .enumerate()
+                    .map(|(i, step)| {
+                        serde_json::json!({
+                            "step": i,
+                            "mode": step.mode,
+                            "operation": step.operation,
+                            "description": step.description,
+                            "status": "pending"
+                        })
+                    })
+                    .collect();
+
+                PresetResponse {
+                    presets: None,
+                    execution_result: Some(PresetExecution {
+                        preset_id: preset.id.clone(),
+                        steps_completed: 0,
+                        total_steps,
+                        step_results,
+                        final_output: serde_json::json!({
+                            "name": preset.name,
+                            "description": preset.description,
+                            "category": preset.category.to_string(),
+                            "message": "Preset workflow ready for execution"
+                        }),
+                    }),
+                    session_id: req.session_id,
+                }
+            }
+            _ => PresetResponse {
+                presets: None,
+                execution_result: Some(PresetExecution {
+                    preset_id: "unknown".to_string(),
+                    steps_completed: 0,
+                    total_steps: 0,
+                    step_results: vec![],
+                    final_output: serde_json::json!({
+                        "error": format!(
+                            "Unknown operation: {}. Use 'list' or 'run'.",
+                            req.operation
+                        )
+                    }),
+                }),
+                session_id: req.session_id,
+            },
         }
     }
 
@@ -1455,12 +2239,161 @@ impl ReasoningServer {
         description = "Query metrics: summary/by_mode/invocations/fallbacks/config."
     )]
     async fn reasoning_metrics(&self, #[tool(aggr)] req: MetricsRequest) -> MetricsResponse {
-        let _ = req;
-        MetricsResponse {
-            summary: None,
-            mode_stats: None,
-            invocations: None,
-            config: None,
+        match req.query.as_str() {
+            "summary" => {
+                let summary = self.state.metrics.summary();
+                MetricsResponse {
+                    summary: Some(MetricsSummary {
+                        total_calls: summary.total_invocations,
+                        success_rate: summary.overall_success_rate,
+                        avg_latency_ms: summary
+                            .by_mode
+                            .values()
+                            .map(|m| m.avg_latency_ms)
+                            .sum::<f64>()
+                            / summary.by_mode.len().max(1) as f64,
+                        by_mode: serde_json::to_value(&summary.by_mode).unwrap_or_default(),
+                    }),
+                    mode_stats: None,
+                    invocations: None,
+                    config: None,
+                }
+            }
+            "by_mode" => {
+                let mode_name = req.mode_name.clone().unwrap_or_default();
+                let events = self.state.metrics.invocations_by_mode(&mode_name);
+                let total = events.len() as u64;
+                let success_count = events.iter().filter(|e| e.success).count() as u64;
+                let failure_count = total - success_count;
+                let success_rate = if total > 0 {
+                    success_count as f64 / total as f64
+                } else {
+                    0.0
+                };
+
+                // Calculate latency percentiles
+                let mut latencies: Vec<u64> = events.iter().map(|e| e.latency_ms).collect();
+                latencies.sort_unstable();
+                let p50 = latencies.get(latencies.len() / 2).copied().unwrap_or(0) as f64;
+                let p95 = latencies
+                    .get(latencies.len() * 95 / 100)
+                    .copied()
+                    .unwrap_or(0) as f64;
+                let p99 = latencies
+                    .get(latencies.len() * 99 / 100)
+                    .copied()
+                    .unwrap_or(0) as f64;
+
+                MetricsResponse {
+                    summary: None,
+                    mode_stats: Some(ModeStats {
+                        mode_name,
+                        call_count: total,
+                        success_count,
+                        failure_count,
+                        success_rate,
+                        latency_p50_ms: p50,
+                        latency_p95_ms: p95,
+                        latency_p99_ms: p99,
+                    }),
+                    invocations: None,
+                    config: None,
+                }
+            }
+            "invocations" => {
+                let events = req.mode_name.as_ref().map_or_else(
+                    || {
+                        self.state
+                            .metrics
+                            .summary()
+                            .by_mode
+                            .keys()
+                            .flat_map(|mode| self.state.metrics.invocations_by_mode(mode))
+                            .collect()
+                    },
+                    |mode| self.state.metrics.invocations_by_mode(mode),
+                );
+
+                let limit = req.limit.unwrap_or(100).min(1000) as usize;
+                let invocations: Vec<Invocation> = events
+                    .into_iter()
+                    .filter(|e| req.success_only.is_none_or(|s| !s || e.success))
+                    .take(limit)
+                    .enumerate()
+                    .map(|(i, e)| {
+                        #[allow(clippy::cast_possible_wrap)]
+                        let created_at = chrono::DateTime::from_timestamp(e.timestamp as i64, 0)
+                            .map(|dt| dt.to_rfc3339())
+                            .unwrap_or_default();
+                        Invocation {
+                            id: format!("inv-{i}"),
+                            tool_name: e.mode.clone(),
+                            session_id: req.session_id.clone(),
+                            success: e.success,
+                            latency_ms: e.latency_ms,
+                            created_at,
+                        }
+                    })
+                    .collect();
+
+                MetricsResponse {
+                    summary: None,
+                    mode_stats: None,
+                    invocations: Some(invocations),
+                    config: None,
+                }
+            }
+            "fallbacks" => {
+                let fallbacks = self.state.metrics.fallbacks();
+                MetricsResponse {
+                    summary: None,
+                    mode_stats: None,
+                    invocations: Some(
+                        fallbacks
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, f)| {
+                                #[allow(clippy::cast_possible_wrap)]
+                                let created_at =
+                                    chrono::DateTime::from_timestamp(f.timestamp as i64, 0)
+                                        .map(|dt| dt.to_rfc3339())
+                                        .unwrap_or_default();
+                                Invocation {
+                                    id: format!("fallback-{i}"),
+                                    tool_name: format!("{} -> {}", f.from_mode, f.to_mode),
+                                    session_id: Some(f.reason),
+                                    success: false,
+                                    latency_ms: 0,
+                                    created_at,
+                                }
+                            })
+                            .collect(),
+                    ),
+                    config: None,
+                }
+            }
+            "config" => MetricsResponse {
+                summary: None,
+                mode_stats: None,
+                invocations: None,
+                config: Some(serde_json::json!({
+                    "model": self.state.config.model,
+                    "request_timeout_ms": self.state.config.request_timeout_ms,
+                    "max_retries": self.state.config.max_retries,
+                    "log_level": self.state.config.log_level,
+                })),
+            },
+            _ => MetricsResponse {
+                summary: None,
+                mode_stats: None,
+                invocations: None,
+                config: Some(serde_json::json!({
+                    "error": format!(
+                        "Unknown query: {}. Use 'summary', 'by_mode', 'invocations', 'fallbacks', or 'config'.",
+                        req.query
+                    )
+                })),
+            },
         }
     }
 }

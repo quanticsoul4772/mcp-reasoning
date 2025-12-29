@@ -7,6 +7,8 @@ use std::sync::Arc;
 
 use crate::anthropic::AnthropicClient;
 use crate::config::Config;
+use crate::metrics::MetricsCollector;
+use crate::presets::PresetRegistry;
 use crate::storage::SqliteStorage;
 
 /// Shared application state for all tool handlers.
@@ -21,6 +23,10 @@ pub struct AppState {
     pub client: Arc<AnthropicClient>,
     /// Server configuration.
     pub config: Arc<Config>,
+    /// Metrics collector for tracking tool usage.
+    pub metrics: Arc<MetricsCollector>,
+    /// Preset registry for workflow presets.
+    pub presets: Arc<PresetRegistry>,
 }
 
 impl AppState {
@@ -37,6 +43,8 @@ impl AppState {
             storage: Arc::new(storage),
             client: Arc::new(client),
             config: Arc::new(config),
+            metrics: Arc::new(MetricsCollector::new()),
+            presets: Arc::new(PresetRegistry::new()),
         }
     }
 }
@@ -79,6 +87,8 @@ mod tests {
         assert!(Arc::strong_count(&state.storage) >= 1);
         assert!(Arc::strong_count(&state.client) >= 1);
         assert!(Arc::strong_count(&state.config) >= 1);
+        assert!(Arc::strong_count(&state.metrics) >= 1);
+        assert!(Arc::strong_count(&state.presets) >= 1);
     }
 
     #[tokio::test]
@@ -109,6 +119,8 @@ mod tests {
         assert!(Arc::ptr_eq(&state1.storage, &state2.storage));
         assert!(Arc::ptr_eq(&state1.client, &state2.client));
         assert!(Arc::ptr_eq(&state1.config, &state2.config));
+        assert!(Arc::ptr_eq(&state1.metrics, &state2.metrics));
+        assert!(Arc::ptr_eq(&state1.presets, &state2.presets));
     }
 
     #[test]
