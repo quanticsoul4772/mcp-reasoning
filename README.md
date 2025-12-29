@@ -4,8 +4,17 @@ A high-performance MCP server that adds structured reasoning capabilities to Cla
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/Tests-1624%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/Tests-1674%20passing-brightgreen.svg)](#development)
 [![Coverage](https://img.shields.io/badge/Coverage-96%25-brightgreen.svg)](#development)
+
+```mermaid
+pie showData title Codebase Distribution (50K+ lines)
+    "Reasoning Modes" : 35
+    "Storage Layer" : 15
+    "Server/Transport" : 15
+    "Tests (1,674)" : 30
+    "Config/Utils" : 5
+```
 
 ## Features
 
@@ -21,46 +30,60 @@ A high-performance MCP server that adds structured reasoning capabilities to Cla
 
 ## Architecture
 
-```
-                 ╔═══════════════════════════════════╗
-                 ║       MCP REASONING SERVER        ║
-                 ╚═══════════════════════════════════╝
+```mermaid
+flowchart TB
+    subgraph Clients
+        CC["Claude Code"]
+        CD["Claude Desktop"]
+    end
 
-┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
-│  Claude Code    │◄───────►│    Transport    │────────►│  Anthropic API  │
-│  or Desktop     │ JSON-RPC│  (stdio/HTTP)   │         │    (Claude)     │
-└─────────────────┘         └────────┬────────┘         └─────────────────┘
-                                     │
-                                     ▼
-                            ┌─────────────────┐
-                            │   Tool Router   │
-                            │   (15 tools)    │
-                            └────────┬────────┘
-          ┌──────────────────────────┼──────────────────────────┐
-          │                          │                          │
-          ▼                          ▼                          ▼
-┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
-│   CORE REASONING    │  │   ANALYSIS TOOLS    │  │ ADVANCED REASONING  │
-├─────────────────────┤  ├─────────────────────┤  ├─────────────────────┤
-│ Linear   │ Tree     │  │ Detect   │ Decision │  │ Timeline │ MCTS     │
-│ Divergent│ Reflect  │  │ Evidence │          │  │ Counter- │ Presets  │
-│ Auto     │ Chkpoint │  │          │          │  │ factual  │ Metrics  │
-│ Graph-of-Thoughts   │  │                     │  │                     │
-└──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
-           │                        │                        │
-           └────────────────────────┼────────────────────────┘
-                                    │
-           ┌────────────────────────┴────────────────────────┐
-           │                                                 │
-           ▼                                                 ▼
-┌─────────────────────────┐              ┌─────────────────────────────────┐
-│      SQLite Storage     │◄── metrics ─►│    SELF-IMPROVEMENT SYSTEM      │
-├─────────────────────────┤              ├─────────────────────────────────┤
-│ Sessions  │ Thoughts    │              │ Monitor → Analyze → Execute →   │
-│ Branches  │ Graphs      │              │    │        Learn    │          │
-│ Checkpoints             │              │    └─► SAFETY ◄──────┘          │
-│                         │              │   (Circuit Breaker, Allowlist)  │
-└─────────────────────────┘              └─────────────────────────────────┘
+    subgraph Server["MCP Reasoning Server"]
+        Transport["Transport<br/>stdio | HTTP"]
+        Router["Tool Router<br/>15 tools"]
+
+        subgraph Core["Core Reasoning"]
+            C1["Linear"]
+            C2["Tree"]
+            C3["Divergent"]
+            C4["Reflection"]
+            C5["Checkpoint"]
+            C6["Auto"]
+        end
+
+        subgraph Analysis["Analysis Tools"]
+            A1["Detect"]
+            A2["Decision"]
+            A3["Evidence"]
+        end
+
+        subgraph Advanced["Advanced Reasoning"]
+            D1["Graph-of-Thoughts"]
+            D2["Timeline"]
+            D3["MCTS"]
+            D4["Counterfactual"]
+        end
+
+        subgraph Infra["Infrastructure"]
+            I1["Preset"]
+            I2["Metrics"]
+        end
+    end
+
+    subgraph External
+        API["Anthropic API"]
+        DB[("SQLite Storage")]
+    end
+
+    subgraph Safety["Self-Improvement System"]
+        SI["Monitor - Analyze - Execute - Learn"]
+    end
+
+    CC & CD <-->|"JSON-RPC"| Transport
+    Transport --> Router
+    Router --> Core & Analysis & Advanced & Infra
+    Core & Analysis & Advanced --> API
+    Core & Analysis & Advanced & Infra --> DB
+    DB <--> SI
 ```
 
 ## Quick Start
@@ -117,6 +140,44 @@ Add to `claude_desktop_config.json`:
 | `REQUEST_TIMEOUT_MS` | No | `30000` | Request timeout in milliseconds |
 | `MAX_RETRIES` | No | `3` | Maximum API retry attempts |
 
+### Session Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant C as Claude
+    participant S as Server
+    participant DB as SQLite
+
+    rect rgb(232, 245, 233)
+        Note over C,DB: Session Creation
+        C->>S: reasoning_linear(content)
+        S->>DB: get_or_create_session()
+        S->>DB: save_thought(analysis)
+        S-->>C: response + session_id
+    end
+
+    rect rgb(227, 242, 253)
+        Note over C,DB: Checkpoint Save
+        C->>S: reasoning_checkpoint(create)
+        S->>DB: save_checkpoint(state)
+        S-->>C: checkpoint_id
+    end
+
+    rect rgb(255, 243, 224)
+        Note over C,DB: Continue Work
+        C->>S: reasoning_tree(create)
+        S->>DB: save_branches()
+        S-->>C: branches
+    end
+
+    rect rgb(252, 228, 236)
+        Note over C,DB: Restore State
+        C->>S: reasoning_checkpoint(restore)
+        S->>DB: load_checkpoint()
+        S-->>C: restored_session
+    end
+```
+
 ## The 15 Reasoning Tools
 
 ### Core Reasoning (6 tools)
@@ -158,6 +219,44 @@ Add to `claude_desktop_config.json`:
 |------|-------------|------------|
 | `reasoning_preset` | Pre-defined reasoning workflows | list, run |
 | `reasoning_metrics` | Usage metrics and observability | summary, by_mode, invocations, fallbacks, config |
+
+### Tool Relationships
+
+```mermaid
+flowchart TB
+    subgraph Routing["Automatic Routing"]
+        Auto["reasoning_auto"]
+    end
+
+    subgraph CoreTools["Core Tools"]
+        Linear["Linear"]
+        Tree["Tree"]
+        Divergent["Divergent"]
+        Graph["Graph"]
+    end
+
+    subgraph State["State Management"]
+        Checkpoint["Checkpoint"]
+        Metrics["Metrics"]
+    end
+
+    subgraph Workflows
+        Preset["Preset"]
+    end
+
+    Auto -->|"simple"| Linear
+    Auto -->|"branching"| Tree
+    Auto -->|"creative"| Divergent
+    Auto -->|"complex"| Graph
+
+    Tree & Graph -->|"save state"| Checkpoint
+    Linear & Tree & Graph -->|"record"| Metrics
+
+    Preset -->|"orchestrates"| Linear
+    Preset -->|"orchestrates"| Divergent
+    Preset -->|"orchestrates"| Decision["Decision"]
+    Preset -->|"orchestrates"| Detect["Detect"]
+```
 
 ## Usage Examples
 
@@ -270,41 +369,47 @@ Run a preset:
 
 The server includes a 4-phase autonomous optimization loop with comprehensive safety mechanisms:
 
+### Optimization Loop
+
+```mermaid
+flowchart LR
+    subgraph Loop["Optimization Loop"]
+        M["MONITOR<br/>Metrics, Anomaly<br/>Errors, Latency"]
+        A["ANALYZER<br/>LLM Diagnose<br/>Root Cause"]
+        E["EXECUTOR<br/>Apply Action<br/>Rollback Support"]
+        L["LEARNER<br/>Reward Calc<br/>Extract Lessons"]
+    end
+
+    M -->|"triggers"| A
+    A -->|"proposes"| E
+    E -->|"results"| L
+    L -->|"updates baselines"| M
+
+    style M fill:#e3f2fd
+    style A fill:#fff8e1
+    style E fill:#e8f5e9
+    style L fill:#fce4ec
 ```
-+===========================================================================+
-|                  SELF-IMPROVEMENT SYSTEM (4-Phase Loop)                   |
-+===========================================================================+
-|                                                                           |
-|   +-------------------------------------------------------------------+   |
-|   |                       OPTIMIZATION LOOP                           |   |
-|   |                                                                   |   |
-|   |   +----------+    +----------+    +----------+    +----------+    |   |
-|   |   | MONITOR  |--->| ANALYZER |--->| EXECUTOR |--->| LEARNER  |--+ |   |
-|   |   +----------+    +----------+    +----------+    +----------+  | |   |
-|   |   | Metrics  |    | LLM      |    | Apply    |    | Reward   |  | |   |
-|   |   | Anomaly  |    | Diagnose |    | Action   |    | Calc     |  | |   |
-|   |   | Errors   |    | Root     |    | Rollback |    | Extract  |  | |   |
-|   |   | Latency  |    | Cause    |    | Support  |    | Lessons  |  | |   |
-|   |   | Quality  |    | Propose  |    |          |    |          |  | |   |
-|   |   +----^-----+    +----------+    +----------+    +----------+  | |   |
-|   |        |                                                        | |   |
-|   |        +------------------ Update Baselines <-------------------+ |   |
-|   |                                                                   |   |
-|   +-------------------------------------------------------------------+   |
-|                                                                           |
-|   +===================================================================+   |
-|   |                       SAFETY MECHANISMS                           |   |
-|   +===============================+===================================+   |
-|   | Circuit Breaker               | Allowlist                         |   |
-|   | - Halts on consecutive fails  | - Validates action types          |   |
-|   | - Auto-recovery after timeout | - Checks parameter bounds         |   |
-|   +-------------------------------+-----------------------------------+   |
-|   | Rate Limiting                 | Approval Gate                     |   |
-|   | - Max actions per period      | - Human-in-loop (optional)        |   |
-|   | - Prevents runaway execution  | - Required for high-risk actions  |   |
-|   +-------------------------------+-----------------------------------+   |
-|                                                                           |
-+===========================================================================+
+
+### Safety Mechanisms
+
+```mermaid
+flowchart TB
+    Action["Proposed Action"] --> CB{"Circuit Breaker"}
+    CB -->|"OPEN"| HALT["Halt Operations"]
+    CB -->|"CLOSED"| AL{"Allowlist Check"}
+    AL -->|"Invalid"| REJECT["Reject"]
+    AL -->|"Valid"| RL{"Rate Limit"}
+    RL -->|"Exceeded"| QUEUE["Queue/Delay"]
+    RL -->|"OK"| APPROVE{"Approval Gate"}
+    APPROVE -->|"High-risk"| HUMAN["Human Review"]
+    APPROVE -->|"Low-risk"| EXEC["Execute"]
+    HUMAN -->|"Approved"| EXEC
+
+    style CB fill:#ffcdd2
+    style AL fill:#fff9c4
+    style RL fill:#c8e6c9
+    style APPROVE fill:#bbdefb
 ```
 
 **Phase Details:**
@@ -336,7 +441,7 @@ cargo build
 # Release build (optimized)
 cargo build --release
 
-# Run all tests (1,624 tests)
+# Run all tests (1,674 tests)
 cargo test
 
 # Run specific test module
@@ -401,7 +506,7 @@ src/
 
 - **Zero unsafe code** - `#![forbid(unsafe_code)]` enforced
 - **No panics** - No `.unwrap()` or `.expect()` in production paths
-- **1,624 tests** - Comprehensive unit, integration, and handler test coverage (96%+ coverage)
+- **1,674 tests** - Comprehensive unit, integration, and handler test coverage (96%+ coverage)
 - **Max 500 lines per file** - Enforced for maintainability
 - **Structured logging** - Via `tracing` crate, logs to stderr
 - **Clippy pedantic** - All pedantic lints enabled as warnings
