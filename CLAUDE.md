@@ -231,6 +231,38 @@ All phases complete:
 - Use `#[tokio::test]` for async tests
 - Use `mockall::automock` for trait mocking
 
+### Error Handling in Tests
+
+Test code uses `#[allow(clippy::unwrap_used, clippy::expect_used)]` because:
+1. Test panics are acceptable and often preferable for clarity
+2. `.expect()` provides better panic messages than `?` in tests
+3. Reduces test verbosity while maintaining debuggability
+4. Industry standard practice (see [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/documentation.html#examples-use-panics-not-try-not-unwrap-c-question-mark))
+
+**Test Code Pattern:**
+```rust
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_example() {
+        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let result = storage.get_session("id").await.expect("get session");
+        assert_eq!(result.unwrap().id, "id");
+    }
+}
+```
+
+**Production Code Pattern:**
+```rust
+pub async fn operation() -> Result<Output, Error> {
+    let value = fallible_operation()?;  // Never unwrap/expect
+    Ok(value)
+}
+```
+
 ## Client Configuration
 
 ### Claude Code

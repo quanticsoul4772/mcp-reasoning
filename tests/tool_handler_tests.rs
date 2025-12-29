@@ -2,6 +2,8 @@
 //!
 //! These tests verify the tool handlers work correctly with mocked API responses.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use mcp_reasoning::anthropic::{AnthropicClient, ClientConfig};
 use mcp_reasoning::config::{Config, SecretString};
 use mcp_reasoning::server::AppState;

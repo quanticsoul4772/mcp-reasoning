@@ -2,6 +2,8 @@
 //!
 //! Tests how the system handles error conditions and recovers gracefully.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use mcp_reasoning::config::Config;
 use mcp_reasoning::error::{AppError, ConfigError};
 use mcp_reasoning::storage::SqliteStorage;

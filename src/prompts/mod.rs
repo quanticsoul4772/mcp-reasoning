@@ -423,6 +423,7 @@ pub fn get_prompt_for_mode(mode: ReasoningMode, operation: Option<&Operation>) -
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

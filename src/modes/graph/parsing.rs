@@ -485,6 +485,7 @@ pub fn parse_metrics(json: &serde_json::Value) -> Result<GraphMetrics, ModeError
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use serde_json::json;

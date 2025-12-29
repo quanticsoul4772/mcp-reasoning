@@ -5,6 +5,8 @@
 //! - Multi-mode reasoning scenarios
 //! - Configuration handling
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use mcp_reasoning::config::Config;
 use mcp_reasoning::error::ConfigError;
 use mcp_reasoning::storage::SqliteStorage;

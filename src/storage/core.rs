@@ -146,6 +146,7 @@ impl SqliteStorage {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 pub mod tests {
     use super::*;
     use serial_test::serial;

@@ -53,6 +53,7 @@ pub fn validate_config(config: &Config) -> Result<(), ConfigError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::config::SecretString;

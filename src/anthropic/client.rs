@@ -361,6 +361,7 @@ fn extract_json(text: &str) -> Option<serde_json::Value> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::anthropic::types::{ApiMessage, ThinkingConfig};

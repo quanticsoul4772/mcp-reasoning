@@ -302,6 +302,7 @@ Respond with a JSON object in this exact format:
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::ModeError;
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 use crate::modes::generate_session_id;
 use crate::modes::{extract_json, generate_thought_id, validate_content};
 use crate::prompts::{get_prompt_for_mode, ReasoningMode};
@@ -237,6 +238,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::error::StorageError;

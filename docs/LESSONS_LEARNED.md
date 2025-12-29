@@ -109,16 +109,21 @@ tracing::info!(
 ```rust
 // Tests alongside code
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_something() { }
+    async fn test_something() {
+        let result = operation().await.expect("should succeed");
+        assert_eq!(result, expected);
+    }
 }
 ```
 - 2000+ tests is not excessive
 - Test error cases explicitly
 - Use `serial_test` for DB tests
+- **Test code uses `.unwrap()`/`.expect()`** - this is acceptable and preferred for test clarity
 
 ---
 
@@ -346,3 +351,34 @@ chrono = { version = "0.4", features = ["serde"] }
 - [ ] Retry logic with backoff
 - [ ] Structured logging throughout
 - [ ] Zero unsafe/unwrap policy
+
+---
+
+## Test Error Handling Decision (2024-12-29)
+
+**Decision:** Use `#[allow(clippy::unwrap_used, clippy::expect_used)]` in test modules.
+
+**Context:** Cargo.toml enforces `#![deny(unwrap_used, expect_used)]` for production code. This initially caused 872 clippy errors in test code.
+
+**Rationale:**
+- Tests are allowed to panic - it's their job to fail loudly and clearly
+- `.expect("descriptive message")` provides better diagnostics than `?` in tests
+- Maintains test readability and reduces verbosity
+- Industry standard practice (Rust API Guidelines endorses this approach)
+- Enables strict production lints while keeping pragmatic test patterns
+
+**Implementation:**
+- Added `#[allow(clippy::unwrap_used, clippy::expect_used)]` to all `#[cfg(test)] mod tests` blocks
+- Added `#![allow(...)]` to integration test files in `tests/` directory
+- Production code remains panic-free with zero unwrap/expect calls
+
+**Alternatives Considered:**
+- Rewrite all tests to use `Result<()>` - rejected (40+ hours, reduced readability)
+- Hybrid approach with Result for critical paths - possible future enhancement
+
+**When to use Result<()> in tests:**
+- Integration tests with complex error chains
+- Tests that need to propagate errors through multiple operations  
+- Error recovery testing where full error context is valuable
+
+See `docs/TEST_ERROR_HANDLING_PLAN.md` for complete analysis.

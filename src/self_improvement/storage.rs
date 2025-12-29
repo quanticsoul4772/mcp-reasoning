@@ -985,6 +985,7 @@ fn parse_action_status(s: &str) -> ActionStatus {
 // ============================================================================
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::self_improvement::types::{NormalizedReward, RewardBreakdown};

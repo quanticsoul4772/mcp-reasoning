@@ -149,6 +149,7 @@ fn parse_env_u32(name: &str, default: u32) -> Result<u32, ConfigError> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use serial_test::serial;
