@@ -8,6 +8,7 @@ A high-performance MCP server that adds structured reasoning capabilities to Cla
 [![Coverage](https://img.shields.io/badge/Coverage-96%25-brightgreen.svg)](#development)
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'pie1': '#4fc3f7', 'pie2': '#81c784', 'pie3': '#ffb74d', 'pie4': '#f06292', 'pie5': '#ba68c8'}}}%%
 pie showData title Codebase Distribution (50K+ lines)
     "Reasoning Modes" : 35
     "Storage Layer" : 15
