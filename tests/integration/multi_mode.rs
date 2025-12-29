@@ -34,34 +34,45 @@ async fn test_linear_then_tree_workflow() {
     let linear_thought = Thought::new(
         "linear-1",
         &session.id,
-        "linear",
         "Initial linear analysis of the problem",
+        "linear",
+        0.85,
     );
-    storage.save_thought(&linear_thought).await.expect("Failed to save");
+    storage
+        .save_thought(&linear_thought)
+        .await
+        .expect("Failed to save");
 
     // Tree reasoning phase - branching from linear
     let tree_root = Thought::new(
         "tree-root",
         &session.id,
-        "tree",
         "Exploring branches from linear analysis",
+        "tree",
+        0.80,
     );
-    storage.save_thought(&tree_root).await.expect("Failed to save");
+    storage
+        .save_thought(&tree_root)
+        .await
+        .expect("Failed to save");
 
     // Tree branches
     for i in 1..=3 {
-        let mut branch = Thought::new(
+        let branch = Thought::new(
             &format!("tree-branch-{i}"),
             &session.id,
-            "tree",
             &format!("Branch {i} exploration"),
+            "tree",
+            0.75 + (i as f64 * 0.02),
         );
-        branch.parent_id = Some("tree-root".to_string());
         storage.save_thought(&branch).await.expect("Failed to save");
     }
 
     // Verify workflow state
-    let thoughts = storage.get_thoughts(&session.id).await.expect("Failed to get");
+    let thoughts = storage
+        .get_thoughts(&session.id)
+        .await
+        .expect("Failed to get");
     assert_eq!(thoughts.len(), 5); // 1 linear + 1 root + 3 branches
 }
 
@@ -77,23 +88,30 @@ async fn test_divergent_perspectives() {
 
     // Simulate divergent mode with multiple perspectives
     let perspectives = [
-        ("optimist", "This approach will succeed because..."),
-        ("pessimist", "This approach may fail because..."),
-        ("pragmatist", "We should balance considerations..."),
-        ("contrarian", "What if we did the opposite..."),
+        ("optimist", "This approach will succeed because...", 0.82),
+        ("pessimist", "This approach may fail because...", 0.78),
+        ("pragmatist", "We should balance considerations...", 0.85),
+        ("contrarian", "What if we did the opposite...", 0.70),
     ];
 
-    for (perspective, content) in perspectives {
+    for (perspective, content, confidence) in perspectives {
         let thought = Thought::new(
             &format!("perspective-{perspective}"),
             &session.id,
-            "divergent",
             content,
+            "divergent",
+            confidence,
         );
-        storage.save_thought(&thought).await.expect("Failed to save");
+        storage
+            .save_thought(&thought)
+            .await
+            .expect("Failed to save");
     }
 
-    let thoughts = storage.get_thoughts(&session.id).await.expect("Failed to get");
+    let thoughts = storage
+        .get_thoughts(&session.id)
+        .await
+        .expect("Failed to get");
     assert_eq!(thoughts.len(), 4);
 }
 
@@ -111,22 +129,32 @@ async fn test_reflection_on_previous_thoughts() {
     let initial = Thought::new(
         "initial",
         &session.id,
-        "linear",
         "The initial hypothesis is X",
+        "linear",
+        0.75,
     );
-    storage.save_thought(&initial).await.expect("Failed to save");
+    storage
+        .save_thought(&initial)
+        .await
+        .expect("Failed to save");
 
-    // Reflection thought that references initial
-    let mut reflection = Thought::new(
+    // Reflection thought that analyzes initial
+    let reflection = Thought::new(
         "reflection-1",
         &session.id,
-        "reflection",
         "Upon reflection, the initial hypothesis has these strengths and weaknesses...",
+        "reflection",
+        0.82,
     );
-    reflection.parent_id = Some("initial".to_string());
-    storage.save_thought(&reflection).await.expect("Failed to save");
+    storage
+        .save_thought(&reflection)
+        .await
+        .expect("Failed to save");
 
-    let thoughts = storage.get_thoughts(&session.id).await.expect("Failed to get");
+    let thoughts = storage
+        .get_thoughts(&session.id)
+        .await
+        .expect("Failed to get");
     assert_eq!(thoughts.len(), 2);
 }
 
@@ -142,27 +170,39 @@ async fn test_mixed_mode_session() {
 
     // Different modes in sequence
     let modes_and_content = [
-        ("linear", "Step 1: Identify the problem"),
-        ("linear", "Step 2: Gather information"),
-        ("tree", "Explore option A"),
-        ("tree", "Explore option B"),
-        ("divergent", "Alternative perspective"),
-        ("reflection", "Meta-analysis of our reasoning"),
-        ("linear", "Step 3: Make decision based on analysis"),
+        ("linear", "Step 1: Identify the problem", 0.90),
+        ("linear", "Step 2: Gather information", 0.88),
+        ("tree", "Explore option A", 0.80),
+        ("tree", "Explore option B", 0.78),
+        ("divergent", "Alternative perspective", 0.75),
+        ("reflection", "Meta-analysis of our reasoning", 0.85),
+        ("linear", "Step 3: Make decision based on analysis", 0.92),
     ];
 
-    for (i, (mode, content)) in modes_and_content.iter().enumerate() {
-        let thought = Thought::new(&format!("thought-{i}"), &session.id, mode, content);
-        storage.save_thought(&thought).await.expect("Failed to save");
+    for (i, (mode, content, confidence)) in modes_and_content.iter().enumerate() {
+        let thought = Thought::new(
+            &format!("thought-{i}"),
+            &session.id,
+            *content,
+            *mode,
+            *confidence,
+        );
+        storage
+            .save_thought(&thought)
+            .await
+            .expect("Failed to save");
     }
 
-    let thoughts = storage.get_thoughts(&session.id).await.expect("Failed to get");
+    let thoughts = storage
+        .get_thoughts(&session.id)
+        .await
+        .expect("Failed to get");
     assert_eq!(thoughts.len(), 7);
 }
 
 #[tokio::test]
 #[serial]
-async fn test_graph_node_connections() {
+async fn test_graph_thoughts() {
     let (storage, _temp_dir) = create_test_storage().await;
 
     let session = storage
@@ -172,37 +212,31 @@ async fn test_graph_node_connections() {
 
     // Create nodes for a graph structure
     let nodes = [
-        "Problem definition",
-        "Constraint A",
-        "Constraint B",
-        "Solution 1",
-        "Solution 2",
+        ("Problem definition", 0.90),
+        ("Constraint A", 0.85),
+        ("Constraint B", 0.82),
+        ("Solution 1", 0.78),
+        ("Solution 2", 0.80),
     ];
 
-    for (i, content) in nodes.iter().enumerate() {
-        let thought = Thought::new(&format!("node-{i}"), &session.id, "graph", content);
-        storage.save_thought(&thought).await.expect("Failed to save");
+    for (i, (content, confidence)) in nodes.iter().enumerate() {
+        let thought = Thought::new(
+            &format!("node-{i}"),
+            &session.id,
+            *content,
+            "graph",
+            *confidence,
+        );
+        storage
+            .save_thought(&thought)
+            .await
+            .expect("Failed to save");
     }
 
-    // Create edges (stored as separate metadata)
-    storage
-        .create_edge(&session.id, "node-0", "node-1", "constrains")
-        .await
-        .expect("Failed to create edge");
-    storage
-        .create_edge(&session.id, "node-0", "node-2", "constrains")
-        .await
-        .expect("Failed to create edge");
-    storage
-        .create_edge(&session.id, "node-1", "node-3", "enables")
-        .await
-        .expect("Failed to create edge");
-    storage
-        .create_edge(&session.id, "node-2", "node-4", "enables")
-        .await
-        .expect("Failed to create edge");
-
     // Verify structure
-    let thoughts = storage.get_thoughts(&session.id).await.expect("Failed to get");
+    let thoughts = storage
+        .get_thoughts(&session.id)
+        .await
+        .expect("Failed to get");
     assert_eq!(thoughts.len(), 5);
 }

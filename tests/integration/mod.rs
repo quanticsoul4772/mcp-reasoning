@@ -5,7 +5,12 @@
 //! - Multi-mode reasoning scenarios
 //! - Error recovery paths
 //! - Self-improvement system integration
+//! - Multi-step workflow validation (tree, graph, checkpoint, preset)
 
-mod session_workflow;
-mod multi_mode;
 mod error_recovery;
+mod multi_mode;
+mod session_workflow;
+mod workflow_checkpoint;
+mod workflow_graph;
+mod workflow_preset;
+mod workflow_tree;

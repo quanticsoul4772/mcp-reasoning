@@ -7,10 +7,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::error::StorageError;
-use crate::traits::{Session, StorageTrait, Thought};
+use crate::traits::{Session, StorageTrait, StoredBranchStatus, Thought};
 
 use super::core::SqliteStorage;
-use super::types::{StoredCheckpoint, StoredThought};
+use super::types::{
+    StoredBranch, StoredCheckpoint, StoredGraphEdge, StoredGraphNode, StoredThought,
+};
 
 #[async_trait]
 impl StorageTrait for SqliteStorage {
@@ -77,6 +79,52 @@ impl StorageTrait for SqliteStorage {
     ) -> Result<Vec<StoredCheckpoint>, StorageError> {
         Self::get_checkpoints(self, session_id).await
     }
+
+    async fn save_branch(&self, branch: &StoredBranch) -> Result<(), StorageError> {
+        Self::save_branch(self, branch).await
+    }
+
+    async fn get_branch(&self, id: &str) -> Result<Option<StoredBranch>, StorageError> {
+        Self::get_branch(self, id).await
+    }
+
+    async fn get_branches(&self, session_id: &str) -> Result<Vec<StoredBranch>, StorageError> {
+        Self::get_branches(self, session_id).await
+    }
+
+    async fn update_branch_status(
+        &self,
+        id: &str,
+        status: StoredBranchStatus,
+    ) -> Result<(), StorageError> {
+        Self::update_branch_status(self, id, status).await
+    }
+
+    async fn save_graph_node(&self, node: &StoredGraphNode) -> Result<(), StorageError> {
+        Self::save_graph_node(self, node).await
+    }
+
+    async fn get_graph_node(&self, id: &str) -> Result<Option<StoredGraphNode>, StorageError> {
+        Self::get_graph_node(self, id).await
+    }
+
+    async fn get_graph_nodes(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<StoredGraphNode>, StorageError> {
+        Self::get_graph_nodes(self, session_id).await
+    }
+
+    async fn save_graph_edge(&self, edge: &StoredGraphEdge) -> Result<(), StorageError> {
+        Self::save_graph_edge(self, edge).await
+    }
+
+    async fn get_graph_edges(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<StoredGraphEdge>, StorageError> {
+        Self::get_graph_edges(self, session_id).await
+    }
 }
 
 /// Blanket implementation for `Arc<SqliteStorage>` to allow sharing storage across threads.
@@ -111,6 +159,52 @@ impl StorageTrait for Arc<SqliteStorage> {
         session_id: &str,
     ) -> Result<Vec<StoredCheckpoint>, StorageError> {
         self.as_ref().get_checkpoints(session_id).await
+    }
+
+    async fn save_branch(&self, branch: &StoredBranch) -> Result<(), StorageError> {
+        self.as_ref().save_branch(branch).await
+    }
+
+    async fn get_branch(&self, id: &str) -> Result<Option<StoredBranch>, StorageError> {
+        self.as_ref().get_branch(id).await
+    }
+
+    async fn get_branches(&self, session_id: &str) -> Result<Vec<StoredBranch>, StorageError> {
+        self.as_ref().get_branches(session_id).await
+    }
+
+    async fn update_branch_status(
+        &self,
+        id: &str,
+        status: StoredBranchStatus,
+    ) -> Result<(), StorageError> {
+        self.as_ref().update_branch_status(id, status).await
+    }
+
+    async fn save_graph_node(&self, node: &StoredGraphNode) -> Result<(), StorageError> {
+        self.as_ref().save_graph_node(node).await
+    }
+
+    async fn get_graph_node(&self, id: &str) -> Result<Option<StoredGraphNode>, StorageError> {
+        self.as_ref().get_graph_node(id).await
+    }
+
+    async fn get_graph_nodes(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<StoredGraphNode>, StorageError> {
+        self.as_ref().get_graph_nodes(session_id).await
+    }
+
+    async fn save_graph_edge(&self, edge: &StoredGraphEdge) -> Result<(), StorageError> {
+        self.as_ref().save_graph_edge(edge).await
+    }
+
+    async fn get_graph_edges(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<StoredGraphEdge>, StorageError> {
+        self.as_ref().get_graph_edges(session_id).await
     }
 }
 

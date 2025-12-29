@@ -27,7 +27,8 @@ mod types;
 pub use types::{CompletionConfig, CompletionResponse, Message, Session, Thought, Usage};
 
 // Re-export storage types needed by modes
-pub use crate::storage::StoredCheckpoint;
+pub use crate::storage::BranchStatus as StoredBranchStatus;
+pub use crate::storage::{StoredBranch, StoredCheckpoint, StoredGraphEdge, StoredGraphNode};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -124,6 +125,79 @@ pub trait StorageTrait: Send + Sync {
         &self,
         session_id: &str,
     ) -> Result<Vec<StoredCheckpoint>, StorageError>;
+
+    /// Save a branch to the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn save_branch(&self, branch: &StoredBranch) -> Result<(), StorageError>;
+
+    /// Get a branch by ID.
+    ///
+    /// Returns `None` if the branch doesn't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn get_branch(&self, id: &str) -> Result<Option<StoredBranch>, StorageError>;
+
+    /// Get all branches for a session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn get_branches(&self, session_id: &str) -> Result<Vec<StoredBranch>, StorageError>;
+
+    /// Update a branch's status.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn update_branch_status(
+        &self,
+        id: &str,
+        status: StoredBranchStatus,
+    ) -> Result<(), StorageError>;
+
+    /// Save a graph node to the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn save_graph_node(&self, node: &StoredGraphNode) -> Result<(), StorageError>;
+
+    /// Get a graph node by ID.
+    ///
+    /// Returns `None` if the node doesn't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn get_graph_node(&self, id: &str) -> Result<Option<StoredGraphNode>, StorageError>;
+
+    /// Get all graph nodes for a session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn get_graph_nodes(&self, session_id: &str)
+        -> Result<Vec<StoredGraphNode>, StorageError>;
+
+    /// Save a graph edge to the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn save_graph_edge(&self, edge: &StoredGraphEdge) -> Result<(), StorageError>;
+
+    /// Get all graph edges for a session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn get_graph_edges(&self, session_id: &str)
+        -> Result<Vec<StoredGraphEdge>, StorageError>;
 }
 
 /// Time provider trait for deterministic testing.

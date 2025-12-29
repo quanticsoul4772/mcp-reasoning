@@ -142,6 +142,70 @@ pub mod doctest_helpers {
         ) -> Result<Vec<crate::traits::StoredCheckpoint>, StorageError> {
             Ok(vec![])
         }
+
+        async fn save_branch(
+            &self,
+            _branch: &crate::traits::StoredBranch,
+        ) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn get_branch(
+            &self,
+            _id: &str,
+        ) -> Result<Option<crate::traits::StoredBranch>, StorageError> {
+            Ok(None)
+        }
+
+        async fn get_branches(
+            &self,
+            _session_id: &str,
+        ) -> Result<Vec<crate::traits::StoredBranch>, StorageError> {
+            Ok(vec![])
+        }
+
+        async fn update_branch_status(
+            &self,
+            _id: &str,
+            _status: crate::traits::StoredBranchStatus,
+        ) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn save_graph_node(
+            &self,
+            _node: &crate::traits::StoredGraphNode,
+        ) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn get_graph_node(
+            &self,
+            _id: &str,
+        ) -> Result<Option<crate::traits::StoredGraphNode>, StorageError> {
+            Ok(None)
+        }
+
+        async fn get_graph_nodes(
+            &self,
+            _session_id: &str,
+        ) -> Result<Vec<crate::traits::StoredGraphNode>, StorageError> {
+            Ok(vec![])
+        }
+
+        async fn save_graph_edge(
+            &self,
+            _edge: &crate::traits::StoredGraphEdge,
+        ) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn get_graph_edges(
+            &self,
+            _session_id: &str,
+        ) -> Result<Vec<crate::traits::StoredGraphEdge>, StorageError> {
+            Ok(vec![])
+        }
     }
 
     /// A simple mock Anthropic client for doctests.

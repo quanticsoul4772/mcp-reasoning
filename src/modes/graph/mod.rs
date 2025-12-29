@@ -133,23 +133,24 @@ where
     ///
     /// # Arguments
     ///
-    /// * `content` - Parent node content to expand
+    /// * `content` - Parent node content to expand (optional if `node_id` provided)
+    /// * `node_id` - Node ID to look up content from storage (optional if `content` provided)
     /// * `session_id` - Optional session ID
     ///
     /// # Errors
     ///
-    /// Returns [`ModeError`] if content is empty, API fails, or parsing fails.
+    /// Returns [`ModeError`] if both content and node_id are missing, API fails, or parsing fails.
     pub async fn generate(
         &self,
-        content: &str,
+        content: Option<&str>,
+        node_id: Option<&str>,
         session_id: Option<String>,
     ) -> Result<GenerateResponse, ModeError> {
-        validate_content(content)?;
-
         let session = self.get_or_create_session(session_id).await?;
+        let resolved_content = self.resolve_content(content, node_id).await?;
 
         let prompt = graph_generate_prompt();
-        let user_message = format!("{prompt}\n\nParent node:\n{content}");
+        let user_message = format!("{prompt}\n\nParent node:\n{resolved_content}");
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -192,23 +193,24 @@ where
     ///
     /// # Arguments
     ///
-    /// * `content` - Node content to score
+    /// * `content` - Node content to score (optional if `node_id` provided)
+    /// * `node_id` - Node ID to look up content from storage (optional if `content` provided)
     /// * `session_id` - Optional session ID
     ///
     /// # Errors
     ///
-    /// Returns [`ModeError`] if content is empty, API fails, or parsing fails.
+    /// Returns [`ModeError`] if both content and node_id are missing, API fails, or parsing fails.
     pub async fn score(
         &self,
-        content: &str,
+        content: Option<&str>,
+        node_id: Option<&str>,
         session_id: Option<String>,
     ) -> Result<ScoreResponse, ModeError> {
-        validate_content(content)?;
-
         let session = self.get_or_create_session(session_id).await?;
+        let resolved_content = self.resolve_content(content, node_id).await?;
 
         let prompt = graph_score_prompt();
-        let user_message = format!("{prompt}\n\nNode to score:\n{content}");
+        let user_message = format!("{prompt}\n\nNode to score:\n{resolved_content}");
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -218,7 +220,7 @@ where
         let response = self.client.complete(messages, config).await?;
         let json = extract_json(&response.content)?;
 
-        let node_id = parsing::get_str(&json, "node_id")?;
+        let response_node_id = parsing::get_str(&json, "node_id")?;
         let scores = parsing::parse_node_scores(&json)?;
         let assessment = parsing::parse_node_assessment(&json)?;
 
@@ -239,7 +241,11 @@ where
             })?;
 
         Ok(ScoreResponse::new(
-            thought_id, session.id, node_id, scores, assessment,
+            thought_id,
+            session.id,
+            response_node_id,
+            scores,
+            assessment,
         ))
     }
 
@@ -491,23 +497,29 @@ where
     ///
     /// # Arguments
     ///
-    /// * `content` - Graph to describe
-    /// * `session_id` - Optional session ID
+    /// * `content` - Graph to describe (optional if `session_id` provided to retrieve from storage)
+    /// * `session_id` - Session ID (required to retrieve graph state from storage)
     ///
     /// # Errors
     ///
-    /// Returns [`ModeError`] if content is empty, API fails, or parsing fails.
+    /// Returns [`ModeError`] if API fails or parsing fails.
     pub async fn state(
         &self,
-        content: &str,
-        session_id: Option<String>,
+        content: Option<&str>,
+        session_id: &str,
     ) -> Result<StateResponse, ModeError> {
-        validate_content(content)?;
+        let session = self
+            .get_or_create_session(Some(session_id.to_string()))
+            .await?;
 
-        let session = self.get_or_create_session(session_id).await?;
+        // Resolve content: use provided content or build from storage
+        let resolved_content = match content {
+            Some(c) if !c.trim().is_empty() => c.to_string(),
+            _ => self.build_graph_state_from_storage(session_id).await?,
+        };
 
         let prompt = graph_state_prompt();
-        let user_message = format!("{prompt}\n\nGraph:\n{content}");
+        let user_message = format!("{prompt}\n\nGraph:\n{resolved_content}");
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -561,6 +573,95 @@ where
             .map_err(|e| ModeError::ApiUnavailable {
                 message: format!("Failed to get or create session: {e}"),
             })
+    }
+
+    /// Resolve content from either direct content or node_id lookup.
+    ///
+    /// If content is provided and non-empty, uses it directly.
+    /// If node_id is provided, looks up the content from storage.
+    /// Returns an error if neither is provided.
+    async fn resolve_content(
+        &self,
+        content: Option<&str>,
+        node_id: Option<&str>,
+    ) -> Result<String, ModeError> {
+        // Check for direct content first
+        if let Some(c) = content {
+            if !c.trim().is_empty() {
+                return Ok(c.to_string());
+            }
+        }
+
+        // Try to look up by node_id
+        if let Some(nid) = node_id {
+            let node = self
+                .storage
+                .get_graph_node(nid)
+                .await
+                .map_err(|e| ModeError::ApiUnavailable {
+                    message: format!("Failed to get graph node: {e}"),
+                })?
+                .ok_or_else(|| ModeError::InvalidValue {
+                    field: "node_id".to_string(),
+                    reason: format!("Node '{nid}' not found"),
+                })?;
+            return Ok(node.content);
+        }
+
+        // Neither provided
+        Err(ModeError::MissingField {
+            field: "content or node_id".to_string(),
+        })
+    }
+
+    /// Build a JSON representation of the graph from storage for the state operation.
+    async fn build_graph_state_from_storage(&self, session_id: &str) -> Result<String, ModeError> {
+        let nodes = self
+            .storage
+            .get_graph_nodes(session_id)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: format!("Failed to get graph nodes: {e}"),
+            })?;
+
+        let edges = self
+            .storage
+            .get_graph_edges(session_id)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: format!("Failed to get graph edges: {e}"),
+            })?;
+
+        // Build a JSON representation of the graph
+        let nodes_json: Vec<serde_json::Value> = nodes
+            .iter()
+            .map(|n| {
+                serde_json::json!({
+                    "id": n.id,
+                    "content": n.content,
+                    "score": n.score,
+                    "is_terminal": n.is_terminal
+                })
+            })
+            .collect();
+
+        let edges_json: Vec<serde_json::Value> = edges
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "from": e.from_node_id,
+                    "to": e.to_node_id,
+                    "type": e.edge_type.as_str()
+                })
+            })
+            .collect();
+
+        let graph = serde_json::json!({
+            "nodes": nodes_json,
+            "edges": edges_json
+        });
+
+        Ok(graph.to_string())
     }
 }
 
@@ -710,7 +811,7 @@ mod tests {
             .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
-        let result = mode.generate("Parent", None).await;
+        let result = mode.generate(Some("Parent"), None, None).await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -733,7 +834,7 @@ mod tests {
             .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
-        let result = mode.score("Node", None).await;
+        let result = mode.score(Some("Node"), None, None).await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -842,7 +943,7 @@ mod tests {
             .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
-        let result = mode.state("Graph", None).await;
+        let result = mode.state(Some("Graph"), "test").await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -884,5 +985,117 @@ mod tests {
         let mode = GraphMode::new(mock_storage, mock_client);
         let debug = format!("{mode:?}");
         assert!(debug.contains("GraphMode"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_with_node_id_lookup() {
+        use crate::storage::{GraphNodeType, StoredGraphNode};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        // Mock the node lookup
+        mock_storage.expect_get_graph_node().returning(|_id| {
+            Ok(Some(StoredGraphNode::new(
+                "node-1",
+                "test",
+                "Stored node content",
+            )))
+        });
+
+        let resp = mock_generate_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        // Use node_id instead of content
+        let result = mode.generate(None, Some("node-1"), None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.children.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_generate_missing_content_and_node_id() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        // Need to mock session creation as it happens before content resolution
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.generate(None, None, None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "content or node_id")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_generate_node_id_not_found() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        // Need to mock session creation as it happens before content resolution
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+
+        mock_storage
+            .expect_get_graph_node()
+            .returning(|_id| Ok(None));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.generate(None, Some("nonexistent"), None).await;
+
+        assert!(matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "node_id"));
+    }
+
+    #[tokio::test]
+    async fn test_state_from_storage() {
+        use crate::storage::{GraphEdgeType, StoredGraphEdge, StoredGraphNode};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        // Mock the graph retrieval from storage
+        mock_storage
+            .expect_get_graph_nodes()
+            .returning(|_session_id| {
+                Ok(vec![
+                    StoredGraphNode::new("n1", "test", "Node 1"),
+                    StoredGraphNode::new("n2", "test", "Node 2"),
+                ])
+            });
+        mock_storage
+            .expect_get_graph_edges()
+            .returning(|_session_id| Ok(vec![StoredGraphEdge::new("e1", "test", "n1", "n2")]));
+
+        let resp = mock_state_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        // Call state without content - should retrieve from storage
+        let result = mode.state(None, "test").await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.structure.total_nodes, 10);
     }
 }

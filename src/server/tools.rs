@@ -1446,7 +1446,8 @@ impl ReasoningServer {
             }
             "generate" => {
                 let sid = session_id.clone();
-                mode.generate(content, Some(session_id.clone()))
+                let node_id = req.node_id.as_deref();
+                mode.generate(req.content.as_deref(), node_id, Some(session_id.clone()))
                     .await
                     .map(move |r| GraphResponse {
                         session_id: sid,
@@ -1470,7 +1471,8 @@ impl ReasoningServer {
             }
             "score" => {
                 let sid = session_id.clone();
-                mode.score(content, Some(session_id.clone()))
+                let node_id = req.node_id.as_deref();
+                mode.score(req.content.as_deref(), node_id, Some(session_id.clone()))
                     .await
                     .map(move |r| GraphResponse {
                         session_id: sid,
@@ -1542,7 +1544,7 @@ impl ReasoningServer {
             }
             "state" => {
                 let sid = session_id.clone();
-                mode.state(content, Some(session_id.clone()))
+                mode.state(req.content.as_deref(), &session_id)
                     .await
                     .map(move |r| GraphResponse {
                         session_id: sid,
@@ -1560,17 +1562,13 @@ impl ReasoningServer {
             }
             _ => {
                 self.state.metrics.record(
-                    MetricEvent::new("graph", timer.elapsed_ms(), false)
-                        .with_operation(&operation),
+                    MetricEvent::new("graph", timer.elapsed_ms(), false).with_operation(&operation),
                 );
                 return GraphResponse {
                     session_id,
                     node_id: None,
                     nodes: None,
-                    aggregated_insight: Some(format!(
-                        "ERROR: unknown operation: {}",
-                        operation
-                    )),
+                    aggregated_insight: Some(format!("ERROR: unknown operation: {}", operation)),
                     conclusions: None,
                     state: None,
                 };
@@ -1848,7 +1846,9 @@ impl ReasoningServer {
                             keep_informed: resp
                                 .stakeholders
                                 .iter()
-                                .filter(|s| s.influence_level == crate::modes::InfluenceLevel::Medium)
+                                .filter(|s| {
+                                    s.influence_level == crate::modes::InfluenceLevel::Medium
+                                })
                                 .map(|s| s.name.clone())
                                 .collect(),
                             minimal_effort: resp
@@ -1895,8 +1895,7 @@ impl ReasoningServer {
         };
 
         self.state.metrics.record(
-            MetricEvent::new("decision", timer.elapsed_ms(), success)
-                .with_operation(decision_type),
+            MetricEvent::new("decision", timer.elapsed_ms(), success).with_operation(decision_type),
         );
 
         response
@@ -2028,8 +2027,7 @@ impl ReasoningServer {
         };
 
         self.state.metrics.record(
-            MetricEvent::new("evidence", timer.elapsed_ms(), success)
-                .with_operation(evidence_type),
+            MetricEvent::new("evidence", timer.elapsed_ms(), success).with_operation(evidence_type),
         );
 
         response
@@ -2369,9 +2367,11 @@ impl ReasoningServer {
             },
         };
 
-        self.state
-            .metrics
-            .record(MetricEvent::new("counterfactual", timer.elapsed_ms(), success));
+        self.state.metrics.record(MetricEvent::new(
+            "counterfactual",
+            timer.elapsed_ms(),
+            success,
+        ));
 
         response
     }
@@ -2421,48 +2421,42 @@ impl ReasoningServer {
             }
             "run" => {
                 // Run a specific preset
-                let preset_id = match &req.preset_id {
-                    Some(id) => id.clone(),
-                    None => {
-                        self.state.metrics.record(
-                            MetricEvent::new("preset", timer.elapsed_ms(), false)
-                                .with_operation(&operation),
-                        );
-                        return PresetResponse {
-                            presets: None,
-                            execution_result: Some(PresetExecution {
-                                preset_id: "unknown".to_string(),
-                                steps_completed: 0,
-                                total_steps: 0,
-                                step_results: vec![],
-                                final_output: serde_json::json!({
-                                    "error": "preset_id is required for run operation"
-                                }),
+                let Some(preset_id) = req.preset_id.clone() else {
+                    self.state.metrics.record(
+                        MetricEvent::new("preset", timer.elapsed_ms(), false)
+                            .with_operation(&operation),
+                    );
+                    return PresetResponse {
+                        presets: None,
+                        execution_result: Some(PresetExecution {
+                            preset_id: "unknown".to_string(),
+                            steps_completed: 0,
+                            total_steps: 0,
+                            step_results: vec![],
+                            final_output: serde_json::json!({
+                                "error": "preset_id is required for run operation"
                             }),
-                            session_id: req.session_id,
-                        };
-                    }
+                        }),
+                        session_id: req.session_id,
+                    };
                 };
 
-                let preset = match self.state.presets.get(&preset_id) {
-                    Some(p) => p,
-                    None => {
-                        self.state.metrics.record(
-                            MetricEvent::new("preset", timer.elapsed_ms(), false)
-                                .with_operation(&operation),
-                        );
-                        return PresetResponse {
-                            presets: None,
-                            execution_result: Some(PresetExecution {
-                                preset_id,
-                                steps_completed: 0,
-                                total_steps: 0,
-                                step_results: vec![],
-                                final_output: serde_json::json!({"error": "preset not found"}),
-                            }),
-                            session_id: req.session_id,
-                        };
-                    }
+                let Some(preset) = self.state.presets.get(&preset_id) else {
+                    self.state.metrics.record(
+                        MetricEvent::new("preset", timer.elapsed_ms(), false)
+                            .with_operation(&operation),
+                    );
+                    return PresetResponse {
+                        presets: None,
+                        execution_result: Some(PresetExecution {
+                            preset_id,
+                            steps_completed: 0,
+                            total_steps: 0,
+                            step_results: vec![],
+                            final_output: serde_json::json!({"error": "preset not found"}),
+                        }),
+                        session_id: req.session_id,
+                    };
                 };
 
                 // Return preset info - actual execution would require running each step
@@ -2641,65 +2635,83 @@ impl ReasoningServer {
                     })
                     .collect();
 
-                MetricsResponse {
-                    summary: None,
-                    mode_stats: None,
-                    invocations: Some(invocations),
-                    config: None,
-                }
+                (
+                    MetricsResponse {
+                        summary: None,
+                        mode_stats: None,
+                        invocations: Some(invocations),
+                        config: None,
+                    },
+                    true,
+                )
             }
             "fallbacks" => {
                 let fallbacks = self.state.metrics.fallbacks();
+                (
+                    MetricsResponse {
+                        summary: None,
+                        mode_stats: None,
+                        invocations: Some(
+                            fallbacks
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, f)| {
+                                    #[allow(clippy::cast_possible_wrap)]
+                                    let created_at =
+                                        chrono::DateTime::from_timestamp(f.timestamp as i64, 0)
+                                            .map(|dt| dt.to_rfc3339())
+                                            .unwrap_or_default();
+                                    Invocation {
+                                        id: format!("fallback-{i}"),
+                                        tool_name: format!("{} -> {}", f.from_mode, f.to_mode),
+                                        session_id: Some(f.reason),
+                                        success: false,
+                                        latency_ms: 0,
+                                        created_at,
+                                    }
+                                })
+                                .collect(),
+                        ),
+                        config: None,
+                    },
+                    true,
+                )
+            }
+            "config" => (
                 MetricsResponse {
                     summary: None,
                     mode_stats: None,
-                    invocations: Some(
-                        fallbacks
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, f)| {
-                                #[allow(clippy::cast_possible_wrap)]
-                                let created_at =
-                                    chrono::DateTime::from_timestamp(f.timestamp as i64, 0)
-                                        .map(|dt| dt.to_rfc3339())
-                                        .unwrap_or_default();
-                                Invocation {
-                                    id: format!("fallback-{i}"),
-                                    tool_name: format!("{} -> {}", f.from_mode, f.to_mode),
-                                    session_id: Some(f.reason),
-                                    success: false,
-                                    latency_ms: 0,
-                                    created_at,
-                                }
-                            })
-                            .collect(),
-                    ),
-                    config: None,
-                }
-            }
-            "config" => MetricsResponse {
-                summary: None,
-                mode_stats: None,
-                invocations: None,
-                config: Some(serde_json::json!({
-                    "model": self.state.config.model,
-                    "request_timeout_ms": self.state.config.request_timeout_ms,
-                    "max_retries": self.state.config.max_retries,
-                    "log_level": self.state.config.log_level,
-                })),
-            },
-            _ => MetricsResponse {
-                summary: None,
-                mode_stats: None,
-                invocations: None,
-                config: Some(serde_json::json!({
-                    "error": format!(
-                        "Unknown query: {}. Use 'summary', 'by_mode', 'invocations', 'fallbacks', or 'config'.",
-                        req.query
-                    )
-                })),
-            },
-        }
+                    invocations: None,
+                    config: Some(serde_json::json!({
+                        "model": self.state.config.model,
+                        "request_timeout_ms": self.state.config.request_timeout_ms,
+                        "max_retries": self.state.config.max_retries,
+                        "log_level": self.state.config.log_level,
+                    })),
+                },
+                true,
+            ),
+            _ => (
+                MetricsResponse {
+                    summary: None,
+                    mode_stats: None,
+                    invocations: None,
+                    config: Some(serde_json::json!({
+                        "error": format!(
+                            "Unknown query: {}. Use 'summary', 'by_mode', 'invocations', 'fallbacks', or 'config'.",
+                            query
+                        )
+                    })),
+                },
+                false,
+            ),
+        };
+
+        self.state.metrics.record(
+            MetricEvent::new("metrics", timer.elapsed_ms(), success).with_operation(&query),
+        );
+
+        response
     }
 }
 

@@ -11,9 +11,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use mcp_reasoning::storage::SqliteStorage;
-use mcp_reasoning::traits::{Session, StorageTrait, Thought};
+use mcp_reasoning::traits::{StorageTrait, Thought};
 use serial_test::serial;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Create a test database in a temporary directory.
@@ -59,14 +58,18 @@ async fn test_thought_persistence() {
         .await
         .expect("Failed to create session");
 
-    // Save a thought
+    // Save a thought (5 args: id, session_id, content, mode, confidence)
     let thought = Thought::new(
         "thought-1",
         &session.id,
-        "linear",
         "This is a test thought",
+        "linear",
+        0.85,
     );
-    storage.save_thought(&thought).await.expect("Failed to save thought");
+    storage
+        .save_thought(&thought)
+        .await
+        .expect("Failed to save thought");
 
     // Retrieve thoughts
     let thoughts = storage
@@ -94,10 +97,14 @@ async fn test_multi_thought_workflow() {
         let thought = Thought::new(
             &format!("thought-{i}"),
             &session.id,
-            "linear",
             &format!("Thought content {i}"),
+            "linear",
+            0.80 + (i as f64 * 0.02),
         );
-        storage.save_thought(&thought).await.expect("Failed to save thought");
+        storage
+            .save_thought(&thought)
+            .await
+            .expect("Failed to save thought");
     }
 
     // Verify all thoughts were saved
@@ -127,36 +134,6 @@ async fn test_session_auto_id_generation() {
 
 #[tokio::test]
 #[serial]
-async fn test_thought_with_parent() {
-    let (storage, _temp_dir) = create_test_storage().await;
-
-    // Create session
-    let session = storage
-        .get_or_create_session(Some("parent-test".to_string()))
-        .await
-        .expect("Failed to create session");
-
-    // Create parent thought
-    let parent = Thought::new("parent-1", &session.id, "tree", "Parent thought");
-    storage.save_thought(&parent).await.expect("Failed to save parent");
-
-    // Create child thought
-    let mut child = Thought::new("child-1", &session.id, "tree", "Child thought");
-    child.parent_id = Some("parent-1".to_string());
-    storage.save_thought(&child).await.expect("Failed to save child");
-
-    // Retrieve and verify relationship
-    let child_retrieved = storage
-        .get_thought("child-1")
-        .await
-        .expect("Failed to get thought");
-
-    assert!(child_retrieved.is_some());
-    assert_eq!(child_retrieved.unwrap().parent_id, Some("parent-1".to_string()));
-}
-
-#[tokio::test]
-#[serial]
 async fn test_session_isolation() {
     let (storage, _temp_dir) = create_test_storage().await;
 
@@ -172,15 +149,27 @@ async fn test_session_isolation() {
         .expect("Failed to create session 2");
 
     // Add thoughts to each session
-    let thought1 = Thought::new("t1", &session1.id, "linear", "Session 1 thought");
-    let thought2 = Thought::new("t2", &session2.id, "linear", "Session 2 thought");
+    let thought1 = Thought::new("t1", &session1.id, "Session 1 thought", "linear", 0.85);
+    let thought2 = Thought::new("t2", &session2.id, "Session 2 thought", "linear", 0.85);
 
-    storage.save_thought(&thought1).await.expect("Failed to save thought 1");
-    storage.save_thought(&thought2).await.expect("Failed to save thought 2");
+    storage
+        .save_thought(&thought1)
+        .await
+        .expect("Failed to save thought 1");
+    storage
+        .save_thought(&thought2)
+        .await
+        .expect("Failed to save thought 2");
 
     // Verify thoughts are isolated
-    let thoughts1 = storage.get_thoughts(&session1.id).await.expect("Failed to get thoughts");
-    let thoughts2 = storage.get_thoughts(&session2.id).await.expect("Failed to get thoughts");
+    let thoughts1 = storage
+        .get_thoughts(&session1.id)
+        .await
+        .expect("Failed to get thoughts");
+    let thoughts2 = storage
+        .get_thoughts(&session2.id)
+        .await
+        .expect("Failed to get thoughts");
 
     assert_eq!(thoughts1.len(), 1);
     assert_eq!(thoughts2.len(), 1);
