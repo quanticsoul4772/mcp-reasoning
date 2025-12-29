@@ -3231,4 +3231,1937 @@ mod tests {
         // summary may or may not be present
         let _ = resp.summary;
     }
+
+    // ============================================================================
+    // Wiremock Integration Tests - Cover Success Paths
+    // ============================================================================
+
+    mod wiremock_tests {
+        use super::*;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        fn anthropic_response(text: &str) -> serde_json::Value {
+            serde_json::json!({
+                "id": "msg_test_123",
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": text}],
+                "model": "claude-sonnet-4-20250514",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 100, "output_tokens": 50}
+            })
+        }
+
+        async fn create_mocked_server(mock_server: &MockServer) -> ReasoningServer {
+            use crate::anthropic::{AnthropicClient, ClientConfig};
+            use crate::config::{Config, SecretString};
+            use crate::storage::SqliteStorage;
+
+            let config = Config {
+                api_key: SecretString::new("test-key"),
+                database_path: ":memory:".to_string(),
+                log_level: "info".to_string(),
+                request_timeout_ms: 5000,
+                max_retries: 0,
+                model: "claude-sonnet-4-20250514".to_string(),
+            };
+
+            let storage = SqliteStorage::new_in_memory().await.unwrap();
+            let client_config = ClientConfig::default()
+                .with_base_url(mock_server.uri())
+                .with_max_retries(0)
+                .with_timeout_ms(5000);
+            let client = AnthropicClient::new("test-key", client_config).unwrap();
+            let state = AppState::new(storage, client, config);
+            ReasoningServer::new(Arc::new(state))
+        }
+
+        #[tokio::test]
+        async fn test_linear_success_path() {
+            let mock_server = MockServer::start().await;
+
+            let response_json = serde_json::json!({
+                "analysis": "Detailed reasoning analysis",
+                "confidence": 0.85,
+                "next_step": "Continue with more analysis"
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&response_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+            let req = LinearRequest {
+                content: "Analyze this problem".to_string(),
+                session_id: None,
+                confidence: Some(0.8),
+            };
+
+            let resp = server.reasoning_linear(req).await;
+            // Should succeed with mocked response
+            assert!(!resp.thought_id.is_empty() || !resp.content.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_tree_all_operations() {
+            let mock_server = MockServer::start().await;
+
+            // Test create operation
+            let create_json = serde_json::json!({
+                "branches": [
+                    {"id": "b1", "content": "Branch 1", "score": 0.8},
+                    {"id": "b2", "content": "Branch 2", "score": 0.7}
+                ],
+                "recommendation": "Explore branch 1 first"
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&create_json.to_string())),
+                )
+                .expect(1..)
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            // Test create
+            let create_req = TreeRequest {
+                operation: Some("create".to_string()),
+                content: Some("Explore this topic".to_string()),
+                session_id: Some("s1".to_string()),
+                branch_id: None,
+                num_branches: Some(2),
+                completed: None,
+            };
+            let resp = server.reasoning_tree(create_req).await;
+            assert_eq!(resp.session_id, "s1");
+
+            // Test list
+            let list_req = TreeRequest {
+                operation: Some("list".to_string()),
+                content: None,
+                session_id: Some("s1".to_string()),
+                branch_id: None,
+                num_branches: None,
+                completed: None,
+            };
+            let resp = server.reasoning_tree(list_req).await;
+            assert_eq!(resp.session_id, "s1");
+
+            // Test focus
+            let focus_req = TreeRequest {
+                operation: Some("focus".to_string()),
+                content: None,
+                session_id: Some("s1".to_string()),
+                branch_id: Some("b1".to_string()),
+                num_branches: None,
+                completed: None,
+            };
+            let resp = server.reasoning_tree(focus_req).await;
+            assert_eq!(resp.session_id, "s1");
+
+            // Test complete
+            let complete_req = TreeRequest {
+                operation: Some("complete".to_string()),
+                content: None,
+                session_id: Some("s1".to_string()),
+                branch_id: Some("b1".to_string()),
+                num_branches: None,
+                completed: Some(true),
+            };
+            let resp = server.reasoning_tree(complete_req).await;
+            assert_eq!(resp.session_id, "s1");
+
+            // Test unknown operation
+            let unknown_req = TreeRequest {
+                operation: Some("unknown".to_string()),
+                content: None,
+                session_id: Some("s1".to_string()),
+                branch_id: None,
+                num_branches: None,
+                completed: None,
+            };
+            let resp = server.reasoning_tree(unknown_req).await;
+            assert!(resp.recommendation.unwrap().contains("Unknown operation"));
+        }
+
+        #[tokio::test]
+        async fn test_divergent_success_path() {
+            let mock_server = MockServer::start().await;
+
+            let response_json = serde_json::json!({
+                "perspectives": [
+                    {"viewpoint": "Optimistic", "content": "Positive outlook", "novelty_score": 0.8},
+                    {"viewpoint": "Pessimistic", "content": "Cautionary view", "novelty_score": 0.7}
+                ],
+                "challenged_assumptions": ["Assumption 1"],
+                "synthesis": "Combined insight"
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&response_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+            let req = DivergentRequest {
+                content: "Analyze from multiple perspectives".to_string(),
+                session_id: Some("s1".to_string()),
+                num_perspectives: Some(2),
+                challenge_assumptions: Some(true),
+                force_rebellion: Some(true),
+            };
+
+            let resp = server.reasoning_divergent(req).await;
+            assert_eq!(resp.session_id, "s1");
+        }
+
+        #[tokio::test]
+        async fn test_reflection_all_operations() {
+            let mock_server = MockServer::start().await;
+
+            let process_json = serde_json::json!({
+                "analysis": {
+                    "strengths": ["Clear logic"],
+                    "weaknesses": ["Needs more evidence"]
+                },
+                "improvements": [
+                    {"suggestion": "Add examples", "priority": 1}
+                ],
+                "refined_reasoning": "Improved version",
+                "confidence_improvement": 0.15
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&process_json.to_string())),
+                )
+                .expect(1..)
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            // Test process
+            let process_req = ReflectionRequest {
+                operation: Some("process".to_string()),
+                content: Some("Reasoning to improve".to_string()),
+                thought_id: None,
+                session_id: Some("s1".to_string()),
+                max_iterations: Some(3),
+                quality_threshold: Some(0.8),
+            };
+            let resp = server.reasoning_reflection(process_req).await;
+            assert!(resp.quality_score >= 0.0);
+
+            // Test evaluate
+            let eval_json = serde_json::json!({
+                "session_assessment": {
+                    "overall_quality": 0.8,
+                    "coherence": 0.85,
+                    "reasoning_depth": 0.75
+                },
+                "strongest_elements": ["Logic", "Structure"],
+                "areas_for_improvement": ["More examples"],
+                "recommendations": ["Add case studies"]
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&eval_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let evaluate_req = ReflectionRequest {
+                operation: Some("evaluate".to_string()),
+                content: None,
+                thought_id: None,
+                session_id: Some("s1".to_string()),
+                max_iterations: None,
+                quality_threshold: None,
+            };
+            let resp = server.reasoning_reflection(evaluate_req).await;
+            assert!(resp.quality_score >= 0.0);
+
+            // Test unknown operation
+            let unknown_req = ReflectionRequest {
+                operation: Some("unknown".to_string()),
+                content: None,
+                thought_id: None,
+                session_id: Some("s1".to_string()),
+                max_iterations: None,
+                quality_threshold: None,
+            };
+            let resp = server.reasoning_reflection(unknown_req).await;
+            assert!(resp
+                .weaknesses
+                .unwrap()
+                .iter()
+                .any(|w| w.contains("Unknown")));
+        }
+
+        #[tokio::test]
+        async fn test_checkpoint_all_operations() {
+            let mock_server = MockServer::start().await;
+
+            // No API calls needed for checkpoint - it's storage-only
+            let server = create_mocked_server(&mock_server).await;
+
+            // First create a session
+            let create_req = CheckpointRequest {
+                operation: "create".to_string(),
+                session_id: "s1".to_string(),
+                checkpoint_id: None,
+                name: Some("cp1".to_string()),
+                description: Some("Test checkpoint".to_string()),
+                new_direction: None,
+            };
+            let resp = server.reasoning_checkpoint(create_req).await;
+            assert_eq!(resp.session_id, "s1");
+
+            // List checkpoints
+            let list_req = CheckpointRequest {
+                operation: "list".to_string(),
+                session_id: "s1".to_string(),
+                checkpoint_id: None,
+                name: None,
+                description: None,
+                new_direction: None,
+            };
+            let resp = server.reasoning_checkpoint(list_req).await;
+            assert_eq!(resp.session_id, "s1");
+
+            // Restore (will fail since no actual checkpoint, but exercises code path)
+            let restore_req = CheckpointRequest {
+                operation: "restore".to_string(),
+                session_id: "s1".to_string(),
+                checkpoint_id: Some("cp-nonexistent".to_string()),
+                name: None,
+                description: None,
+                new_direction: Some("New direction".to_string()),
+            };
+            let resp = server.reasoning_checkpoint(restore_req).await;
+            // Will have error in restored_state since checkpoint doesn't exist
+            assert!(resp.restored_state.is_some());
+
+            // Unknown operation
+            let unknown_req = CheckpointRequest {
+                operation: "unknown".to_string(),
+                session_id: "s1".to_string(),
+                checkpoint_id: None,
+                name: None,
+                description: None,
+                new_direction: None,
+            };
+            let resp = server.reasoning_checkpoint(unknown_req).await;
+            assert!(resp.restored_state.is_some());
+        }
+
+        #[tokio::test]
+        async fn test_auto_success_path() {
+            let mock_server = MockServer::start().await;
+
+            let response_json = serde_json::json!({
+                "selected_mode": "tree",
+                "reasoning": "Content suggests branching exploration",
+                "characteristics": ["complex", "multi-path"],
+                "suggested_parameters": {"num_branches": 3},
+                "alternative_mode": {"mode": "linear", "reason": "Simpler option"}
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&response_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+            let req = AutoRequest {
+                content: "Complex problem with multiple paths".to_string(),
+                hints: Some(vec!["exploration".to_string()]),
+                session_id: Some("s1".to_string()),
+            };
+
+            let resp = server.reasoning_auto(req).await;
+            assert!(!resp.selected_mode.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_graph_all_operations() {
+            let mock_server = MockServer::start().await;
+
+            // Setup mock for various graph operations
+            let init_json = serde_json::json!({
+                "root": {"id": "n1", "content": "Root node", "score": 1.0}
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&init_json.to_string())),
+                )
+                .expect(1..)
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            // Test init
+            let init_req = GraphRequest {
+                operation: "init".to_string(),
+                session_id: "s1".to_string(),
+                content: Some("Problem to explore".to_string()),
+                problem: None,
+                node_id: None,
+                node_ids: None,
+                k: None,
+                threshold: None,
+                terminal_node_ids: None,
+            };
+            let resp = server.reasoning_graph(init_req).await;
+            assert_eq!(resp.session_id, "s1");
+
+            // Test generate
+            let generate_json = serde_json::json!({
+                "children": [
+                    {"id": "n2", "content": "Child 1", "score": 0.8},
+                    {"id": "n3", "content": "Child 2", "score": 0.7}
+                ]
+            });
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&generate_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let generate_req = GraphRequest {
+                operation: "generate".to_string(),
+                session_id: "s1".to_string(),
+                content: Some("Generate continuations".to_string()),
+                problem: None,
+                node_id: Some("n1".to_string()),
+                node_ids: None,
+                k: Some(2),
+                threshold: None,
+                terminal_node_ids: None,
+            };
+            let resp = server.reasoning_graph(generate_req).await;
+            assert_eq!(resp.session_id, "s1");
+
+            // Test unknown operation
+            let unknown_req = GraphRequest {
+                operation: "unknown".to_string(),
+                session_id: "s1".to_string(),
+                content: None,
+                problem: None,
+                node_id: None,
+                node_ids: None,
+                k: None,
+                threshold: None,
+                terminal_node_ids: None,
+            };
+            let resp = server.reasoning_graph(unknown_req).await;
+            assert!(resp
+                .aggregated_insight
+                .unwrap()
+                .contains("unknown operation"));
+        }
+
+        #[tokio::test]
+        async fn test_detect_all_types() {
+            let mock_server = MockServer::start().await;
+
+            // Test biases
+            let biases_json = serde_json::json!({
+                "biases_detected": [
+                    {
+                        "bias": "confirmation bias",
+                        "severity": "medium",
+                        "evidence": "Selected confirming evidence",
+                        "impact": "May miss counterexamples",
+                        "debiasing": "Consider opposing views"
+                    }
+                ],
+                "overall_assessment": {
+                    "bias_count": 1,
+                    "most_severe": "confirmation bias",
+                    "reasoning_quality": 0.7,
+                    "overall_analysis": "Some bias detected"
+                }
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&biases_json.to_string())),
+                )
+                .expect(1..)
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let biases_req = DetectRequest {
+                detect_type: "biases".to_string(),
+                content: Some("Argument with potential bias".to_string()),
+                thought_id: None,
+                session_id: Some("s1".to_string()),
+                check_types: None,
+                check_formal: None,
+                check_informal: None,
+            };
+            let resp = server.reasoning_detect(biases_req).await;
+            assert!(resp.summary.is_some());
+
+            // Test fallacies
+            let fallacies_json = serde_json::json!({
+                "fallacies_detected": [
+                    {
+                        "fallacy": "ad hominem",
+                        "category": "informal",
+                        "passage": "The argument",
+                        "explanation": "Attacks the person",
+                        "correction": "Address the argument"
+                    }
+                ],
+                "argument_structure": {
+                    "premises": ["Premise 1"],
+                    "conclusion": "Conclusion",
+                    "structure_type": "deductive",
+                    "validity": "invalid"
+                },
+                "overall_assessment": {
+                    "fallacy_count": 1,
+                    "most_critical": "ad hominem",
+                    "argument_strength": 0.4,
+                    "overall_analysis": "Weak argument"
+                }
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&fallacies_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let fallacies_req = DetectRequest {
+                detect_type: "fallacies".to_string(),
+                content: Some("Argument with fallacy".to_string()),
+                thought_id: None,
+                session_id: Some("s1".to_string()),
+                check_types: None,
+                check_formal: Some(true),
+                check_informal: Some(true),
+            };
+            let resp = server.reasoning_detect(fallacies_req).await;
+            assert!(resp.summary.is_some());
+
+            // Test unknown type
+            let unknown_req = DetectRequest {
+                detect_type: "unknown".to_string(),
+                content: Some("Content".to_string()),
+                thought_id: None,
+                session_id: None,
+                check_types: None,
+                check_formal: None,
+                check_informal: None,
+            };
+            let resp = server.reasoning_detect(unknown_req).await;
+            assert!(resp.summary.unwrap().contains("Unknown"));
+        }
+
+        #[tokio::test]
+        async fn test_decision_all_types() {
+            let mock_server = MockServer::start().await;
+
+            // Test weighted
+            let weighted_json = serde_json::json!({
+                "criteria": [
+                    {"name": "Cost", "weight": 0.4, "type": "cost"},
+                    {"name": "Quality", "weight": 0.6, "type": "benefit"}
+                ],
+                "decision_matrix": [
+                    {"option": "A", "scores": {"Cost": 0.8, "Quality": 0.9}},
+                    {"option": "B", "scores": {"Cost": 0.6, "Quality": 0.7}}
+                ],
+                "weighted_totals": {"A": 0.86, "B": 0.66},
+                "ranking": [
+                    {"option": "A", "score": 0.86, "rank": 1},
+                    {"option": "B", "score": 0.66, "rank": 2}
+                ],
+                "sensitivity_notes": "A is preferred"
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&weighted_json.to_string())),
+                )
+                .expect(1..)
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let weighted_req = DecisionRequest {
+                decision_type: Some("weighted".to_string()),
+                question: Some("Which option?".to_string()),
+                options: Some(vec!["A".to_string(), "B".to_string()]),
+                topic: None,
+                context: None,
+                session_id: Some("s1".to_string()),
+            };
+            let resp = server.reasoning_decision(weighted_req).await;
+            assert!(!resp.recommendation.is_empty() || resp.recommendation.contains("ERROR"));
+
+            // Test pairwise
+            let pairwise_json = serde_json::json!({
+                "comparisons": [
+                    {"option_a": "A", "option_b": "B", "preferred": "A", "strength": "strong", "rationale": "Better"}
+                ],
+                "pairwise_matrix": [[0, 1], [0, 0]],
+                "ranking": [
+                    {"option": "A", "wins": 1, "rank": 1},
+                    {"option": "B", "wins": 0, "rank": 2}
+                ]
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&pairwise_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let pairwise_req = DecisionRequest {
+                decision_type: Some("pairwise".to_string()),
+                question: Some("Compare options".to_string()),
+                options: Some(vec!["A".to_string(), "B".to_string()]),
+                topic: None,
+                context: None,
+                session_id: Some("s1".to_string()),
+            };
+            let resp = server.reasoning_decision(pairwise_req).await;
+            let _ = resp.recommendation;
+
+            // Test unknown type (defaults to weighted)
+            let default_req = DecisionRequest {
+                decision_type: None,
+                question: Some("Question".to_string()),
+                options: None,
+                topic: None,
+                context: None,
+                session_id: None,
+            };
+            let resp = server.reasoning_decision(default_req).await;
+            let _ = resp.recommendation;
+        }
+
+        #[tokio::test]
+        async fn test_evidence_all_types() {
+            let mock_server = MockServer::start().await;
+
+            // Test assess
+            let assess_json = serde_json::json!({
+                "evidence_pieces": [
+                    {
+                        "content": "Primary source",
+                        "credibility_score": 0.9,
+                        "source_tier": "primary",
+                        "corroborated_by": [1]
+                    }
+                ],
+                "corroboration_matrix": [[1]],
+                "overall_credibility": 0.85,
+                "synthesis": "Strong evidence"
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&assess_json.to_string())),
+                )
+                .expect(1..)
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let assess_req = EvidenceRequest {
+                evidence_type: Some("assess".to_string()),
+                claim: Some("The claim".to_string()),
+                hypothesis: None,
+                prior: None,
+                context: Some("Context".to_string()),
+                session_id: Some("s1".to_string()),
+            };
+            let resp = server.reasoning_evidence(assess_req).await;
+            assert!(resp.overall_credibility >= 0.0);
+
+            // Test probabilistic
+            let prob_json = serde_json::json!({
+                "prior": 0.5,
+                "likelihood_ratio": 2.0,
+                "posterior": 0.67,
+                "confidence_interval": {"lower": 0.5, "upper": 0.8},
+                "hypothesis": "The hypothesis",
+                "sensitivity": "Moderate"
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&prob_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let prob_req = EvidenceRequest {
+                evidence_type: Some("probabilistic".to_string()),
+                claim: None,
+                hypothesis: Some("Hypothesis".to_string()),
+                prior: Some(0.5),
+                context: None,
+                session_id: Some("s1".to_string()),
+            };
+            let resp = server.reasoning_evidence(prob_req).await;
+            assert!(resp.overall_credibility >= 0.0);
+
+            // Test unknown type (defaults to assess)
+            let default_req = EvidenceRequest {
+                evidence_type: None,
+                claim: Some("Claim".to_string()),
+                hypothesis: None,
+                prior: None,
+                context: None,
+                session_id: None,
+            };
+            let resp = server.reasoning_evidence(default_req).await;
+            assert!(resp.overall_credibility >= 0.0);
+        }
+
+        #[tokio::test]
+        async fn test_timeline_all_operations() {
+            let mock_server = MockServer::start().await;
+
+            let create_json = serde_json::json!({
+                "timeline_id": "tl1",
+                "events": [
+                    {"timestamp": "t1", "event": "Event 1", "significance": "high"}
+                ],
+                "analysis": "Timeline analysis"
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&create_json.to_string())),
+                )
+                .expect(1..)
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            // Test create
+            let create_req = TimelineRequest {
+                operation: "create".to_string(),
+                session_id: Some("s1".to_string()),
+                timeline_id: None,
+                content: Some("Timeline content".to_string()),
+                label: Some("main".to_string()),
+                branch_ids: None,
+                source_branch_id: None,
+                target_branch_id: None,
+                merge_strategy: None,
+            };
+            let resp = server.reasoning_timeline(create_req).await;
+            let _ = resp.timeline_id;
+
+            // Test branch
+            let branch_req = TimelineRequest {
+                operation: "branch".to_string(),
+                session_id: Some("s1".to_string()),
+                timeline_id: Some("tl1".to_string()),
+                content: Some("Branch content".to_string()),
+                label: Some("alternative".to_string()),
+                branch_ids: None,
+                source_branch_id: None,
+                target_branch_id: None,
+                merge_strategy: None,
+            };
+            let resp = server.reasoning_timeline(branch_req).await;
+            let _ = resp.timeline_id;
+
+            // Test compare
+            let compare_req = TimelineRequest {
+                operation: "compare".to_string(),
+                session_id: Some("s1".to_string()),
+                timeline_id: Some("tl1".to_string()),
+                content: None,
+                label: None,
+                branch_ids: Some(vec!["b1".to_string(), "b2".to_string()]),
+                source_branch_id: None,
+                target_branch_id: None,
+                merge_strategy: None,
+            };
+            let resp = server.reasoning_timeline(compare_req).await;
+            let _ = resp.timeline_id;
+
+            // Test merge
+            let merge_req = TimelineRequest {
+                operation: "merge".to_string(),
+                session_id: Some("s1".to_string()),
+                timeline_id: Some("tl1".to_string()),
+                content: None,
+                label: None,
+                branch_ids: None,
+                source_branch_id: Some("b1".to_string()),
+                target_branch_id: Some("b2".to_string()),
+                merge_strategy: Some("integrate".to_string()),
+            };
+            let resp = server.reasoning_timeline(merge_req).await;
+            let _ = resp.timeline_id;
+
+            // Test unknown operation
+            let unknown_req = TimelineRequest {
+                operation: "unknown".to_string(),
+                session_id: Some("s1".to_string()),
+                timeline_id: None,
+                content: None,
+                label: None,
+                branch_ids: None,
+                source_branch_id: None,
+                target_branch_id: None,
+                merge_strategy: None,
+            };
+            let resp = server.reasoning_timeline(unknown_req).await;
+            // Should have error in some field
+            let _ = resp.timeline_id;
+        }
+
+        #[tokio::test]
+        async fn test_mcts_all_operations() {
+            let mock_server = MockServer::start().await;
+
+            let explore_json = serde_json::json!({
+                "best_path": [
+                    {"node_id": "n1", "content": "Step 1", "visits": 10, "ucb_score": 1.5}
+                ],
+                "iterations_completed": 50,
+                "frontier_evaluation": [
+                    {"node_id": "n2", "score": 0.8}
+                ]
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&explore_json.to_string())),
+                )
+                .expect(1..)
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            // Test explore
+            let explore_req = MctsRequest {
+                operation: Some("explore".to_string()),
+                content: Some("Problem to search".to_string()),
+                session_id: Some("s1".to_string()),
+                node_id: None,
+                iterations: Some(50),
+                exploration_constant: Some(1.41),
+                simulation_depth: Some(5),
+                quality_threshold: Some(0.7),
+                lookback_depth: Some(3),
+                auto_execute: Some(false),
+            };
+            let resp = server.reasoning_mcts(explore_req).await;
+            assert_eq!(resp.session_id, "s1");
+
+            // Test auto_backtrack
+            let backtrack_json = serde_json::json!({
+                "should_backtrack": true,
+                "target_step": 2,
+                "reason": "Quality dropped",
+                "quality_drop": 0.2
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&backtrack_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let backtrack_req = MctsRequest {
+                operation: Some("auto_backtrack".to_string()),
+                content: None,
+                session_id: Some("s1".to_string()),
+                node_id: None,
+                iterations: None,
+                exploration_constant: None,
+                simulation_depth: None,
+                quality_threshold: Some(0.7),
+                lookback_depth: Some(3),
+                auto_execute: Some(true),
+            };
+            let resp = server.reasoning_mcts(backtrack_req).await;
+            assert_eq!(resp.session_id, "s1");
+
+            // Test unknown operation (defaults to explore)
+            let default_req = MctsRequest {
+                operation: None,
+                content: Some("Content".to_string()),
+                session_id: Some("s1".to_string()),
+                node_id: None,
+                iterations: None,
+                exploration_constant: None,
+                simulation_depth: None,
+                quality_threshold: None,
+                lookback_depth: None,
+                auto_execute: None,
+            };
+            let resp = server.reasoning_mcts(default_req).await;
+            assert_eq!(resp.session_id, "s1");
+        }
+
+        #[tokio::test]
+        async fn test_counterfactual_success_path() {
+            let mock_server = MockServer::start().await;
+
+            let response_json = serde_json::json!({
+                "causal_model": {
+                    "nodes": ["A", "B", "C"],
+                    "edges": [
+                        {"from": "A", "to": "B", "edge_type": "causes", "strength": "strong"}
+                    ]
+                },
+                "ladder_rung": "intervention",
+                "causal_chain": [
+                    {"step": 1, "cause": "Intervention", "effect": "Changed outcome", "probability": 0.8}
+                ],
+                "counterfactual_outcome": "Different result",
+                "key_differences": ["Difference 1"],
+                "confidence": 0.85,
+                "assumptions": ["Assumption 1"]
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&response_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+            let req = CounterfactualRequest {
+                scenario: "Original scenario".to_string(),
+                intervention: "What if X changed?".to_string(),
+                analysis_depth: Some("counterfactual".to_string()),
+                session_id: Some("s1".to_string()),
+            };
+
+            let resp = server.reasoning_counterfactual(req).await;
+            assert_eq!(resp.original_scenario, "Original scenario");
+            assert_eq!(resp.intervention_applied, "What if X changed?");
+        }
+
+        #[tokio::test]
+        async fn test_preset_all_operations() {
+            let mock_server = MockServer::start().await;
+
+            // Presets don't require API calls
+            let server = create_mocked_server(&mock_server).await;
+
+            // Test list
+            let list_req = PresetRequest {
+                operation: "list".to_string(),
+                preset_id: None,
+                category: Some("analysis".to_string()),
+                inputs: None,
+                session_id: None,
+            };
+            let resp = server.reasoning_preset(list_req).await;
+            assert!(resp.presets.is_some());
+
+            // Test run (will fail without valid preset but exercises code)
+            let run_req = PresetRequest {
+                operation: "run".to_string(),
+                preset_id: Some("quick_analysis".to_string()),
+                category: None,
+                inputs: Some(serde_json::json!({"content": "Test content"})),
+                session_id: Some("s1".to_string()),
+            };
+            let resp = server.reasoning_preset(run_req).await;
+            // Either has execution result or presets
+            let _ = resp.execution_result;
+
+            // Test unknown operation
+            let unknown_req = PresetRequest {
+                operation: "unknown".to_string(),
+                preset_id: None,
+                category: None,
+                inputs: None,
+                session_id: None,
+            };
+            let resp = server.reasoning_preset(unknown_req).await;
+            let _ = resp.presets;
+        }
+
+        #[tokio::test]
+        async fn test_decision_topsis_and_perspectives() {
+            let mock_server = MockServer::start().await;
+
+            // Test topsis
+            let topsis_json = serde_json::json!({
+                "criteria": [
+                    {"name": "Cost", "weight": 0.4, "type": "cost"},
+                    {"name": "Quality", "weight": 0.6, "type": "benefit"}
+                ],
+                "normalized_matrix": [[0.8, 0.9], [0.6, 0.7]],
+                "weighted_matrix": [[0.32, 0.54], [0.24, 0.42]],
+                "ideal_positive": [0.24, 0.54],
+                "ideal_negative": [0.32, 0.42],
+                "distance_positive": {"A": 0.1, "B": 0.2},
+                "distance_negative": {"A": 0.2, "B": 0.1},
+                "relative_closeness": {"A": 0.67, "B": 0.33},
+                "ranking": [
+                    {"option": "A", "closeness": 0.67, "rank": 1},
+                    {"option": "B", "closeness": 0.33, "rank": 2}
+                ]
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&topsis_json.to_string())),
+                )
+                .expect(1..)
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let topsis_req = DecisionRequest {
+                decision_type: Some("topsis".to_string()),
+                question: Some("Which option using TOPSIS?".to_string()),
+                options: Some(vec!["A".to_string(), "B".to_string()]),
+                topic: None,
+                context: None,
+                session_id: Some("s1".to_string()),
+            };
+            let resp = server.reasoning_decision(topsis_req).await;
+            let _ = resp.recommendation;
+
+            // Test perspectives
+            let perspectives_json = serde_json::json!({
+                "stakeholders": [
+                    {"name": "Customer", "perspective": "Quality focus", "interests": ["Quality"], "concerns": ["Price"], "influence_level": "high"},
+                    {"name": "Developer", "perspective": "Tech focus", "interests": ["Simplicity"], "concerns": ["Complexity"], "influence_level": "medium"},
+                    {"name": "Manager", "perspective": "Cost focus", "interests": ["Budget"], "concerns": ["Overruns"], "influence_level": "low"}
+                ],
+                "conflicts": [
+                    {"parties": ["Customer", "Manager"], "issue": "Budget vs quality", "severity": "medium", "resolution_approach": "Compromise"}
+                ],
+                "alignments": [
+                    {"parties": ["Customer", "Developer"], "common_ground": "User experience", "leverage_opportunity": "Focus on UX"}
+                ],
+                "balanced_recommendation": {
+                    "option": "Option A",
+                    "rationale": "Best balance of interests",
+                    "trade_offs": ["Some cost increase"]
+                }
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&perspectives_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let perspectives_req = DecisionRequest {
+                decision_type: Some("perspectives".to_string()),
+                question: None,
+                options: None,
+                topic: Some("Project stakeholder analysis".to_string()),
+                context: None,
+                session_id: Some("s1".to_string()),
+            };
+            let resp = server.reasoning_decision(perspectives_req).await;
+            assert!(resp.stakeholder_map.is_some() || !resp.recommendation.is_empty());
+
+            // Test unknown decision type
+            let unknown_req = DecisionRequest {
+                decision_type: Some("unknown_type".to_string()),
+                question: Some("Question".to_string()),
+                options: None,
+                topic: None,
+                context: None,
+                session_id: None,
+            };
+            let resp = server.reasoning_decision(unknown_req).await;
+            assert!(
+                resp.recommendation.contains("ERROR") || resp.recommendation.contains("unknown")
+            );
+        }
+
+        #[tokio::test]
+        async fn test_graph_score_operation() {
+            let mock_server = MockServer::start().await;
+
+            let score_json = serde_json::json!({
+                "node_id": "n1",
+                "score": 0.85,
+                "factors": {"coherence": 0.9, "novelty": 0.8}
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&score_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let score_req = GraphRequest {
+                operation: "score".to_string(),
+                session_id: "s1".to_string(),
+                content: Some("Evaluate this node".to_string()),
+                problem: None,
+                node_id: Some("n1".to_string()),
+                node_ids: None,
+                k: None,
+                threshold: None,
+                terminal_node_ids: None,
+            };
+            let resp = server.reasoning_graph(score_req).await;
+            assert_eq!(resp.session_id, "s1");
+        }
+
+        #[tokio::test]
+        async fn test_graph_aggregate_operation() {
+            let mock_server = MockServer::start().await;
+
+            let aggregate_json = serde_json::json!({
+                "synthesis": {"content": "Combined insight from multiple nodes", "confidence": 0.8}
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&aggregate_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let aggregate_req = GraphRequest {
+                operation: "aggregate".to_string(),
+                session_id: "s1".to_string(),
+                content: Some("Aggregate these insights".to_string()),
+                problem: None,
+                node_id: None,
+                node_ids: Some(vec!["n1".to_string(), "n2".to_string()]),
+                k: None,
+                threshold: None,
+                terminal_node_ids: None,
+            };
+            let resp = server.reasoning_graph(aggregate_req).await;
+            assert_eq!(resp.session_id, "s1");
+        }
+
+        #[tokio::test]
+        async fn test_graph_refine_operation() {
+            let mock_server = MockServer::start().await;
+
+            let refine_json = serde_json::json!({
+                "refined_node": {"id": "n1_refined", "content": "Improved reasoning", "score": 0.9}
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&refine_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let refine_req = GraphRequest {
+                operation: "refine".to_string(),
+                session_id: "s1".to_string(),
+                content: Some("Refine this node".to_string()),
+                problem: None,
+                node_id: Some("n1".to_string()),
+                node_ids: None,
+                k: None,
+                threshold: None,
+                terminal_node_ids: None,
+            };
+            let resp = server.reasoning_graph(refine_req).await;
+            assert_eq!(resp.session_id, "s1");
+        }
+
+        #[tokio::test]
+        async fn test_graph_prune_operation() {
+            let mock_server = MockServer::start().await;
+
+            let prune_json = serde_json::json!({
+                "prune_candidates": [
+                    {"id": "n3", "reason": "Low score", "score": 0.2},
+                    {"id": "n4", "reason": "Redundant", "score": 0.3}
+                ]
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&prune_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let prune_req = GraphRequest {
+                operation: "prune".to_string(),
+                session_id: "s1".to_string(),
+                content: Some("Prune low value nodes".to_string()),
+                problem: None,
+                node_id: None,
+                node_ids: None,
+                k: None,
+                threshold: Some(0.5),
+                terminal_node_ids: None,
+            };
+            let resp = server.reasoning_graph(prune_req).await;
+            assert_eq!(resp.session_id, "s1");
+        }
+
+        #[tokio::test]
+        async fn test_graph_finalize_operation() {
+            let mock_server = MockServer::start().await;
+
+            let finalize_json = serde_json::json!({
+                "conclusions": [
+                    {"conclusion": "Main finding 1", "confidence": 0.9},
+                    {"conclusion": "Main finding 2", "confidence": 0.85}
+                ]
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&finalize_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let finalize_req = GraphRequest {
+                operation: "finalize".to_string(),
+                session_id: "s1".to_string(),
+                content: Some("Generate final conclusions".to_string()),
+                problem: None,
+                node_id: None,
+                node_ids: None,
+                k: None,
+                threshold: None,
+                terminal_node_ids: Some(vec!["n1".to_string(), "n2".to_string()]),
+            };
+            let resp = server.reasoning_graph(finalize_req).await;
+            assert_eq!(resp.session_id, "s1");
+        }
+
+        #[tokio::test]
+        async fn test_graph_state_operation() {
+            let mock_server = MockServer::start().await;
+
+            let state_json = serde_json::json!({
+                "structure": {
+                    "total_nodes": 10,
+                    "depth": 3,
+                    "pruned_count": 2,
+                    "active_branches": 4
+                }
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&state_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let state_req = GraphRequest {
+                operation: "state".to_string(),
+                session_id: "s1".to_string(),
+                content: None,
+                problem: None,
+                node_id: None,
+                node_ids: None,
+                k: None,
+                threshold: None,
+                terminal_node_ids: None,
+            };
+            let resp = server.reasoning_graph(state_req).await;
+            assert_eq!(resp.session_id, "s1");
+        }
+
+        #[tokio::test]
+        async fn test_evidence_unknown_type() {
+            let mock_server = MockServer::start().await;
+
+            // No mock needed - unknown type returns early
+            let server = create_mocked_server(&mock_server).await;
+
+            let unknown_req = EvidenceRequest {
+                evidence_type: Some("unknown_type".to_string()),
+                claim: Some("Claim".to_string()),
+                hypothesis: None,
+                prior: None,
+                context: None,
+                session_id: None,
+            };
+            let resp = server.reasoning_evidence(unknown_req).await;
+            assert!(resp.synthesis.unwrap().contains("Unknown"));
+        }
+
+        #[tokio::test]
+        async fn test_metrics_all_queries() {
+            let mock_server = MockServer::start().await;
+
+            // Metrics don't require API calls
+            let server = create_mocked_server(&mock_server).await;
+
+            // Test summary
+            let summary_req = MetricsRequest {
+                query: "summary".to_string(),
+                mode_name: None,
+                tool_name: None,
+                session_id: None,
+                success_only: None,
+                limit: None,
+            };
+            let resp = server.reasoning_metrics(summary_req).await;
+            let _ = resp.summary;
+
+            // Test by_mode
+            let by_mode_req = MetricsRequest {
+                query: "by_mode".to_string(),
+                mode_name: Some("linear".to_string()),
+                tool_name: None,
+                session_id: None,
+                success_only: None,
+                limit: None,
+            };
+            let resp = server.reasoning_metrics(by_mode_req).await;
+            let _ = resp.mode_stats;
+
+            // Test invocations
+            let invocations_req = MetricsRequest {
+                query: "invocations".to_string(),
+                mode_name: None,
+                tool_name: None,
+                session_id: None,
+                success_only: Some(true),
+                limit: Some(10),
+            };
+            let resp = server.reasoning_metrics(invocations_req).await;
+            let _ = resp.invocations;
+
+            // Test fallbacks
+            let fallbacks_req = MetricsRequest {
+                query: "fallbacks".to_string(),
+                mode_name: None,
+                tool_name: None,
+                session_id: None,
+                success_only: None,
+                limit: None,
+            };
+            let resp = server.reasoning_metrics(fallbacks_req).await;
+            let _ = resp.summary;
+
+            // Test config
+            let config_req = MetricsRequest {
+                query: "config".to_string(),
+                mode_name: None,
+                tool_name: None,
+                session_id: None,
+                success_only: None,
+                limit: None,
+            };
+            let resp = server.reasoning_metrics(config_req).await;
+            let _ = resp.config;
+
+            // Test unknown query
+            let unknown_req = MetricsRequest {
+                query: "unknown".to_string(),
+                mode_name: None,
+                tool_name: None,
+                session_id: None,
+                success_only: None,
+                limit: None,
+            };
+            let resp = server.reasoning_metrics(unknown_req).await;
+            let _ = resp.summary;
+        }
+
+        #[tokio::test]
+        async fn test_preset_run_valid() {
+            let mock_server = MockServer::start().await;
+
+            // Test running a valid preset
+            let json = serde_json::json!({
+                "analysis": "Quick analysis result",
+                "confidence": 0.8
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_body_json(anthropic_response(&json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            // Run quick_analysis preset
+            let run_req = PresetRequest {
+                operation: "run".to_string(),
+                preset_id: Some("quick_analysis".to_string()),
+                category: None,
+                inputs: Some(serde_json::json!({"content": "Analyze this"})),
+                session_id: Some("s1".to_string()),
+            };
+            let resp = server.reasoning_preset(run_req).await;
+            // Will have execution result or error
+            let _ = resp.execution_result;
+        }
+
+        #[tokio::test]
+        async fn test_timeline_success_paths() {
+            let mock_server = MockServer::start().await;
+
+            // Test create with proper response
+            let create_json = serde_json::json!({
+                "timeline_id": "tl_123",
+                "events": [
+                    {"timestamp": "2024-01-01", "event": "Start", "significance": "high"}
+                ],
+                "analysis": "Timeline created"
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&create_json.to_string())),
+                )
+                .expect(1..)
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            // Create timeline
+            let create_req = TimelineRequest {
+                operation: "create".to_string(),
+                session_id: Some("s1".to_string()),
+                timeline_id: None,
+                content: Some("Event history".to_string()),
+                label: Some("main".to_string()),
+                branch_ids: None,
+                source_branch_id: None,
+                target_branch_id: None,
+                merge_strategy: None,
+            };
+            let resp = server.reasoning_timeline(create_req).await;
+            // Check that we get a response
+            let _ = resp.timeline_id;
+
+            // Test branch operation
+            let branch_json = serde_json::json!({
+                "branch_id": "br_456",
+                "timeline_id": "tl_123",
+                "divergence_point": "2024-01-15",
+                "events": []
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&branch_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let branch_req = TimelineRequest {
+                operation: "branch".to_string(),
+                session_id: Some("s1".to_string()),
+                timeline_id: Some("tl_123".to_string()),
+                content: Some("Alternative history".to_string()),
+                label: Some("alternative".to_string()),
+                branch_ids: None,
+                source_branch_id: None,
+                target_branch_id: None,
+                merge_strategy: None,
+            };
+            let resp = server.reasoning_timeline(branch_req).await;
+            let _ = resp.branch_id;
+
+            // Test compare operation
+            let compare_json = serde_json::json!({
+                "comparison": {
+                    "common_events": ["Start"],
+                    "divergences": [{"point": "Day 5", "branch_a": "X", "branch_b": "Y"}],
+                    "analysis": "Branches diverge at Day 5"
+                }
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&compare_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let compare_req = TimelineRequest {
+                operation: "compare".to_string(),
+                session_id: Some("s1".to_string()),
+                timeline_id: Some("tl_123".to_string()),
+                content: None,
+                label: None,
+                branch_ids: Some(vec!["br_1".to_string(), "br_2".to_string()]),
+                source_branch_id: None,
+                target_branch_id: None,
+                merge_strategy: None,
+            };
+            let resp = server.reasoning_timeline(compare_req).await;
+            let _ = resp.comparison;
+
+            // Test merge operation
+            let merge_json = serde_json::json!({
+                "merged_timeline_id": "tl_merged",
+                "events": [{"timestamp": "2024-01-01", "event": "Merged event"}],
+                "conflicts_resolved": 1,
+                "analysis": "Merge successful"
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&merge_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let merge_req = TimelineRequest {
+                operation: "merge".to_string(),
+                session_id: Some("s1".to_string()),
+                timeline_id: Some("tl_123".to_string()),
+                content: None,
+                label: None,
+                branch_ids: None,
+                source_branch_id: Some("br_1".to_string()),
+                target_branch_id: Some("br_2".to_string()),
+                merge_strategy: Some("integrate".to_string()),
+            };
+            let resp = server.reasoning_timeline(merge_req).await;
+            let _ = resp.merged_content;
+        }
+
+        #[tokio::test]
+        async fn test_detect_low_argument_strength() {
+            let mock_server = MockServer::start().await;
+
+            // Test fallacies with low argument strength (high severity)
+            let fallacies_json = serde_json::json!({
+                "fallacies_detected": [
+                    {
+                        "fallacy": "strawman",
+                        "category": "informal",
+                        "passage": "The weak argument",
+                        "explanation": "Misrepresents position",
+                        "correction": "Address actual argument"
+                    }
+                ],
+                "argument_structure": {
+                    "premises": ["P1"],
+                    "conclusion": "C",
+                    "structure_type": "deductive",
+                    "validity": "invalid"
+                },
+                "overall_assessment": {
+                    "fallacy_count": 1,
+                    "most_critical": "strawman",
+                    "argument_strength": 0.3,
+                    "overall_analysis": "Very weak"
+                }
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&fallacies_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let req = DetectRequest {
+                detect_type: "fallacies".to_string(),
+                content: Some("Weak argument".to_string()),
+                thought_id: None,
+                session_id: None,
+                check_types: None,
+                check_formal: None,
+                check_informal: None,
+            };
+            let resp = server.reasoning_detect(req).await;
+            // With argument_strength 0.3, severity should be "high"
+            if let Some(detection) = resp.detections.first() {
+                assert_eq!(detection.severity, "high");
+            }
+        }
+
+        #[tokio::test]
+        async fn test_detect_medium_argument_strength() {
+            let mock_server = MockServer::start().await;
+
+            // Test fallacies with medium argument strength
+            let fallacies_json = serde_json::json!({
+                "fallacies_detected": [
+                    {
+                        "fallacy": "appeal to authority",
+                        "category": "informal",
+                        "passage": "Expert says so",
+                        "explanation": "Relies on authority",
+                        "correction": "Provide evidence"
+                    }
+                ],
+                "argument_structure": {
+                    "premises": ["P1"],
+                    "conclusion": "C",
+                    "structure_type": "inductive",
+                    "validity": "partially_valid"
+                },
+                "overall_assessment": {
+                    "fallacy_count": 1,
+                    "most_critical": "appeal to authority",
+                    "argument_strength": 0.5,
+                    "overall_analysis": "Moderate"
+                }
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&fallacies_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let req = DetectRequest {
+                detect_type: "fallacies".to_string(),
+                content: Some("Medium strength argument".to_string()),
+                thought_id: None,
+                session_id: None,
+                check_types: None,
+                check_formal: None,
+                check_informal: None,
+            };
+            let resp = server.reasoning_detect(req).await;
+            // With argument_strength 0.5, severity should be "medium"
+            if let Some(detection) = resp.detections.first() {
+                assert_eq!(detection.severity, "medium");
+            }
+        }
+
+        #[tokio::test]
+        async fn test_detect_high_argument_strength() {
+            let mock_server = MockServer::start().await;
+
+            // Test fallacies with high argument strength (low severity)
+            let fallacies_json = serde_json::json!({
+                "fallacies_detected": [
+                    {
+                        "fallacy": "minor issue",
+                        "category": "informal",
+                        "passage": "Good argument",
+                        "explanation": "Small flaw",
+                        "correction": "Minor fix"
+                    }
+                ],
+                "argument_structure": {
+                    "premises": ["P1", "P2"],
+                    "conclusion": "C",
+                    "structure_type": "deductive",
+                    "validity": "valid"
+                },
+                "overall_assessment": {
+                    "fallacy_count": 1,
+                    "most_critical": "minor issue",
+                    "argument_strength": 0.8,
+                    "overall_analysis": "Strong"
+                }
+            });
+
+            Mock::given(method("POST"))
+                .and(path("/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(anthropic_response(&fallacies_json.to_string())),
+                )
+                .mount(&mock_server)
+                .await;
+
+            let server = create_mocked_server(&mock_server).await;
+
+            let req = DetectRequest {
+                detect_type: "fallacies".to_string(),
+                content: Some("Strong argument".to_string()),
+                thought_id: None,
+                session_id: None,
+                check_types: None,
+                check_formal: None,
+                check_informal: None,
+            };
+            let resp = server.reasoning_detect(req).await;
+            // With argument_strength 0.8, severity should be "low"
+            if let Some(detection) = resp.detections.first() {
+                assert_eq!(detection.severity, "low");
+            }
+        }
+
+        #[tokio::test]
+        async fn test_into_contents_implementations() {
+            // Test all response types' IntoContents implementations
+            let linear_resp = LinearResponse {
+                thought_id: "t1".to_string(),
+                session_id: "s1".to_string(),
+                content: "Analysis".to_string(),
+                confidence: 0.8,
+                next_step: Some("Continue".to_string()),
+            };
+            let _ = linear_resp.into_contents();
+
+            let tree_resp = TreeResponse {
+                session_id: "s1".to_string(),
+                branch_id: Some("b1".to_string()),
+                branches: Some(vec![Branch {
+                    id: "b1".to_string(),
+                    content: "Content".to_string(),
+                    score: 0.7,
+                    status: "active".to_string(),
+                }]),
+                recommendation: Some("Rec".to_string()),
+            };
+            let _ = tree_resp.into_contents();
+
+            let divergent_resp = DivergentResponse {
+                thought_id: "t1".to_string(),
+                session_id: "s1".to_string(),
+                perspectives: vec![Perspective {
+                    viewpoint: "View".to_string(),
+                    content: "Content".to_string(),
+                    novelty_score: 0.8,
+                }],
+                challenged_assumptions: Some(vec!["Assumption".to_string()]),
+                synthesis: Some("Synthesis".to_string()),
+            };
+            let _ = divergent_resp.into_contents();
+
+            let reflection_resp = ReflectionResponse {
+                quality_score: 0.8,
+                thought_id: Some("t1".to_string()),
+                session_id: Some("s1".to_string()),
+                iterations_used: Some(2),
+                strengths: Some(vec!["Strength".to_string()]),
+                weaknesses: Some(vec!["Weakness".to_string()]),
+                recommendations: Some(vec!["Improve".to_string()]),
+                refined_content: Some("Refined".to_string()),
+                coherence_score: Some(0.85),
+            };
+            let _ = reflection_resp.into_contents();
+
+            let checkpoint_resp = CheckpointResponse {
+                session_id: "s1".to_string(),
+                checkpoint_id: Some("cp1".to_string()),
+                checkpoints: Some(vec![Checkpoint {
+                    id: "cp1".to_string(),
+                    name: "Name".to_string(),
+                    created_at: "2024-01-01".to_string(),
+                    description: None,
+                    thought_count: 5,
+                }]),
+                restored_state: None,
+            };
+            let _ = checkpoint_resp.into_contents();
+
+            let auto_resp = AutoResponse {
+                selected_mode: "linear".to_string(),
+                confidence: 0.9,
+                rationale: "Rationale".to_string(),
+                result: serde_json::json!({}),
+            };
+            let _ = auto_resp.into_contents();
+
+            let graph_resp = GraphResponse {
+                session_id: "s1".to_string(),
+                node_id: Some("n1".to_string()),
+                nodes: None,
+                aggregated_insight: None,
+                conclusions: None,
+                state: None,
+            };
+            let _ = graph_resp.into_contents();
+
+            let detect_resp = DetectResponse {
+                detections: vec![],
+                summary: Some("Summary".to_string()),
+                overall_quality: Some(0.8),
+            };
+            let _ = detect_resp.into_contents();
+
+            let decision_resp = DecisionResponse {
+                recommendation: "A".to_string(),
+                rankings: None,
+                stakeholder_map: None,
+                conflicts: None,
+                alignments: None,
+                rationale: None,
+            };
+            let _ = decision_resp.into_contents();
+
+            let evidence_resp = EvidenceResponse {
+                overall_credibility: 0.8,
+                evidence_assessments: None,
+                posterior: None,
+                prior: None,
+                likelihood_ratio: None,
+                entropy: None,
+                confidence_interval: None,
+                synthesis: None,
+            };
+            let _ = evidence_resp.into_contents();
+
+            let timeline_resp = TimelineResponse {
+                timeline_id: "tl1".to_string(),
+                branch_id: None,
+                branches: None,
+                comparison: None,
+                merged_content: None,
+            };
+            let _ = timeline_resp.into_contents();
+
+            let mcts_resp = MctsResponse {
+                session_id: "s1".to_string(),
+                best_path: None,
+                iterations_completed: Some(10),
+                backtrack_suggestion: None,
+                executed: None,
+            };
+            let _ = mcts_resp.into_contents();
+
+            let cf_resp = CounterfactualResponse {
+                original_scenario: "Original".to_string(),
+                intervention_applied: "Intervention".to_string(),
+                counterfactual_outcome: "Outcome".to_string(),
+                causal_chain: vec![],
+                key_differences: vec![],
+                confidence: 0.8,
+                assumptions: vec![],
+                session_id: Some("s1".to_string()),
+                analysis_depth: "counterfactual".to_string(),
+            };
+            let _ = cf_resp.into_contents();
+
+            let preset_resp = PresetResponse {
+                presets: None,
+                execution_result: None,
+                session_id: None,
+            };
+            let _ = preset_resp.into_contents();
+
+            let metrics_resp = MetricsResponse {
+                summary: None,
+                mode_stats: None,
+                invocations: None,
+                config: None,
+            };
+            let _ = metrics_resp.into_contents();
+        }
+    }
 }

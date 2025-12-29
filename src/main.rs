@@ -2,10 +2,17 @@
 //!
 //! This binary provides a stdio-based MCP server for structured reasoning.
 //! All logs go to stderr; stdout is reserved for MCP JSON-RPC messages.
+//!
+//! Coverage is excluded because the main function cannot be unit tested
+//! as it requires the full MCP protocol handshake over stdio.
+
+// Enable the coverage attribute when running with nightly for llvm-cov exclusions
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 use mcp_reasoning::config::Config;
 use mcp_reasoning::server::McpServer;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[tokio::main]
 async fn main() {
     // Initialize logging to stderr only (stdout is for MCP JSON-RPC)

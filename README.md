@@ -4,7 +4,8 @@ A high-performance MCP server that adds structured reasoning capabilities to Cla
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/Tests-1524%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/Tests-1624%20passing-brightgreen.svg)](#development)
+[![Coverage](https://img.shields.io/badge/Coverage-96%25-brightgreen.svg)](#development)
 
 ## Features
 
@@ -335,7 +336,7 @@ cargo build
 # Release build (optimized)
 cargo build --release
 
-# Run all tests (1,524 tests)
+# Run all tests (1,624 tests)
 cargo test
 
 # Run specific test module
@@ -400,7 +401,7 @@ src/
 
 - **Zero unsafe code** - `#![forbid(unsafe_code)]` enforced
 - **No panics** - No `.unwrap()` or `.expect()` in production paths
-- **1,524 tests** - Comprehensive unit and integration test coverage
+- **1,624 tests** - Comprehensive unit, integration, and handler test coverage (96%+ coverage)
 - **Max 500 lines per file** - Enforced for maintainability
 - **Structured logging** - Via `tracing` crate, logs to stderr
 - **Clippy pedantic** - All pedantic lints enabled as warnings

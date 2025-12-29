@@ -29,6 +29,8 @@
 //!                                      SQLite
 //! ```
 
+// Enable the coverage attribute when running with nightly for llvm-cov exclusions
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
