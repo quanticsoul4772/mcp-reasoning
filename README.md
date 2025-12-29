@@ -416,7 +416,8 @@ src/
 
 ## API Reference
 
-For detailed API documentation, see the [Design Document](docs/DESIGN.md).
+- **[Tool Reference](docs/TOOL_REFERENCE.md)** - Complete API documentation for all 15 reasoning tools with parameters, response schemas, and examples
+- **[Design Document](docs/DESIGN.md)** - Technical specification and architecture details
 
 ## License
 
