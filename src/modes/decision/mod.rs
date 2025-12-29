@@ -99,7 +99,7 @@ where
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
-            .with_max_tokens(4096)
+            .with_max_tokens(16384)
             .with_temperature(0.3)
             .with_deep_thinking();
 
@@ -170,7 +170,7 @@ where
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
-            .with_max_tokens(4096)
+            .with_max_tokens(16384)
             .with_temperature(0.3)
             .with_deep_thinking();
 
@@ -232,7 +232,7 @@ where
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
-            .with_max_tokens(4096)
+            .with_max_tokens(16384)
             .with_temperature(0.3)
             .with_deep_thinking();
 
@@ -301,7 +301,7 @@ where
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
-            .with_max_tokens(4096)
+            .with_max_tokens(16384)
             .with_temperature(0.4)
             .with_deep_thinking();
 

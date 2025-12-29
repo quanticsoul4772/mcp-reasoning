@@ -290,17 +290,18 @@ impl AnthropicClientTrait for AnthropicClient {
         let max_tokens = config.max_tokens.unwrap_or(4096);
         let mut request = ApiRequest::new(DEFAULT_MODEL, max_tokens, api_messages);
 
-        if let Some(temp) = config.temperature {
+        // Wire extended thinking if budget is specified
+        // Note: When thinking is enabled, temperature must be 1 (API constraint)
+        if let Some(budget) = config.thinking_budget {
+            request = request.with_thinking(ThinkingConfig::enabled(budget));
+            // Temperature is implicitly 1 when thinking is enabled
+        } else if let Some(temp) = config.temperature {
+            // Only set custom temperature when thinking is NOT enabled
             request = request.with_temperature(f64::from(temp));
         }
 
         if let Some(system) = config.system_prompt.as_ref() {
             request = request.with_system(system);
-        }
-
-        // Wire extended thinking if budget is specified
-        if let Some(budget) = config.thinking_budget {
-            request = request.with_thinking(ThinkingConfig::enabled(budget));
         }
 
         // Call the underlying API method (not the trait method)

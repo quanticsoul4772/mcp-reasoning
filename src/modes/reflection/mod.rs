@@ -70,7 +70,7 @@ where
         let user_message = format!("{prompt}\n\nAnalyze and improve this reasoning:\n{content}");
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
-            .with_max_tokens(8192)
+            .with_max_tokens(16384)
             .with_temperature(0.7)
             .with_deep_thinking();
 
@@ -178,7 +178,7 @@ where
         let user_message = format!("{prompt}\n\nEvaluate this reasoning session:\n{context}");
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
-            .with_max_tokens(8192)
+            .with_max_tokens(16384)
             .with_temperature(0.7)
             .with_deep_thinking();
 
