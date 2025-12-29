@@ -79,6 +79,20 @@ criterion = "0.5"
 name = "reasoning_benchmarks"
 harness = false
 
+[patch.crates-io]
+# Dependency deduplication patches (Placeholder - Added 2024-12-29)
+#
+# NOTE: Implementation blocked by compilation errors in the codebase.
+# See docs/DEPENDENCY_DEDUP_STATUS.md for details.
+#
+# Cargo patches require pointing to different sources (git repos, paths),
+# not just version numbers. Actual deduplication will be achieved through:
+# 1. Fixing compilation errors (prerequisite)
+# 2. Updating direct dependencies (rmcp, sqlx) to newer versions
+# 3. Running `cargo update` with specific package constraints
+#
+# See docs/DEPENDENCY_DEDUPLICATION_PLAN.md for the full strategy.
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
