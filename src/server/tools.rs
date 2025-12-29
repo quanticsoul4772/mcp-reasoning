@@ -872,7 +872,10 @@ impl ReasoningServer {
 
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
-        match mode.process(&req.content, req.session_id, req.confidence).await {
+        match mode
+            .process(&req.content, req.session_id, req.confidence)
+            .await
+        {
             Ok(resp) => LinearResponse {
                 thought_id: resp.thought_id,
                 session_id: resp.session_id,
@@ -1179,7 +1182,9 @@ impl ReasoningServer {
                 // extracted from the session's current state
                 let context = CheckpointContext::new(
                     vec![],
-                    req.new_direction.as_deref().unwrap_or("current exploration"),
+                    req.new_direction
+                        .as_deref()
+                        .unwrap_or("current exploration"),
                     vec![],
                 );
                 let resumption_hint = "Resume from this point";
