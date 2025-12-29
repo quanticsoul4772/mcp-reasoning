@@ -382,3 +382,29 @@ chrono = { version = "0.4", features = ["serde"] }
 - Error recovery testing where full error context is valuable
 
 See `docs/TEST_ERROR_HANDLING_PLAN.md` for complete analysis.
+
+---
+
+## Pedantic Lint Fixes (2024-12-29)
+
+Fixed 8+ clippy pedantic warnings using a hybrid automated + manual approach.
+
+**Issues resolved:**
+- Removed unnecessary raw string hashes (`r#""#` → `r""`) - 5 locations
+- Added numeric separators for readability (`120000` → `120_000`) - 3 locations
+- Simplified pattern matches (removed unnecessary field patterns)
+- Other auto-fixed style improvements (17 fixes total)
+
+**Method:**
+1. Used `cargo clippy --fix --allow-dirty` for automated fixes (handled most issues)
+2. Manual fixes for long literals (clippy auto-fix doesn't handle these)
+3. Verified with full test suite (all 1,658 tests passing)
+
+**Result:** Clean clippy pedantic lints for target issues, no functional changes.
+
+**Files modified:** 19 files (src/modes/core.rs, src/server/params.rs, src/self_improvement/*, tests/*)
+
+**Prevention:**
+- Consider adding clippy pedantic to CI/CD pipeline
+- Use editor integration (rust-analyzer with clippy enabled)
+- Pre-commit hooks for automated style checks
