@@ -17,7 +17,8 @@ use reqwest::Client;
 
 use super::config::{ClientConfig, DEFAULT_MODEL};
 use super::types::{
-    ApiMessage, ApiRequest, ApiResponse, ContentBlock, ReasoningResponse, ToolUseResult,
+    ApiMessage, ApiRequest, ApiResponse, ContentBlock, ReasoningResponse, ThinkingConfig,
+    ToolUseResult,
 };
 use crate::error::{AnthropicError, ModeError};
 use crate::traits::{AnthropicClientTrait, CompletionConfig, CompletionResponse, Message, Usage};
@@ -297,6 +298,11 @@ impl AnthropicClientTrait for AnthropicClient {
             request = request.with_system(system);
         }
 
+        // Wire extended thinking if budget is specified
+        if let Some(budget) = config.thinking_budget {
+            request = request.with_thinking(ThinkingConfig::enabled(budget));
+        }
+
         // Call the underlying API method (not the trait method)
         let response =
             Self::complete(self, request)
@@ -364,7 +370,7 @@ fn extract_json(text: &str) -> Option<serde_json::Value> {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::anthropic::types::{ApiMessage, ThinkingConfig};
+    use crate::anthropic::types::ApiMessage;
     use serde_json::json;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};

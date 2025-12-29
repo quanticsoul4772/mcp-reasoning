@@ -63,6 +63,8 @@ pub struct CompletionConfig {
     pub temperature: Option<f32>,
     /// System prompt to prepend.
     pub system_prompt: Option<String>,
+    /// Extended thinking budget in tokens (minimum 1024).
+    pub thinking_budget: Option<u32>,
 }
 
 impl CompletionConfig {
@@ -91,6 +93,35 @@ impl CompletionConfig {
     pub fn with_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
         self.system_prompt = Some(system_prompt.into());
         self
+    }
+
+    /// Set extended thinking budget.
+    /// The budget is enforced at minimum 1024 tokens by the API.
+    #[must_use]
+    pub const fn with_thinking_budget(mut self, budget: u32) -> Self {
+        self.thinking_budget = Some(budget);
+        self
+    }
+
+    /// Enable standard thinking budget (4096 tokens).
+    /// Suitable for divergent thinking and graph reasoning.
+    #[must_use]
+    pub const fn with_standard_thinking(self) -> Self {
+        self.with_thinking_budget(4096)
+    }
+
+    /// Enable deep thinking budget (8192 tokens).
+    /// Suitable for reflection, decision, evidence, detect, and timeline modes.
+    #[must_use]
+    pub const fn with_deep_thinking(self) -> Self {
+        self.with_thinking_budget(8192)
+    }
+
+    /// Enable maximum thinking budget (16384 tokens).
+    /// Suitable for counterfactual and MCTS reasoning.
+    #[must_use]
+    pub const fn with_maximum_thinking(self) -> Self {
+        self.with_thinking_budget(16384)
     }
 }
 
@@ -300,6 +331,7 @@ mod tests {
         assert!(config.max_tokens.is_none());
         assert!(config.temperature.is_none());
         assert!(config.system_prompt.is_none());
+        assert!(config.thinking_budget.is_none());
     }
 
     #[test]
@@ -308,6 +340,7 @@ mod tests {
         assert!(config.max_tokens.is_none());
         assert!(config.temperature.is_none());
         assert!(config.system_prompt.is_none());
+        assert!(config.thinking_budget.is_none());
     }
 
     #[test]
@@ -344,6 +377,41 @@ mod tests {
         let config = CompletionConfig::new().with_max_tokens(1000);
         let cloned = config.clone();
         assert_eq!(config, cloned);
+    }
+
+    #[test]
+    fn test_completion_config_with_thinking_budget() {
+        let config = CompletionConfig::new().with_thinking_budget(2048);
+        assert_eq!(config.thinking_budget, Some(2048));
+    }
+
+    #[test]
+    fn test_completion_config_with_standard_thinking() {
+        let config = CompletionConfig::new().with_standard_thinking();
+        assert_eq!(config.thinking_budget, Some(4096));
+    }
+
+    #[test]
+    fn test_completion_config_with_deep_thinking() {
+        let config = CompletionConfig::new().with_deep_thinking();
+        assert_eq!(config.thinking_budget, Some(8192));
+    }
+
+    #[test]
+    fn test_completion_config_with_maximum_thinking() {
+        let config = CompletionConfig::new().with_maximum_thinking();
+        assert_eq!(config.thinking_budget, Some(16384));
+    }
+
+    #[test]
+    fn test_completion_config_builder_chain_with_thinking() {
+        let config = CompletionConfig::new()
+            .with_max_tokens(4000)
+            .with_temperature(0.7)
+            .with_deep_thinking();
+        assert_eq!(config.max_tokens, Some(4000));
+        assert!((config.temperature.unwrap_or(0.0) - 0.7).abs() < f32::EPSILON);
+        assert_eq!(config.thinking_budget, Some(8192));
     }
 
     // Usage Tests

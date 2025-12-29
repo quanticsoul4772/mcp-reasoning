@@ -196,7 +196,8 @@ where
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
             .with_max_tokens(8192)
-            .with_temperature(0.9);
+            .with_temperature(0.9)
+            .with_standard_thinking();
 
         let response = self.client.complete(messages, config).await?;
         let json = extract_json(&response.content)?;
