@@ -925,4 +925,453 @@ mod tests {
         let result = get_string_array(&json!({}), "items");
         assert!(matches!(result, Err(ModeError::MissingField { .. })));
     }
+
+    // Additional coverage tests for missing field error paths
+
+    #[test]
+    fn test_parse_criteria_missing_name() {
+        let json = json!({
+            "criteria": [{"weight": 0.5, "description": "No name"}]
+        });
+        let result = parse_criteria(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "name"));
+    }
+
+    #[test]
+    fn test_parse_criteria_missing_weight() {
+        let json = json!({
+            "criteria": [{"name": "test", "description": "No weight"}]
+        });
+        let result = parse_criteria(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "weight"));
+    }
+
+    #[test]
+    fn test_parse_criteria_missing_description() {
+        let json = json!({
+            "criteria": [{"name": "test", "weight": 0.5}]
+        });
+        let result = parse_criteria(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "description"));
+    }
+
+    #[test]
+    fn test_parse_scores_missing() {
+        let result = parse_scores(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_weighted_totals_missing() {
+        let result = parse_weighted_totals(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_weighted_ranking_missing() {
+        let result = parse_weighted_ranking(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_weighted_ranking_missing_rank() {
+        let json = json!({
+            "ranking": [{"option": "a", "score": 0.9}]
+        });
+        let result = parse_weighted_ranking(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "rank"));
+    }
+
+    #[test]
+    fn test_parse_weighted_ranking_missing_option() {
+        let json = json!({
+            "ranking": [{"score": 0.9, "rank": 1}]
+        });
+        let result = parse_weighted_ranking(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "option"));
+    }
+
+    #[test]
+    fn test_parse_weighted_ranking_missing_score() {
+        let json = json!({
+            "ranking": [{"option": "a", "rank": 1}]
+        });
+        let result = parse_weighted_ranking(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "score"));
+    }
+
+    #[test]
+    fn test_parse_comparisons_missing() {
+        let result = parse_comparisons(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_comparisons_missing_option_a() {
+        let json = json!({
+            "comparisons": [{
+                "option_b": "b", "preferred": "option_a",
+                "strength": "strong", "reasoning": "x"
+            }]
+        });
+        let result = parse_comparisons(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "option_a"));
+    }
+
+    #[test]
+    fn test_parse_comparisons_missing_option_b() {
+        let json = json!({
+            "comparisons": [{
+                "option_a": "a", "preferred": "option_a",
+                "strength": "strong", "reasoning": "x"
+            }]
+        });
+        let result = parse_comparisons(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "option_b"));
+    }
+
+    #[test]
+    fn test_parse_comparisons_missing_reasoning() {
+        let json = json!({
+            "comparisons": [{
+                "option_a": "a", "option_b": "b",
+                "preferred": "option_a", "strength": "strong"
+            }]
+        });
+        let result = parse_comparisons(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "reasoning"));
+    }
+
+    #[test]
+    fn test_parse_pairwise_matrix_missing() {
+        let result = parse_pairwise_matrix(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_pairwise_ranking_missing() {
+        let result = parse_pairwise_ranking(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_pairwise_ranking_missing_wins() {
+        let json = json!({
+            "ranking": [{"option": "a", "rank": 1}]
+        });
+        let result = parse_pairwise_ranking(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "wins"));
+    }
+
+    #[test]
+    fn test_parse_pairwise_ranking_missing_rank() {
+        let json = json!({
+            "ranking": [{"option": "a", "wins": 3}]
+        });
+        let result = parse_pairwise_ranking(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "rank"));
+    }
+
+    #[test]
+    fn test_parse_pairwise_ranking_missing_option() {
+        let json = json!({
+            "ranking": [{"wins": 3, "rank": 1}]
+        });
+        let result = parse_pairwise_ranking(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "option"));
+    }
+
+    #[test]
+    fn test_parse_topsis_criteria_missing() {
+        let result = parse_topsis_criteria(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_topsis_criteria_missing_name() {
+        let json = json!({
+            "criteria": [{"type": "benefit", "weight": 0.5}]
+        });
+        let result = parse_topsis_criteria(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "name"));
+    }
+
+    #[test]
+    fn test_parse_topsis_criteria_missing_weight() {
+        let json = json!({
+            "criteria": [{"name": "test", "type": "benefit"}]
+        });
+        let result = parse_topsis_criteria(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "weight"));
+    }
+
+    #[test]
+    fn test_parse_decision_matrix_missing() {
+        let result = parse_decision_matrix(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_f64_array_missing() {
+        let result = parse_f64_array(&json!({}), "values");
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_distances_missing() {
+        let result = parse_distances(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_distances_missing_to_ideal() {
+        let json = json!({
+            "distances": {"a": {"to_anti_ideal": 0.8}}
+        });
+        let result = parse_distances(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "to_ideal"));
+    }
+
+    #[test]
+    fn test_parse_distances_missing_to_anti_ideal() {
+        let json = json!({
+            "distances": {"a": {"to_ideal": 0.2}}
+        });
+        let result = parse_distances(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "to_anti_ideal"));
+    }
+
+    #[test]
+    fn test_parse_relative_closeness_missing() {
+        let result = parse_relative_closeness(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_topsis_ranking_missing() {
+        let result = parse_topsis_ranking(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_topsis_ranking_missing_rank() {
+        let json = json!({
+            "ranking": [{"option": "a", "closeness": 0.8}]
+        });
+        let result = parse_topsis_ranking(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "rank"));
+    }
+
+    #[test]
+    fn test_parse_topsis_ranking_missing_option() {
+        let json = json!({
+            "ranking": [{"closeness": 0.8, "rank": 1}]
+        });
+        let result = parse_topsis_ranking(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "option"));
+    }
+
+    #[test]
+    fn test_parse_topsis_ranking_missing_closeness() {
+        let json = json!({
+            "ranking": [{"option": "a", "rank": 1}]
+        });
+        let result = parse_topsis_ranking(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "closeness"));
+    }
+
+    #[test]
+    fn test_parse_stakeholders_missing() {
+        let result = parse_stakeholders(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_stakeholders_missing_name() {
+        let json = json!({
+            "stakeholders": [{
+                "interests": [], "preferred_option": "a",
+                "concerns": [], "influence_level": "high"
+            }]
+        });
+        let result = parse_stakeholders(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "name"));
+    }
+
+    #[test]
+    fn test_parse_stakeholders_missing_interests() {
+        let json = json!({
+            "stakeholders": [{
+                "name": "Test", "preferred_option": "a",
+                "concerns": [], "influence_level": "high"
+            }]
+        });
+        let result = parse_stakeholders(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "interests"));
+    }
+
+    #[test]
+    fn test_parse_stakeholders_missing_preferred_option() {
+        let json = json!({
+            "stakeholders": [{
+                "name": "Test", "interests": [],
+                "concerns": [], "influence_level": "high"
+            }]
+        });
+        let result = parse_stakeholders(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "preferred_option"));
+    }
+
+    #[test]
+    fn test_parse_stakeholders_missing_concerns() {
+        let json = json!({
+            "stakeholders": [{
+                "name": "Test", "interests": [],
+                "preferred_option": "a", "influence_level": "high"
+            }]
+        });
+        let result = parse_stakeholders(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "concerns"));
+    }
+
+    #[test]
+    fn test_parse_conflicts_missing() {
+        let result = parse_conflicts(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_conflicts_missing_between() {
+        let json = json!({
+            "conflicts": [{"issue": "test", "severity": "high"}]
+        });
+        let result = parse_conflicts(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "between"));
+    }
+
+    #[test]
+    fn test_parse_conflicts_missing_issue() {
+        let json = json!({
+            "conflicts": [{"between": ["A", "B"], "severity": "high"}]
+        });
+        let result = parse_conflicts(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "issue"));
+    }
+
+    #[test]
+    fn test_parse_alignments_missing() {
+        let result = parse_alignments(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_alignments_missing_stakeholders() {
+        let json = json!({
+            "alignments": [{"common_ground": "shared"}]
+        });
+        let result = parse_alignments(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "stakeholders"));
+    }
+
+    #[test]
+    fn test_parse_alignments_missing_common_ground() {
+        let json = json!({
+            "alignments": [{"stakeholders": ["A", "B"]}]
+        });
+        let result = parse_alignments(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "common_ground"));
+    }
+
+    #[test]
+    fn test_parse_balanced_recommendation_missing() {
+        let result = parse_balanced_recommendation(&json!({}));
+        assert!(matches!(result, Err(ModeError::MissingField { .. })));
+    }
+
+    #[test]
+    fn test_parse_balanced_recommendation_missing_option() {
+        let json = json!({
+            "balanced_recommendation": {
+                "rationale": "test", "mitigation": "test"
+            }
+        });
+        let result = parse_balanced_recommendation(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "option"));
+    }
+
+    #[test]
+    fn test_parse_balanced_recommendation_missing_rationale() {
+        let json = json!({
+            "balanced_recommendation": {
+                "option": "a", "mitigation": "test"
+            }
+        });
+        let result = parse_balanced_recommendation(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "rationale"));
+    }
+
+    #[test]
+    fn test_parse_balanced_recommendation_missing_mitigation() {
+        let json = json!({
+            "balanced_recommendation": {
+                "option": "a", "rationale": "test"
+            }
+        });
+        let result = parse_balanced_recommendation(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "mitigation"));
+    }
+
+    #[test]
+    fn test_parse_comparisons_missing_preferred() {
+        let json = json!({
+            "comparisons": [{
+                "option_a": "a", "option_b": "b",
+                "strength": "strong", "reasoning": "x"
+            }]
+        });
+        let result = parse_comparisons(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "preferred"));
+    }
+
+    #[test]
+    fn test_parse_comparisons_missing_strength() {
+        let json = json!({
+            "comparisons": [{
+                "option_a": "a", "option_b": "b",
+                "preferred": "option_a", "reasoning": "x"
+            }]
+        });
+        let result = parse_comparisons(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "strength"));
+    }
+
+    #[test]
+    fn test_parse_stakeholders_missing_influence_level() {
+        let json = json!({
+            "stakeholders": [{
+                "name": "Test", "interests": [],
+                "preferred_option": "a", "concerns": []
+            }]
+        });
+        let result = parse_stakeholders(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "influence_level"));
+    }
+
+    #[test]
+    fn test_parse_conflicts_missing_severity() {
+        let json = json!({
+            "conflicts": [{"between": ["A", "B"], "issue": "test"}]
+        });
+        let result = parse_conflicts(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "severity"));
+    }
+
+    #[test]
+    fn test_parse_topsis_criteria_missing_type() {
+        let json = json!({
+            "criteria": [{"name": "test", "weight": 0.5}]
+        });
+        let result = parse_topsis_criteria(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "type"));
+    }
 }

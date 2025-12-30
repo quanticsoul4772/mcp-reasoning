@@ -859,4 +859,190 @@ mod tests {
         );
         assert_eq!(response.thought_id, "t-1");
     }
+
+    #[tokio::test]
+    async fn test_analyze_with_association_ladder_rung() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "Is X correlated with Y?", "ladder_rung": "association", "variables": {"cause": "X", "effect": "Y", "intervention": "observe"}},
+                    "causal_model": {"nodes": ["X", "Y"], "edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.8, "interpretation": "Strong correlation"}, "intervention_level": {"causal_effect": 0.0, "mechanism": "Unknown"}, "counterfactual_level": {"scenario": "N/A", "outcome": "N/A", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "X and Y are correlated", "strength": "strong", "caveats": [], "actionable_insight": "Investigate further"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Is X correlated with Y?", None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.causal_question.ladder_rung, LadderRung::Association);
+        assert_eq!(response.conclusions.strength, CausalStrength::Strong);
+    }
+
+    #[tokio::test]
+    async fn test_analyze_with_intervention_ladder_rung() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "What if we do X?", "ladder_rung": "intervention", "variables": {"cause": "X", "effect": "Y", "intervention": "do X"}},
+                    "causal_model": {"nodes": ["X", "Y"], "edges": [{"from": "X", "to": "Y", "type": "mediated"}], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "Moderate"}, "intervention_level": {"causal_effect": 0.6, "mechanism": "Direct effect"}, "counterfactual_level": {"scenario": "If X done", "outcome": "Y increases", "confidence": 0.7}},
+                    "conclusions": {"causal_claim": "Doing X causes Y", "strength": "weak", "caveats": ["Limited data"], "actionable_insight": "Consider doing X"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("What if we do X?", None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(
+            response.causal_question.ladder_rung,
+            LadderRung::Intervention
+        );
+        assert_eq!(response.conclusions.strength, CausalStrength::Weak);
+        // Test mediated edge type was parsed
+        assert_eq!(response.causal_model.edges[0].edge_type, EdgeType::Mediated);
+    }
+
+    #[tokio::test]
+    async fn test_analyze_with_confounded_edge_type() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "Test", "ladder_rung": "counterfactual", "variables": {"cause": "X", "effect": "Y", "intervention": "I"}},
+                    "causal_model": {"nodes": ["X", "Y", "Z"], "edges": [{"from": "Z", "to": "X", "type": "confounded"}, {"from": "Z", "to": "Y", "type": "confounded"}], "confounders": ["Z"]},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(
+            response.causal_model.edges[0].edge_type,
+            EdgeType::Confounded
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_invalid_strength() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "unknown_strength", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "strength")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT INTO thoughts".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "Test", "ladder_rung": "counterfactual", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[test]
+    fn test_edge_type_confounded_serialize() {
+        assert_eq!(
+            serde_json::to_string(&EdgeType::Confounded).unwrap(),
+            "\"confounded\""
+        );
+    }
+
+    #[test]
+    fn test_causal_strength_weak_serialize() {
+        assert_eq!(
+            serde_json::to_string(&CausalStrength::Weak).unwrap(),
+            "\"weak\""
+        );
+    }
 }
