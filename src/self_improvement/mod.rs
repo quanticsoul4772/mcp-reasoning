@@ -94,9 +94,9 @@ pub use storage::{
 pub use system::{CycleResult, SelfImprovementSystem, SystemConfig};
 pub use types::{
     ActionStatus, ActionType, Baselines, ConfigScope, DiagnosisStatus, LegacyTriggerMetric, Lesson,
-    MetricsSnapshot, NormalizedReward, ParamValue, ResourceType, RewardBreakdown, RewardWeights,
-    SelfDiagnosis, SelfImprovementAction, Severity, SuggestedAction, SystemMetrics, ToolMetrics,
-    TriggerMetric,
+    MetricsSnapshot, NewActionStatus, NewActionType, NormalizedReward, ParamValue, ResourceType,
+    RewardBreakdown, RewardWeights, SelfDiagnosis, SelfImprovementAction, Severity, SuggestedAction,
+    SystemMetrics, ToolMetrics, TriggerMetric,
 };
 
 #[cfg(test)]
