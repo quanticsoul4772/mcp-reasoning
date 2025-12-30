@@ -20,7 +20,8 @@ use rmcp::tool;
 use super::requests::{
     AutoRequest, CheckpointRequest, CounterfactualRequest, DecisionRequest, DetectRequest,
     DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, MctsRequest, MetricsRequest,
-    PresetRequest, ReflectionRequest, TimelineRequest, TreeRequest,
+    PresetRequest, ReflectionRequest, SiApproveRequest, SiDiagnosesRequest, SiRejectRequest,
+    SiRollbackRequest, SiStatusRequest, SiTriggerRequest, TimelineRequest, TreeRequest,
 };
 #[cfg(test)]
 use super::responses::ConfidenceInterval;
@@ -30,7 +31,9 @@ use super::responses::{
     DivergentResponse, EvidenceAssessment, EvidenceResponse, GraphNode, GraphResponse, GraphState,
     Invocation, LinearResponse, MctsNode, MctsResponse, MetricsResponse, MetricsSummary, ModeStats,
     Perspective, PresetExecution, PresetInfo, PresetResponse, RankedOption, ReflectionResponse,
-    StakeholderMap, TimelineBranch, TimelineResponse, TreeResponse,
+    SiApproveResponse, SiDiagnosesResponse, SiExecutionSummary, SiLearningSummary, SiPendingDiagnosis,
+    SiRejectResponse, SiRollbackResponse, SiStatusResponse, SiTriggerResponse, StakeholderMap,
+    TimelineBranch, TimelineResponse, TreeResponse,
 };
 use super::types::AppState;
 use crate::metrics::{MetricEvent, Timer};
@@ -1912,6 +1915,248 @@ impl ReasoningServer {
 
         response
     }
+
+    // ============================================================================
+    // Self-Improvement Tools
+    // ============================================================================
+
+    #[tool(
+        name = "reasoning_si_status",
+        description = "Get self-improvement system status including cycle stats and circuit breaker state."
+    )]
+    async fn reasoning_si_status(
+        &self,
+        #[tool(aggr)] _req: SiStatusRequest,
+    ) -> SiStatusResponse {
+        let timer = Timer::start();
+        let status = self.state.self_improvement.status().await;
+
+        self.state
+            .metrics
+            .record(MetricEvent::new("si_status", timer.elapsed_ms(), true));
+
+        SiStatusResponse {
+            running: status.running,
+            circuit_state: status.circuit_state,
+            total_cycles: status.total_cycles,
+            successful_cycles: status.successful_cycles,
+            failed_cycles: status.failed_cycles,
+            pending_diagnoses: status.pending_diagnoses,
+            total_actions_executed: status.total_actions_executed,
+            total_actions_rolled_back: status.total_actions_rolled_back,
+            last_cycle_at: status.last_cycle_at,
+            average_reward: status.learning_summary.average_reward,
+        }
+    }
+
+    #[tool(
+        name = "reasoning_si_diagnoses",
+        description = "Get pending diagnoses awaiting approval."
+    )]
+    async fn reasoning_si_diagnoses(
+        &self,
+        #[tool(aggr)] req: SiDiagnosesRequest,
+    ) -> SiDiagnosesResponse {
+        let timer = Timer::start();
+        let diagnoses = self.state.self_improvement.pending_diagnoses(req.limit).await;
+        let total = diagnoses.len();
+
+        self.state
+            .metrics
+            .record(MetricEvent::new("si_diagnoses", timer.elapsed_ms(), true));
+
+        SiDiagnosesResponse {
+            diagnoses: diagnoses
+                .into_iter()
+                .map(|d| SiPendingDiagnosis {
+                    id: d.id,
+                    action_type: d.action_type,
+                    description: d.description,
+                    rationale: d.rationale,
+                    expected_improvement: d.expected_improvement,
+                    created_at: d.created_at,
+                })
+                .collect(),
+            total,
+        }
+    }
+
+    #[tool(
+        name = "reasoning_si_approve",
+        description = "Approve a pending diagnosis to execute its proposed actions."
+    )]
+    async fn reasoning_si_approve(
+        &self,
+        #[tool(aggr)] req: SiApproveRequest,
+    ) -> SiApproveResponse {
+        let timer = Timer::start();
+        let result = self.state.self_improvement.approve(req.diagnosis_id).await;
+
+        let (response, success) = match result {
+            Ok(approve_result) => (
+                SiApproveResponse {
+                    success: true,
+                    actions_executed: approve_result.execution_results.len(),
+                    lessons_learned: approve_result.learning_results.len(),
+                    execution_results: approve_result
+                        .execution_results
+                        .into_iter()
+                        .map(|r| SiExecutionSummary {
+                            action_id: r.action_id,
+                            success: r.success,
+                            error: if r.success { None } else { Some(r.message) },
+                        })
+                        .collect(),
+                    learning_results: approve_result
+                        .learning_results
+                        .into_iter()
+                        .map(|r| SiLearningSummary {
+                            action_id: r.action_id,
+                            insight: r.lesson,
+                            reward: r.reward,
+                        })
+                        .collect(),
+                    error: None,
+                },
+                true,
+            ),
+            Err(e) => (
+                SiApproveResponse {
+                    success: false,
+                    actions_executed: 0,
+                    lessons_learned: 0,
+                    execution_results: vec![],
+                    learning_results: vec![],
+                    error: Some(e),
+                },
+                false,
+            ),
+        };
+
+        self.state
+            .metrics
+            .record(MetricEvent::new("si_approve", timer.elapsed_ms(), success));
+
+        response
+    }
+
+    #[tool(
+        name = "reasoning_si_reject",
+        description = "Reject a pending diagnosis."
+    )]
+    async fn reasoning_si_reject(&self, #[tool(aggr)] req: SiRejectRequest) -> SiRejectResponse {
+        let timer = Timer::start();
+        let result = self
+            .state
+            .self_improvement
+            .reject(req.diagnosis_id, req.reason)
+            .await;
+
+        let (response, success) = match result {
+            Ok(()) => (
+                SiRejectResponse {
+                    success: true,
+                    error: None,
+                },
+                true,
+            ),
+            Err(e) => (
+                SiRejectResponse {
+                    success: false,
+                    error: Some(e),
+                },
+                false,
+            ),
+        };
+
+        self.state
+            .metrics
+            .record(MetricEvent::new("si_reject", timer.elapsed_ms(), success));
+
+        response
+    }
+
+    #[tool(
+        name = "reasoning_si_trigger",
+        description = "Trigger an immediate improvement cycle."
+    )]
+    async fn reasoning_si_trigger(
+        &self,
+        #[tool(aggr)] _req: SiTriggerRequest,
+    ) -> SiTriggerResponse {
+        let timer = Timer::start();
+        let result = self.state.self_improvement.trigger_cycle().await;
+
+        let (response, success) = match result {
+            Ok(cycle_result) => {
+                let actions_proposed = cycle_result
+                    .analysis_result
+                    .as_ref()
+                    .map_or(0, |a| a.actions.len());
+                (
+                    SiTriggerResponse {
+                        success: true,
+                        actions_proposed,
+                        actions_executed: cycle_result.execution_results.len(),
+                        analysis_skipped: cycle_result.analysis_result.is_none(),
+                        error: None,
+                    },
+                    true,
+                )
+            }
+            Err(e) => (
+                SiTriggerResponse {
+                    success: false,
+                    actions_proposed: 0,
+                    actions_executed: 0,
+                    analysis_skipped: false,
+                    error: Some(format!("{e}")),
+                },
+                false,
+            ),
+        };
+
+        self.state
+            .metrics
+            .record(MetricEvent::new("si_trigger", timer.elapsed_ms(), success));
+
+        response
+    }
+
+    #[tool(
+        name = "reasoning_si_rollback",
+        description = "Rollback a previously executed action."
+    )]
+    async fn reasoning_si_rollback(
+        &self,
+        #[tool(aggr)] req: SiRollbackRequest,
+    ) -> SiRollbackResponse {
+        let timer = Timer::start();
+        let result = self.state.self_improvement.rollback(req.action_id).await;
+
+        let (response, success) = match result {
+            Ok(()) => (
+                SiRollbackResponse {
+                    success: true,
+                    error: None,
+                },
+                true,
+            ),
+            Err(e) => (
+                SiRollbackResponse {
+                    success: false,
+                    error: Some(e),
+                },
+                false,
+            ),
+        };
+
+        self.state
+            .metrics
+            .record(MetricEvent::new("si_rollback", timer.elapsed_ms(), success));
+
+        response
+    }
 }
 
 // Generate the tool_box function from tool definitions
@@ -1931,6 +2176,13 @@ rmcp::tool_box!(ReasoningServer {
     reasoning_counterfactual,
     reasoning_preset,
     reasoning_metrics,
+    // Self-improvement tools
+    reasoning_si_status,
+    reasoning_si_diagnoses,
+    reasoning_si_approve,
+    reasoning_si_reject,
+    reasoning_si_trigger,
+    reasoning_si_rollback,
 });
 
 // Implement ServerHandler to integrate with rmcp's server infrastructure
@@ -2436,6 +2688,31 @@ mod tests {
     // ServerHandler Tests
     // ============================================================================
 
+    fn create_test_si_handle(
+        storage: &crate::storage::SqliteStorage,
+    ) -> crate::self_improvement::ManagerHandle {
+        use crate::config::SelfImprovementConfig;
+        use crate::metrics::MetricsCollector;
+        use crate::self_improvement::{SelfImprovementManager, SelfImprovementStorage};
+        use crate::traits::{CompletionResponse, MockAnthropicClientTrait, Usage};
+
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"summary": "Test", "confidence": 0.8, "actions": []}"#,
+                Usage::new(100, 50),
+            ))
+        });
+
+        let metrics = std::sync::Arc::new(MetricsCollector::new());
+        let si_storage =
+            std::sync::Arc::new(SelfImprovementStorage::new(storage.pool.clone()));
+
+        let (_manager, handle) =
+            SelfImprovementManager::new(SelfImprovementConfig::default(), client, metrics, si_storage);
+        handle
+    }
+
     fn create_test_server_sync() -> ReasoningServer {
         use crate::anthropic::{AnthropicClient, ClientConfig};
         use crate::config::{Config, SecretString};
@@ -2453,8 +2730,9 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let storage = rt.block_on(async { SqliteStorage::new_in_memory().await.unwrap() });
 
+        let si_handle = create_test_si_handle(&storage);
         let client = AnthropicClient::new("test-key", ClientConfig::default()).unwrap();
-        let state = AppState::new(storage, client, config);
+        let state = AppState::new(storage, client, config, si_handle);
         ReasoningServer::new(Arc::new(state))
     }
 
@@ -2474,8 +2752,9 @@ mod tests {
 
         let storage = SqliteStorage::new_in_memory().await.unwrap();
 
+        let si_handle = create_test_si_handle(&storage);
         let client = AnthropicClient::new("test-key", ClientConfig::default()).unwrap();
-        let state = AppState::new(storage, client, config);
+        let state = AppState::new(storage, client, config, si_handle);
         ReasoningServer::new(Arc::new(state))
     }
 
@@ -2781,12 +3060,13 @@ mod tests {
             };
 
             let storage = SqliteStorage::new_in_memory().await.unwrap();
+            let si_handle = super::create_test_si_handle(&storage);
             let client_config = ClientConfig::default()
                 .with_base_url(mock_server.uri())
                 .with_max_retries(0)
                 .with_timeout_ms(5000);
             let client = AnthropicClient::new("test-key", client_config).unwrap();
-            let state = AppState::new(storage, client, config);
+            let state = AppState::new(storage, client, config, si_handle);
             ReasoningServer::new(Arc::new(state))
         }
 
