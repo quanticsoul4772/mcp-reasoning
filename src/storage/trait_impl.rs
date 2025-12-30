@@ -288,4 +288,161 @@ mod tests {
         assert_eq!(thoughts.len(), 1);
         assert_eq!(thoughts[0].id, "t-1");
     }
+
+    // =========================================================================
+    // Arc<SqliteStorage> Tests - Test the blanket implementation
+    // =========================================================================
+
+    #[tokio::test]
+    #[serial]
+    async fn test_arc_storage_get_session() {
+        let storage = Arc::new(test_storage().await);
+        storage
+            .create_session_with_id("arc-sess")
+            .await
+            .expect("create");
+
+        let result = StorageTrait::get_session(&storage, "arc-sess").await;
+        assert!(result.is_ok());
+        let session = result.expect("result").expect("session");
+        assert_eq!(session.id, "arc-sess");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_arc_storage_get_or_create_session() {
+        let storage = Arc::new(test_storage().await);
+
+        let result =
+            StorageTrait::get_or_create_session(&storage, Some("arc-new".to_string())).await;
+        assert!(result.is_ok());
+        assert_eq!(result.expect("session").id, "arc-new");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_arc_storage_save_and_get_thoughts() {
+        let storage = Arc::new(test_storage().await);
+        storage
+            .create_session_with_id("arc-sess")
+            .await
+            .expect("create");
+
+        let thought = Thought::new("arc-t1", "arc-sess", "Arc content", "linear", 0.9);
+        StorageTrait::save_thought(&storage, &thought)
+            .await
+            .expect("save");
+
+        let thoughts = StorageTrait::get_thoughts(&storage, "arc-sess")
+            .await
+            .expect("get");
+        assert_eq!(thoughts.len(), 1);
+        assert_eq!(thoughts[0].id, "arc-t1");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_arc_storage_checkpoint_operations() {
+        let storage = Arc::new(test_storage().await);
+        storage
+            .create_session_with_id("arc-sess")
+            .await
+            .expect("create");
+
+        let checkpoint = StoredCheckpoint::new("arc-cp", "arc-sess", "Test CP", "{}");
+        StorageTrait::save_checkpoint(&storage, &checkpoint)
+            .await
+            .expect("save");
+
+        let retrieved = StorageTrait::get_checkpoint(&storage, "arc-cp")
+            .await
+            .expect("get");
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().name, "Test CP");
+
+        let all = StorageTrait::get_checkpoints(&storage, "arc-sess")
+            .await
+            .expect("list");
+        assert_eq!(all.len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_arc_storage_branch_operations() {
+        let storage = Arc::new(test_storage().await);
+        storage
+            .create_session_with_id("arc-sess")
+            .await
+            .expect("create");
+
+        let branch = StoredBranch::new("arc-br", "arc-sess", "Branch content");
+        StorageTrait::save_branch(&storage, &branch)
+            .await
+            .expect("save");
+
+        let retrieved = StorageTrait::get_branch(&storage, "arc-br")
+            .await
+            .expect("get");
+        assert!(retrieved.is_some());
+
+        let all = StorageTrait::get_branches(&storage, "arc-sess")
+            .await
+            .expect("list");
+        assert_eq!(all.len(), 1);
+
+        StorageTrait::update_branch_status(&storage, "arc-br", StoredBranchStatus::Completed)
+            .await
+            .expect("update");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_arc_storage_graph_node_operations() {
+        let storage = Arc::new(test_storage().await);
+        storage
+            .create_session_with_id("arc-sess")
+            .await
+            .expect("create");
+
+        let node = StoredGraphNode::new("arc-node", "arc-sess", "Node content");
+        StorageTrait::save_graph_node(&storage, &node)
+            .await
+            .expect("save");
+
+        let retrieved = StorageTrait::get_graph_node(&storage, "arc-node")
+            .await
+            .expect("get");
+        assert!(retrieved.is_some());
+
+        let all = StorageTrait::get_graph_nodes(&storage, "arc-sess")
+            .await
+            .expect("list");
+        assert_eq!(all.len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_arc_storage_graph_edge_operations() {
+        let storage = Arc::new(test_storage().await);
+        storage
+            .create_session_with_id("arc-sess")
+            .await
+            .expect("create");
+
+        // Create nodes first
+        let node1 = StoredGraphNode::new("arc-n1", "arc-sess", "Node 1");
+        let node2 = StoredGraphNode::new("arc-n2", "arc-sess", "Node 2");
+        storage.save_graph_node(&node1).await.expect("save n1");
+        storage.save_graph_node(&node2).await.expect("save n2");
+
+        let edge = StoredGraphEdge::new("arc-edge", "arc-sess", "arc-n1", "arc-n2");
+        StorageTrait::save_graph_edge(&storage, &edge)
+            .await
+            .expect("save");
+
+        let edges = StorageTrait::get_graph_edges(&storage, "arc-sess")
+            .await
+            .expect("get");
+        assert_eq!(edges.len(), 1);
+    }
 }
