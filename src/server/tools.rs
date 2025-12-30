@@ -331,10 +331,7 @@ impl ReasoningServer {
         name = "reasoning_reflection",
         description = "Analyze and improve reasoning: process=iterative refinement, evaluate=session assessment."
     )]
-    async fn reasoning_reflection(
-        &self,
-        req: Parameters<ReflectionRequest>,
-    ) -> ReflectionResponse {
+    async fn reasoning_reflection(&self, req: Parameters<ReflectionRequest>) -> ReflectionResponse {
         let req = req.0;
         let timer = Timer::start();
         let mode = ReflectionMode::new(
@@ -446,10 +443,7 @@ impl ReasoningServer {
         name = "reasoning_checkpoint",
         description = "Save and restore reasoning state: create=save, list=show, restore=return to checkpoint."
     )]
-    async fn reasoning_checkpoint(
-        &self,
-        req: Parameters<CheckpointRequest>,
-    ) -> CheckpointResponse {
+    async fn reasoning_checkpoint(&self, req: Parameters<CheckpointRequest>) -> CheckpointResponse {
         let req = req.0;
         let timer = Timer::start();
         let mode = CheckpointMode::new(
@@ -3027,8 +3021,8 @@ mod tests {
                 database_path: ":memory:".to_string(),
                 log_level: "info".to_string(),
                 request_timeout_ms: 5000,
-            request_timeout_deep_ms: 60000,
-            request_timeout_maximum_ms: 120000,
+                request_timeout_deep_ms: 60000,
+                request_timeout_maximum_ms: 120000,
                 max_retries: 0,
                 model: "claude-sonnet-4-20250514".to_string(),
             };
@@ -4102,7 +4096,9 @@ mod tests {
                 context: None,
                 session_id: Some("s1".to_string()),
             };
-            let resp = server.reasoning_decision(Parameters(perspectives_req)).await;
+            let resp = server
+                .reasoning_decision(Parameters(perspectives_req))
+                .await;
             assert!(resp.stakeholder_map.is_some() || !resp.recommendation.is_empty());
 
             // Test unknown decision type
