@@ -26,11 +26,3 @@ jobs:
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
       - name: Check 95% coverage
         run: cargo llvm-cov --fail-under-lines 95
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: lcov.info
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        continue-on-error: true
