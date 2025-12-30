@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 15 consolidated reasoning tools (vs 40 in the predecessor mcp-langbase-reasoning).
 
-**Status**: Complete. 56,000+ lines of Rust code and 1,752 tests.
+**Status**: Complete. 36,000+ lines of Rust code and 1,893 tests.
 
 **Key Stats**:
-- 84 source files, 56,000+ lines of code
-- 1,752 tests (95%+ coverage)
+- 122 source files, 36,000+ lines of code
+- 1,893 tests (95%+ coverage)
 - 15 reasoning tools, 5 workflow presets
 - 4-phase self-improvement system with safety mechanisms
 
@@ -206,7 +206,7 @@ const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message
 - **No panics**: No `.unwrap()` or `.expect()` in production paths
 - **TDD workflow**: Write tests first, fail, implement, pass, 95%+ coverage
 - **File size limits**: Max 500 lines per .rs file
-- **High test coverage**: 1,752 tests with 95%+ line coverage
+- **High test coverage**: 1,893 tests with 95%+ line coverage
 - **Structured logging**: Use `tracing` with structured fields, logs to stderr only
 
 ## Implementation Status
