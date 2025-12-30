@@ -1045,4 +1045,410 @@ mod tests {
             "\"weak\""
         );
     }
+
+    // Additional coverage tests for parsing error paths
+    #[tokio::test]
+    async fn test_analyze_missing_causal_question() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "causal_question")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_causal_model() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "causal_model")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_analysis() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "analysis"));
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_conclusions() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "conclusions")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_variables() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association"},
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "variables"));
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_nodes() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "nodes"));
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_edges() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "edges"));
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_association_level() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "analysis": {"intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "association_level")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_intervention_level() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "intervention_level")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_counterfactual_level() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "counterfactual_level")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_confidence_below_zero() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": -0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "confidence")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_edge_from() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"statement": "S", "ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "edges": [{"to": "B", "type": "direct"}], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "from"));
+    }
+
+    #[tokio::test]
+    async fn test_analyze_missing_statement() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "causal_question": {"ladder_rung": "association", "variables": {"cause": "C", "effect": "E", "intervention": "I"}},
+                    "causal_model": {"nodes": [], "edges": [], "confounders": []},
+                    "analysis": {"association_level": {"observed_correlation": 0.5, "interpretation": "I"}, "intervention_level": {"causal_effect": 0.5, "mechanism": "M"}, "counterfactual_level": {"scenario": "S", "outcome": "O", "confidence": 0.5}},
+                    "conclusions": {"causal_claim": "C", "strength": "moderate", "caveats": [], "actionable_insight": "A"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "statement"));
+    }
+
+    #[test]
+    fn test_causal_strength_moderate_serialize() {
+        assert_eq!(
+            serde_json::to_string(&CausalStrength::Moderate).unwrap(),
+            "\"moderate\""
+        );
+    }
+
+    #[test]
+    fn test_ladder_rung_deserialize() {
+        let association: LadderRung = serde_json::from_str("\"association\"").unwrap();
+        assert_eq!(association, LadderRung::Association);
+
+        let intervention: LadderRung = serde_json::from_str("\"intervention\"").unwrap();
+        assert_eq!(intervention, LadderRung::Intervention);
+
+        let counterfactual: LadderRung = serde_json::from_str("\"counterfactual\"").unwrap();
+        assert_eq!(counterfactual, LadderRung::Counterfactual);
+    }
+
+    #[test]
+    fn test_edge_type_deserialize() {
+        let direct: EdgeType = serde_json::from_str("\"direct\"").unwrap();
+        assert_eq!(direct, EdgeType::Direct);
+
+        let mediated: EdgeType = serde_json::from_str("\"mediated\"").unwrap();
+        assert_eq!(mediated, EdgeType::Mediated);
+
+        let confounded: EdgeType = serde_json::from_str("\"confounded\"").unwrap();
+        assert_eq!(confounded, EdgeType::Confounded);
+    }
+
+    #[test]
+    fn test_causal_strength_deserialize() {
+        let strong: CausalStrength = serde_json::from_str("\"strong\"").unwrap();
+        assert_eq!(strong, CausalStrength::Strong);
+
+        let moderate: CausalStrength = serde_json::from_str("\"moderate\"").unwrap();
+        assert_eq!(moderate, CausalStrength::Moderate);
+
+        let weak: CausalStrength = serde_json::from_str("\"weak\"").unwrap();
+        assert_eq!(weak, CausalStrength::Weak);
+    }
 }

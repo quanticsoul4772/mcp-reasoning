@@ -654,4 +654,575 @@ mod tests {
         let debug = format!("{mode:?}");
         assert!(debug.contains("DecisionMode"));
     }
+
+    // Additional tests for error paths
+    #[tokio::test]
+    async fn test_weighted_api_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Err(ModeError::ApiUnavailable {
+                message: "API error".to_string(),
+            })
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.weighted("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_weighted_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_weighted_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.weighted("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_pairwise_empty_content() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.pairwise("", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "content"));
+    }
+
+    #[tokio::test]
+    async fn test_pairwise_api_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Err(ModeError::ApiUnavailable {
+                message: "API error".to_string(),
+            })
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.pairwise("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_pairwise_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_pairwise_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.pairwise("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_topsis_empty_content() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.topsis("", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "content"));
+    }
+
+    #[tokio::test]
+    async fn test_topsis_api_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Err(ModeError::ApiUnavailable {
+                message: "API error".to_string(),
+            })
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.topsis("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_topsis_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_topsis_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.topsis("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_perspectives_empty_content() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.perspectives("", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "content"));
+    }
+
+    #[tokio::test]
+    async fn test_perspectives_api_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Err(ModeError::ApiUnavailable {
+                message: "API error".to_string(),
+            })
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.perspectives("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_perspectives_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_perspectives_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.perspectives("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_pairwise_storage_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|_| {
+            Err(StorageError::ConnectionFailed {
+                message: "DB error".to_string(),
+            })
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.pairwise("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_topsis_storage_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|_| {
+            Err(StorageError::ConnectionFailed {
+                message: "DB error".to_string(),
+            })
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.topsis("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_perspectives_storage_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|_| {
+            Err(StorageError::ConnectionFailed {
+                message: "DB error".to_string(),
+            })
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.perspectives("Test", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_weighted_with_empty_ranking() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "options": ["Option A"],
+                    "criteria": [{"name": "Cost", "weight": 0.5, "description": "D"}],
+                    "scores": {"Option A": {"Cost": 0.5}},
+                    "weighted_totals": {"Option A": 0.5},
+                    "ranking": [],
+                    "sensitivity_notes": "Notes"
+                }"#,
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.weighted("Test", None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(response.ranking.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_invalid_influence_level() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "stakeholders": [{"name": "Customer", "interests": [], "preferred_option": "A", "concerns": [], "influence_level": "invalid"}],
+                    "conflicts": [],
+                    "alignments": [],
+                    "balanced_recommendation": {"option": "A", "rationale": "R", "mitigation": "M"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.perspectives("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "influence_level")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_invalid_conflict_severity() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "stakeholders": [{"name": "Customer", "interests": [], "preferred_option": "A", "concerns": [], "influence_level": "high"}],
+                    "conflicts": [{"between": ["A", "B"], "issue": "I", "severity": "invalid"}],
+                    "alignments": [],
+                    "balanced_recommendation": {"option": "A", "rationale": "R", "mitigation": "M"}
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.perspectives("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "severity")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_invalid_preference_strength() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "comparisons": [{"option_a": "A", "option_b": "B", "preferred": "option_a", "strength": "invalid", "reasoning": "R"}],
+                    "pairwise_matrix": {},
+                    "ranking": [],
+                    "consistency_check": "C"
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.pairwise("Test", None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "strength")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pairwise_with_option_b_preferred() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "comparisons": [
+                        {"option_a": "A", "option_b": "B", "preferred": "option_b", "strength": "moderate", "reasoning": "B is better"}
+                    ],
+                    "pairwise_matrix": {"A vs B": -1},
+                    "ranking": [{"option": "B", "wins": 1, "rank": 1}],
+                    "consistency_check": "OK"
+                }"#,
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.pairwise("A vs B", None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.comparisons[0].preferred, PreferenceResult::OptionB);
+        assert_eq!(
+            response.comparisons[0].strength,
+            PreferenceStrength::Moderate
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pairwise_with_tie() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "comparisons": [
+                        {"option_a": "A", "option_b": "B", "preferred": "tie", "strength": "slight", "reasoning": "Equal"}
+                    ],
+                    "pairwise_matrix": {},
+                    "ranking": [],
+                    "consistency_check": "OK"
+                }"#,
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.pairwise("A vs B", None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.comparisons[0].preferred, PreferenceResult::Tie);
+        assert_eq!(response.comparisons[0].strength, PreferenceStrength::Slight);
+    }
+
+    #[tokio::test]
+    async fn test_topsis_with_cost_criterion() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "criteria": [
+                        {"name": "Price", "type": "cost", "weight": 0.6}
+                    ],
+                    "decision_matrix": {"A": [100], "B": [200]},
+                    "ideal_solution": [100],
+                    "anti_ideal_solution": [200],
+                    "distances": {
+                        "A": {"to_ideal": 0.0, "to_anti_ideal": 100},
+                        "B": {"to_ideal": 100, "to_anti_ideal": 0.0}
+                    },
+                    "relative_closeness": {"A": 1.0, "B": 0.0},
+                    "ranking": [{"option": "A", "closeness": 1.0, "rank": 1}]
+                }"#,
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.topsis("Test", None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.criteria[0].criterion_type, CriterionType::Cost);
+    }
+
+    #[tokio::test]
+    async fn test_perspectives_with_low_influence() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "stakeholders": [
+                        {"name": "Minor Player", "interests": ["I"], "preferred_option": "A", "concerns": ["C"], "influence_level": "low"}
+                    ],
+                    "conflicts": [{"between": ["A", "B"], "issue": "I", "severity": "low"}],
+                    "alignments": [],
+                    "balanced_recommendation": {"option": "A", "rationale": "R", "mitigation": "M"}
+                }"#,
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.perspectives("Test", None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(
+            response.stakeholders[0].influence_level,
+            InfluenceLevel::Low
+        );
+        assert_eq!(response.conflicts[0].severity, ConflictSeverity::Low);
+    }
+
+    #[tokio::test]
+    async fn test_perspectives_with_medium_influence() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "stakeholders": [
+                        {"name": "Player", "interests": ["I"], "preferred_option": "A", "concerns": ["C"], "influence_level": "medium"}
+                    ],
+                    "conflicts": [{"between": ["A", "B"], "issue": "I", "severity": "high"}],
+                    "alignments": [],
+                    "balanced_recommendation": {"option": "A", "rationale": "R", "mitigation": "M"}
+                }"#,
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.perspectives("Test", None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(
+            response.stakeholders[0].influence_level,
+            InfluenceLevel::Medium
+        );
+        assert_eq!(response.conflicts[0].severity, ConflictSeverity::High);
+    }
 }

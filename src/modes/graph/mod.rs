@@ -1106,4 +1106,464 @@ mod tests {
         let response = result.unwrap();
         assert_eq!(response.structure.total_nodes, 10);
     }
+
+    // ========================================================================
+    // Additional Coverage Tests for Error Paths
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_init_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_init_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.init("Topic", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_init_api_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Err(ModeError::ApiUnavailable {
+                message: "API error".to_string(),
+            })
+        });
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.init("Topic", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_generate_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_generate_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.generate(Some("Parent"), None, None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_score_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_score_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.score(Some("Node"), None, None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_empty_content() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.aggregate("", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "content"));
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_aggregate_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.aggregate("Nodes", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_refine_empty_content() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.refine("", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "content"));
+    }
+
+    #[tokio::test]
+    async fn test_refine_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_refine_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.refine("Node", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_prune_empty_content() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.prune("", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "content"));
+    }
+
+    #[tokio::test]
+    async fn test_prune_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_prune_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.prune("Graph", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_finalize_empty_content() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.finalize("", None).await;
+
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "content"));
+    }
+
+    #[tokio::test]
+    async fn test_finalize_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_finalize_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.finalize("Graph", None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_state_save_thought_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "Save failed".to_string(),
+            })
+        });
+
+        let resp = mock_state_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.state(Some("Graph"), "test").await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_generate_node_lookup_storage_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+
+        mock_storage.expect_get_graph_node().returning(|_id| {
+            Err(StorageError::QueryFailed {
+                query: "SELECT".to_string(),
+                message: "Lookup failed".to_string(),
+            })
+        });
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.generate(None, Some("node-1"), None).await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_state_get_nodes_storage_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+
+        mock_storage.expect_get_graph_nodes().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "SELECT".to_string(),
+                message: "Get nodes failed".to_string(),
+            })
+        });
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.state(None, "test").await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_state_get_edges_storage_error() {
+        use crate::storage::StoredGraphNode;
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+
+        mock_storage
+            .expect_get_graph_nodes()
+            .returning(|_| Ok(vec![StoredGraphNode::new("n1", "test", "Node 1")]));
+
+        mock_storage.expect_get_graph_edges().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "SELECT".to_string(),
+                message: "Get edges failed".to_string(),
+            })
+        });
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.state(None, "test").await;
+
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_score_with_node_id_lookup() {
+        use crate::storage::StoredGraphNode;
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_storage.expect_get_graph_node().returning(|_id| {
+            Ok(Some(StoredGraphNode::new(
+                "node-1",
+                "test",
+                "Stored node content",
+            )))
+        });
+
+        let resp = mock_score_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.score(None, Some("node-1"), None).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_score_missing_content_and_node_id() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.score(None, None, None).await;
+
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "content or node_id")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_generate_empty_content_with_node_id() {
+        use crate::storage::StoredGraphNode;
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        // Providing empty content should fall back to node_id lookup
+        mock_storage.expect_get_graph_node().returning(|_id| {
+            Ok(Some(StoredGraphNode::new(
+                "node-1",
+                "test",
+                "Stored node content",
+            )))
+        });
+
+        let resp = mock_generate_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.generate(Some("  "), Some("node-1"), None).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_state_with_empty_content() {
+        use crate::storage::{StoredGraphEdge, StoredGraphNode};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        // Providing empty content should retrieve from storage
+        mock_storage
+            .expect_get_graph_nodes()
+            .returning(|_| Ok(vec![StoredGraphNode::new("n1", "test", "Node 1")]));
+        mock_storage
+            .expect_get_graph_edges()
+            .returning(|_| Ok(vec![StoredGraphEdge::new("e1", "test", "n1", "n2")]));
+
+        let resp = mock_state_response();
+        mock_client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = GraphMode::new(mock_storage, mock_client);
+        let result = mode.state(Some("  "), "test").await;
+
+        assert!(result.is_ok());
+    }
 }
