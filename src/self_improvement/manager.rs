@@ -852,4 +852,183 @@ mod tests {
         assert_eq!(state.total_cycles, 0);
         assert!(state.last_cycle_at.is_none());
     }
+
+    #[test]
+    fn test_manager_status_default_values() {
+        let status = ManagerStatus::default();
+        assert!(!status.running);
+        assert_eq!(status.circuit_state, "Closed");
+        assert_eq!(status.total_cycles, 0);
+        assert_eq!(status.successful_cycles, 0);
+        assert_eq!(status.failed_cycles, 0);
+        assert_eq!(status.pending_diagnoses, 0);
+        assert_eq!(status.total_actions_executed, 0);
+        assert_eq!(status.total_actions_rolled_back, 0);
+        assert!(status.last_cycle_at.is_none());
+    }
+
+    #[test]
+    fn test_learning_summary_data_default() {
+        let data = LearningSummaryData::default();
+        assert_eq!(data.total_lessons, 0);
+        assert!((data.average_reward - 0.0).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_handle_for_testing() {
+        let handle = ManagerHandle::for_testing();
+
+        // Status should return default since sender is dropped
+        let status = handle.status_rx.borrow().clone();
+        assert!(!status.running);
+        assert_eq!(status.circuit_state, "Closed");
+    }
+
+    #[tokio::test]
+    async fn test_handle_subscribe() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (_manager, handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let subscriber = handle.subscribe();
+        let status = subscriber.borrow().clone();
+        assert!(status.running);
+    }
+
+    #[tokio::test]
+    async fn test_handle_trigger_cycle_disconnected() {
+        let handle = ManagerHandle::for_testing();
+
+        // Should fail because manager is not running
+        let result = handle.trigger_cycle().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_approve_disconnected() {
+        let handle = ManagerHandle::for_testing();
+
+        let result = handle.approve("test-id".to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not running"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_reject_disconnected() {
+        let handle = ManagerHandle::for_testing();
+
+        let result = handle
+            .reject("test-id".to_string(), Some("reason".to_string()))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not running"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_rollback_disconnected() {
+        let handle = ManagerHandle::for_testing();
+
+        let result = handle.rollback("test-id".to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not running"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_status_disconnected() {
+        let handle = ManagerHandle::for_testing();
+
+        // Should return default status when disconnected
+        let status = handle.status().await;
+        assert!(!status.running);
+    }
+
+    #[tokio::test]
+    async fn test_handle_pending_diagnoses_disconnected() {
+        let handle = ManagerHandle::for_testing();
+
+        // Should return empty vector when disconnected
+        let pending = handle.pending_diagnoses(Some(10)).await;
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn test_now_millis() {
+        let millis1 = now_millis();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let millis2 = now_millis();
+
+        assert!(millis2 >= millis1);
+        // Should be reasonable timestamp (after year 2020)
+        assert!(millis1 > 1_577_836_800_000);
+    }
+
+    #[test]
+    fn test_learning_result_summary_from() {
+        use super::super::learner::LearningResult;
+        use super::super::types::Lesson;
+
+        let lesson = Lesson {
+            id: "lesson-1".to_string(),
+            action_id: "action-123".to_string(),
+            insight: "Test lesson learned".to_string(),
+            reward: 0.85,
+            applicable_contexts: vec![],
+            created_at: 0,
+        };
+
+        let result = LearningResult {
+            lesson: lesson.clone(),
+            context: std::collections::HashMap::new(),
+        };
+
+        let summary = LearningResultSummary::from(&result);
+
+        assert_eq!(summary.action_id, "action-123");
+        assert_eq!(summary.lesson, "Test lesson learned");
+        assert!((summary.reward - 0.85).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_manager_build_status() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let status = manager.build_status();
+        assert!(status.running);
+        assert_eq!(status.circuit_state, "closed");
+        assert_eq!(status.total_cycles, 0);
+    }
+
+    #[tokio::test]
+    async fn test_manager_get_pending_diagnoses() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let pending = manager.get_pending_diagnoses(Some(5));
+        assert!(pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_manager_get_pending_diagnoses_no_limit() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let pending = manager.get_pending_diagnoses(None);
+        assert!(pending.is_empty());
+    }
 }
