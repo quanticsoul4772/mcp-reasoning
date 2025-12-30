@@ -31,7 +31,10 @@
 mod secret;
 mod validation;
 
+mod self_improvement;
+
 pub use secret::SecretString;
+pub use self_improvement::SelfImprovementConfig;
 pub use validation::{validate_config, MAX_RETRIES, MAX_TIMEOUT_MS, MIN_TIMEOUT_MS};
 
 use crate::error::ConfigError;

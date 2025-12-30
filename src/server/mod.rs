@@ -19,10 +19,13 @@
 //! # Example
 //!
 //! ```no_run
+//! use std::sync::Arc;
 //! use mcp_reasoning::server::{AppState, TransportConfig};
 //! use mcp_reasoning::storage::SqliteStorage;
 //! use mcp_reasoning::anthropic::{AnthropicClient, ClientConfig};
 //! use mcp_reasoning::config::{Config, SecretString, DEFAULT_MODEL};
+//! use mcp_reasoning::metrics::MetricsCollector;
+//! use mcp_reasoning::self_improvement::ManagerHandle;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let storage = SqliteStorage::new("./data/reasoning.db").await?;
@@ -35,7 +38,9 @@
 //!     max_retries: 3,
 //!     model: DEFAULT_MODEL.to_string(),
 //! };
-//! let state = AppState::new(storage, client, config);
+//! let metrics = Arc::new(MetricsCollector::new());
+//! let si_handle = ManagerHandle::for_testing(); // In production, use SelfImprovementManager::new()
+//! let state = AppState::new(storage, client, config, metrics, si_handle);
 //! # Ok(())
 //! # }
 //! ```
@@ -61,7 +66,8 @@ pub use params::{
 pub use requests::{
     AutoRequest, CheckpointRequest, CounterfactualRequest, DecisionRequest, DetectRequest,
     DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, MctsRequest, MetricsRequest,
-    PresetRequest, ReflectionRequest, TimelineRequest, TreeRequest,
+    PresetRequest, ReflectionRequest, SiApproveRequest, SiDiagnosesRequest, SiRejectRequest,
+    SiRollbackRequest, SiStatusRequest, SiTriggerRequest, TimelineRequest, TreeRequest,
 };
 pub use responses::{
     AutoResponse, BacktrackSuggestion, Branch, BranchComparison, CausalStep, Checkpoint,
@@ -69,8 +75,9 @@ pub use responses::{
     DetectResponse, Detection, DivergentResponse, EvidenceAssessment, EvidenceResponse, GraphNode,
     GraphResponse, GraphState, Invocation, LinearResponse, MctsNode, MctsResponse, MetricsResponse,
     MetricsSummary, ModeStats, Perspective, PresetExecution, PresetInfo, PresetResponse,
-    RankedOption, ReflectionResponse, StakeholderMap, TimelineBranch, TimelineResponse,
-    TreeResponse,
+    RankedOption, ReflectionResponse, SiApproveResponse, SiDiagnosesResponse, SiExecutionSummary,
+    SiLearningSummary, SiPendingDiagnosis, SiRejectResponse, SiRollbackResponse, SiStatusResponse,
+    SiTriggerResponse, StakeholderMap, TimelineBranch, TimelineResponse, TreeResponse,
 };
 pub use tools::ReasoningServer;
 pub use transport::{StdioTransport, TransportConfig};

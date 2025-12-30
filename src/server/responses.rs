@@ -554,6 +554,133 @@ pub struct MetricsResponse {
     pub config: Option<serde_json::Value>,
 }
 
+// ============================================================================
+// Self-Improvement Responses
+// ============================================================================
+
+/// Response for self-improvement status.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiStatusResponse {
+    /// Whether the manager is running.
+    pub running: bool,
+    /// Circuit breaker state.
+    pub circuit_state: String,
+    /// Total cycles run.
+    pub total_cycles: u64,
+    /// Successful cycles.
+    pub successful_cycles: u64,
+    /// Failed cycles.
+    pub failed_cycles: u64,
+    /// Pending diagnoses count.
+    pub pending_diagnoses: usize,
+    /// Total actions executed.
+    pub total_actions_executed: u64,
+    /// Total actions rolled back.
+    pub total_actions_rolled_back: u64,
+    /// Last cycle time (Unix epoch milliseconds).
+    pub last_cycle_at: Option<u64>,
+    /// Average reward from learning.
+    pub average_reward: f64,
+}
+
+/// A pending diagnosis in the response.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiPendingDiagnosis {
+    /// Action/diagnosis ID.
+    pub id: String,
+    /// Action type.
+    pub action_type: String,
+    /// Description.
+    pub description: String,
+    /// Rationale.
+    pub rationale: String,
+    /// Expected improvement.
+    pub expected_improvement: f64,
+    /// Created timestamp (Unix epoch milliseconds).
+    pub created_at: u64,
+}
+
+/// Response for pending diagnoses.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiDiagnosesResponse {
+    /// List of pending diagnoses.
+    pub diagnoses: Vec<SiPendingDiagnosis>,
+    /// Total count.
+    pub total: usize,
+}
+
+/// Execution result summary in approve response.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiExecutionSummary {
+    /// Action ID.
+    pub action_id: String,
+    /// Whether execution succeeded.
+    pub success: bool,
+    /// Error message if failed.
+    pub error: Option<String>,
+}
+
+/// Learning result summary in approve response.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiLearningSummary {
+    /// Action ID.
+    pub action_id: String,
+    /// Insight learned.
+    pub insight: String,
+    /// Reward value.
+    pub reward: f64,
+}
+
+/// Response for approve operation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiApproveResponse {
+    /// Whether the approval succeeded.
+    pub success: bool,
+    /// Number of actions executed.
+    pub actions_executed: usize,
+    /// Number of lessons learned.
+    pub lessons_learned: usize,
+    /// Execution results.
+    pub execution_results: Vec<SiExecutionSummary>,
+    /// Learning results.
+    pub learning_results: Vec<SiLearningSummary>,
+    /// Error message if failed.
+    pub error: Option<String>,
+}
+
+/// Response for reject operation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiRejectResponse {
+    /// Whether the rejection succeeded.
+    pub success: bool,
+    /// Error message if failed.
+    pub error: Option<String>,
+}
+
+/// Response for trigger operation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiTriggerResponse {
+    /// Whether the cycle succeeded.
+    pub success: bool,
+    /// Number of actions proposed.
+    pub actions_proposed: usize,
+    /// Number of actions executed.
+    pub actions_executed: usize,
+    /// Whether analysis was skipped due to insufficient data.
+    pub analysis_skipped: bool,
+    /// Error message if failed.
+    pub error: Option<String>,
+}
+
+/// Response for rollback operation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiRollbackResponse {
+    /// Whether the rollback succeeded.
+    pub success: bool,
+    /// Error message if failed.
+    pub error: Option<String>,
+}
+
 // Apply IntoContents to all response types
 impl_into_contents!(
     LinearResponse,
@@ -571,4 +698,10 @@ impl_into_contents!(
     CounterfactualResponse,
     PresetResponse,
     MetricsResponse,
+    SiStatusResponse,
+    SiDiagnosesResponse,
+    SiApproveResponse,
+    SiRejectResponse,
+    SiTriggerResponse,
+    SiRollbackResponse,
 );

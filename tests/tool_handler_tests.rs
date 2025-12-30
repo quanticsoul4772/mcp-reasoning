@@ -6,6 +6,8 @@
 
 use mcp_reasoning::anthropic::{AnthropicClient, ClientConfig};
 use mcp_reasoning::config::{Config, SecretString};
+use mcp_reasoning::metrics::MetricsCollector;
+use mcp_reasoning::self_improvement::ManagerHandle;
 use mcp_reasoning::server::AppState;
 use mcp_reasoning::storage::SqliteStorage;
 use serde_json::json;
@@ -31,6 +33,8 @@ fn anthropic_response(text: &str) -> serde_json::Value {
 /// Create test `AppState` with mocked Anthropic client.
 async fn create_test_state(server: &MockServer) -> AppState {
     let storage = SqliteStorage::new_in_memory().await.unwrap();
+    let metrics = Arc::new(MetricsCollector::new());
+    let si_handle = ManagerHandle::for_testing();
     let client_config = ClientConfig::default()
         .with_base_url(server.uri())
         .with_max_retries(0)
@@ -45,7 +49,7 @@ async fn create_test_state(server: &MockServer) -> AppState {
         model: "claude-sonnet-4-20250514".to_string(),
     };
 
-    AppState::new(storage, client, config)
+    AppState::new(storage, client, config, metrics, si_handle)
 }
 
 // ============================================================================

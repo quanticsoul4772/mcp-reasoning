@@ -4,9 +4,13 @@
 
 use std::sync::Arc;
 
+use tokio::sync::watch;
+
 use crate::anthropic::{AnthropicClient, ClientConfig};
-use crate::config::Config;
+use crate::config::{Config, SelfImprovementConfig};
 use crate::error::AppError;
+use crate::metrics::MetricsCollector;
+use crate::self_improvement::{SelfImprovementManager, SelfImprovementStorage};
 use crate::storage::SqliteStorage;
 
 use super::tools::ReasoningServer;
@@ -35,6 +39,8 @@ impl McpServer {
     /// This function initializes all components and starts serving requests
     /// over stdin/stdout. It blocks until the client disconnects or an error occurs.
     ///
+    /// The self-improvement system is automatically started as a background task.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -46,14 +52,43 @@ impl McpServer {
         // Initialize storage
         let storage = SqliteStorage::new(&self.config.database_path).await?;
 
-        // Create Anthropic client
+        // Create Anthropic client for MCP tools
         let client_config = ClientConfig::default()
             .with_timeout_ms(self.config.request_timeout_ms)
             .with_max_retries(self.config.max_retries);
         let client = AnthropicClient::new(self.config.api_key.expose(), client_config)?;
 
-        // Create app state
-        let state = AppState::new(storage, client, self.config.clone());
+        // Initialize metrics collector (shared between MCP tools and self-improvement)
+        let metrics = Arc::new(MetricsCollector::new());
+
+        // Initialize self-improvement system (ALWAYS enabled - core feature)
+        let si_config = SelfImprovementConfig::from_env();
+        let si_client_config = ClientConfig::default()
+            .with_timeout_ms(self.config.request_timeout_ms)
+            .with_max_retries(self.config.max_retries);
+        let si_client = AnthropicClient::new(self.config.api_key.expose(), si_client_config)?;
+        let si_storage = Arc::new(SelfImprovementStorage::new(storage.pool.clone()));
+
+        let (si_manager, si_handle) =
+            SelfImprovementManager::new(si_config.clone(), si_client, metrics.clone(), si_storage);
+
+        // Create shutdown channel for self-improvement manager
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        // Spawn self-improvement background task
+        tokio::spawn(async move {
+            tracing::info!(
+                cycle_interval_secs = si_config.cycle_interval_secs,
+                min_invocations = si_config.min_invocations_for_analysis,
+                require_approval = si_config.require_approval,
+                "Self-improvement system started"
+            );
+            si_manager.run(shutdown_rx).await;
+            tracing::info!("Self-improvement system stopped");
+        });
+
+        // Create app state with shared metrics and self-improvement handle
+        let state = AppState::new(storage, client, self.config.clone(), metrics, si_handle);
 
         // Create reasoning server
         let server = ReasoningServer::new(Arc::new(state));
@@ -64,6 +99,9 @@ impl McpServer {
 
         // Wait for server to complete
         let _ = running.waiting().await;
+
+        // Signal self-improvement system to shutdown
+        let _ = shutdown_tx.send(true);
 
         Ok(())
     }

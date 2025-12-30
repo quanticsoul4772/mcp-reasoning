@@ -1926,8 +1926,9 @@ impl ReasoningServer {
     )]
     async fn reasoning_si_status(
         &self,
-        #[tool(aggr)] _req: SiStatusRequest,
+        #[tool(aggr)] req: SiStatusRequest,
     ) -> SiStatusResponse {
+        let _ = req; // Empty request struct
         let timer = Timer::start();
         let status = self.state.self_improvement.status().await;
 
@@ -2082,8 +2083,9 @@ impl ReasoningServer {
     )]
     async fn reasoning_si_trigger(
         &self,
-        #[tool(aggr)] _req: SiTriggerRequest,
+        #[tool(aggr)] req: SiTriggerRequest,
     ) -> SiTriggerResponse {
+        let _ = req; // Empty request struct
         let timer = Timer::start();
         let result = self.state.self_improvement.trigger_cycle().await;
 
@@ -2690,9 +2692,9 @@ mod tests {
 
     fn create_test_si_handle(
         storage: &crate::storage::SqliteStorage,
+        metrics: std::sync::Arc<crate::metrics::MetricsCollector>,
     ) -> crate::self_improvement::ManagerHandle {
         use crate::config::SelfImprovementConfig;
-        use crate::metrics::MetricsCollector;
         use crate::self_improvement::{SelfImprovementManager, SelfImprovementStorage};
         use crate::traits::{CompletionResponse, MockAnthropicClientTrait, Usage};
 
@@ -2704,7 +2706,6 @@ mod tests {
             ))
         });
 
-        let metrics = std::sync::Arc::new(MetricsCollector::new());
         let si_storage =
             std::sync::Arc::new(SelfImprovementStorage::new(storage.pool.clone()));
 
@@ -2716,6 +2717,7 @@ mod tests {
     fn create_test_server_sync() -> ReasoningServer {
         use crate::anthropic::{AnthropicClient, ClientConfig};
         use crate::config::{Config, SecretString};
+        use crate::metrics::MetricsCollector;
         use crate::storage::SqliteStorage;
 
         let config = Config {
@@ -2730,15 +2732,17 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let storage = rt.block_on(async { SqliteStorage::new_in_memory().await.unwrap() });
 
-        let si_handle = create_test_si_handle(&storage);
+        let metrics = Arc::new(MetricsCollector::new());
+        let si_handle = create_test_si_handle(&storage, metrics.clone());
         let client = AnthropicClient::new("test-key", ClientConfig::default()).unwrap();
-        let state = AppState::new(storage, client, config, si_handle);
+        let state = AppState::new(storage, client, config, metrics, si_handle);
         ReasoningServer::new(Arc::new(state))
     }
 
     async fn create_test_server() -> ReasoningServer {
         use crate::anthropic::{AnthropicClient, ClientConfig};
         use crate::config::{Config, SecretString};
+        use crate::metrics::MetricsCollector;
         use crate::storage::SqliteStorage;
 
         let config = Config {
@@ -2752,9 +2756,10 @@ mod tests {
 
         let storage = SqliteStorage::new_in_memory().await.unwrap();
 
-        let si_handle = create_test_si_handle(&storage);
+        let metrics = Arc::new(MetricsCollector::new());
+        let si_handle = create_test_si_handle(&storage, metrics.clone());
         let client = AnthropicClient::new("test-key", ClientConfig::default()).unwrap();
-        let state = AppState::new(storage, client, config, si_handle);
+        let state = AppState::new(storage, client, config, metrics, si_handle);
         ReasoningServer::new(Arc::new(state))
     }
 
@@ -3048,6 +3053,7 @@ mod tests {
         async fn create_mocked_server(mock_server: &MockServer) -> ReasoningServer {
             use crate::anthropic::{AnthropicClient, ClientConfig};
             use crate::config::{Config, SecretString};
+            use crate::metrics::MetricsCollector;
             use crate::storage::SqliteStorage;
 
             let config = Config {
@@ -3060,13 +3066,14 @@ mod tests {
             };
 
             let storage = SqliteStorage::new_in_memory().await.unwrap();
-            let si_handle = super::create_test_si_handle(&storage);
+            let metrics = Arc::new(MetricsCollector::new());
+            let si_handle = super::create_test_si_handle(&storage, metrics.clone());
             let client_config = ClientConfig::default()
                 .with_base_url(mock_server.uri())
                 .with_max_retries(0)
                 .with_timeout_ms(5000);
             let client = AnthropicClient::new("test-key", client_config).unwrap();
-            let state = AppState::new(storage, client, config, si_handle);
+            let state = AppState::new(storage, client, config, metrics, si_handle);
             ReasoningServer::new(Arc::new(state))
         }
 

@@ -64,6 +64,7 @@ mod circuit_breaker;
 pub mod cli;
 mod executor;
 mod learner;
+pub mod manager;
 mod monitor;
 pub mod storage;
 mod system;
@@ -90,6 +91,10 @@ pub use monitor::{Baseline, Monitor, MonitorConfig, MonitorResult};
 pub use storage::{
     ActionRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord, InvocationStats,
     LearningRecord, SelfImprovementStorage,
+};
+pub use manager::{
+    ApproveResult, ExecutionResultSummary, LearningResultSummary, LearningSummaryData,
+    ManagerCommand, ManagerHandle, ManagerStatus, PendingDiagnosis, SelfImprovementManager,
 };
 pub use system::{CycleResult, SelfImprovementSystem, SystemConfig};
 pub use types::{

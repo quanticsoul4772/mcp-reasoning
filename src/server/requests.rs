@@ -264,3 +264,49 @@ pub struct MetricsRequest {
     /// Result limit (1-1000).
     pub limit: Option<u32>,
 }
+
+// ============================================================================
+// Self-Improvement Requests
+// ============================================================================
+
+/// Request for self-improvement status.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiStatusRequest {
+    // Empty - no parameters needed
+}
+
+/// Request for pending diagnoses.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiDiagnosesRequest {
+    /// Maximum number of diagnoses to return.
+    pub limit: Option<u32>,
+}
+
+/// Request to approve a diagnosis.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiApproveRequest {
+    /// The diagnosis ID to approve.
+    pub diagnosis_id: String,
+}
+
+/// Request to reject a diagnosis.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiRejectRequest {
+    /// The diagnosis ID to reject.
+    pub diagnosis_id: String,
+    /// Optional reason for rejection.
+    pub reason: Option<String>,
+}
+
+/// Request to trigger an improvement cycle.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiTriggerRequest {
+    // Empty - no parameters needed
+}
+
+/// Request to rollback an action.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiRollbackRequest {
+    /// The action ID to rollback.
+    pub action_id: String,
+}
