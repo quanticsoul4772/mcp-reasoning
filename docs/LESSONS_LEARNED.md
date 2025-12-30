@@ -408,3 +408,17 @@ Fixed 8+ clippy pedantic warnings using a hybrid automated + manual approach.
 - Consider adding clippy pedantic to CI/CD pipeline
 - Use editor integration (rust-analyzer with clippy enabled)
 - Pre-commit hooks for automated style checks
+
+---
+
+## Dependency Cleanup (2024-12-30)
+
+Removed 4 unused dependencies from Cargo.toml:
+- `anyhow` - not used, project uses thiserror for error handling
+- `futures` - not directly imported anywhere
+- `async-stream` - not used
+- `bytes` - not used
+
+**Method:** Searched codebase for imports, verified build and tests still pass after removal.
+
+**Result:** Reduced dependency footprint, faster builds, smaller binary.

@@ -4,16 +4,16 @@ A high-performance MCP server that adds structured reasoning capabilities to Cla
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/Tests-1674%20passing-brightgreen.svg)](#development)
-[![Coverage](https://img.shields.io/badge/Coverage-96%25-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/Tests-1752%20passing-brightgreen.svg)](#development)
+[![Coverage](https://img.shields.io/badge/Coverage-95%25-brightgreen.svg)](#development)
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'pie1': '#4fc3f7', 'pie2': '#81c784', 'pie3': '#ffb74d', 'pie4': '#f06292', 'pie5': '#ba68c8'}}}%%
-pie showData title Codebase Distribution (50K+ lines)
+pie showData title Codebase Distribution (56K+ lines)
     "Reasoning Modes" : 35
     "Storage Layer" : 15
     "Server/Transport" : 15
-    "Tests (1,674)" : 30
+    "Tests (1,752)" : 30
     "Config/Utils" : 5
 ```
 
@@ -442,7 +442,7 @@ cargo build
 # Release build (optimized)
 cargo build --release
 
-# Run all tests (1,674 tests)
+# Run all tests (1,752 tests)
 cargo test
 
 # Run specific test module
@@ -507,7 +507,7 @@ src/
 
 - **Zero unsafe code** - `#![forbid(unsafe_code)]` enforced
 - **No panics** - No `.unwrap()` or `.expect()` in production paths
-- **1,674 tests** - Comprehensive unit, integration, and handler test coverage (96%+ coverage)
+- **1,752 tests** - Comprehensive unit, integration, and handler test coverage (95%+ coverage)
 - **Max 500 lines per file** - Enforced for maintainability
 - **Structured logging** - Via `tracing` crate, logs to stderr
 - **Clippy pedantic** - All pedantic lints enabled as warnings
