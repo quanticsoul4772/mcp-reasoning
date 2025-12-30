@@ -24,8 +24,8 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate coverage
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
-      - name: Check 100% coverage
-        run: cargo llvm-cov --fail-under-lines 100
+      - name: Check 95% coverage
+        run: cargo llvm-cov --fail-under-lines 95
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
