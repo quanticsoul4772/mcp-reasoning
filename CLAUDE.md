@@ -204,7 +204,7 @@ const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message
 
 - **Zero unsafe code**: `#![forbid(unsafe_code)]` in lib.rs
 - **No panics**: No `.unwrap()` or `.expect()` in production paths
-- **TDD workflow**: Write tests first → fail → implement → pass → 95%+ coverage
+- **TDD workflow**: Write tests first, fail, implement, pass, 95%+ coverage
 - **File size limits**: Max 500 lines per .rs file
 - **High test coverage**: 1,752 tests with 95%+ line coverage
 - **Structured logging**: Use `tracing` with structured fields, logs to stderr only
@@ -215,13 +215,13 @@ All phases complete:
 
 | Phase | Component | Status |
 |-------|-----------|--------|
-| 0-3 | Scaffolding, Error Types, Config, Traits | ✅ Complete |
-| 4-5 | Storage, Anthropic Client | ✅ Complete |
-| 6-8 | ModeCore, Prompts, All 13 Modes | ✅ Complete |
-| 9 | Server Infrastructure (rmcp) | ✅ Complete |
-| 10 | Presets + Metrics | ✅ Complete |
-| 11 | Self-Improvement System | ✅ Complete |
-| 12 | Integration Tests | ✅ Complete |
+| 0-3 | Scaffolding, Error Types, Config, Traits | Complete |
+| 4-5 | Storage, Anthropic Client | Complete |
+| 6-8 | ModeCore, Prompts, All 13 Modes | Complete |
+| 9 | Server Infrastructure (rmcp) | Complete |
+| 10 | Presets + Metrics | Complete |
+| 11 | Self-Improvement System | Complete |
+| 12 | Integration Tests | Complete |
 
 ## Test Organization
 

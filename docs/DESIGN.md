@@ -53,7 +53,7 @@ MCP server providing structured reasoning capabilities via direct Anthropic Clau
 |------|------------|-------------|
 | `reasoning_detect` | biases, fallacies | Cognitive errors: biases=confirmation/anchoring/sunk-cost with remediation, fallacies=ad-hominem/straw-man/false-dichotomy with formal/informal categories |
 | `reasoning_decision` | weighted, pairwise, topsis, perspectives | Decisions: weighted=scored ranking, pairwise=direct comparison, topsis=ideal-point distance, perspectives=stakeholder power/interest mapping |
-| `reasoning_evidence` | assess, probabilistic | Evidence: assess=source credibility/corroboration/chain-of-custody, probabilistic=Bayesian prior→posterior with likelihoods |
+| `reasoning_evidence` | assess, probabilistic | Evidence: assess=source credibility/corroboration/chain-of-custody, probabilistic=Bayesian prior->posterior with likelihoods |
 
 ### 2.4 Advanced Reasoning (3 tools)
 
@@ -61,7 +61,7 @@ MCP server providing structured reasoning capabilities via direct Anthropic Clau
 |------|------------|-------------|
 | `reasoning_timeline` | create, branch, compare, merge | Temporal: create=new timeline, branch=fork path, compare=analyze divergence, merge=synthesize branches with strategy |
 | `reasoning_mcts` | explore, auto_backtrack | MCTS: explore=UCB1-guided search with iterations/depth, auto_backtrack=quality-triggered backtracking with lookback |
-| `reasoning_counterfactual` | - | What-if causal analysis using Pearl's Ladder: scenario + intervention → causal consequences |
+| `reasoning_counterfactual` | - | What-if causal analysis using Pearl's Ladder: scenario + intervention -> causal consequences |
 
 ### 2.5 Infrastructure (2 tools)
 
@@ -1638,15 +1638,15 @@ pub enum ConfigError {
 pub async fn handle_linear(params: LinearParams, state: &AppState) -> Result<Response, AppError> {
     let session = state.storage
         .get_or_create_session(&params.session_id)
-        .await?;  // Propagates StorageError → AppError
+        .await?;  // Propagates StorageError -> AppError
 
     let result = state.anthropic
         .reason(&params.content, ReasoningMode::Linear)
-        .await?;  // Propagates AnthropicError → AppError
+        .await?;  // Propagates AnthropicError -> AppError
 
     state.storage
         .save_thought(&session.id, &result)
-        .await?;  // Propagates StorageError → AppError
+        .await?;  // Propagates StorageError -> AppError
 
     Ok(Response::success(result))
 }
@@ -3480,7 +3480,7 @@ echo "Running coverage check..."
 COVERAGE=$(cargo llvm-cov --json 2>/dev/null | jq -r '.data[0].totals.lines.percent')
 
 if (( $(echo "$COVERAGE < 100" | bc -l) )); then
-    echo "❌ Coverage is ${COVERAGE}%, required 100%"
+    echo "Coverage is ${COVERAGE}%, required 100%"
     echo ""
     echo "Uncovered lines:"
     cargo llvm-cov --show-missing-lines 2>/dev/null | grep -E "^\s+\d+\|" | head -20
@@ -3489,7 +3489,7 @@ if (( $(echo "$COVERAGE < 100" | bc -l) )); then
     exit 1
 fi
 
-echo "✅ Coverage: ${COVERAGE}%"
+echo "Coverage: ${COVERAGE}%"
 ```
 
 ### 16.6 Coverage Exclusion Patterns
@@ -3832,7 +3832,7 @@ claude mcp add mcp-reasoning ^
 claude mcp list
 
 # Expected output:
-# mcp-reasoning: /path/to/mcp-reasoning - ✓ Connected
+# mcp-reasoning: /path/to/mcp-reasoning -  Connected
 
 # Get detailed config
 claude mcp get mcp-reasoning
@@ -3886,9 +3886,9 @@ Environment variables can be set in three ways:
 
 | Method | Claude Code | Claude Desktop |
 |--------|-------------|----------------|
-| Shell environment | ✅ Inherited | ❌ Not inherited |
-| `--env` flag | ✅ `claude mcp add --env` | ❌ N/A |
-| Config file | ❌ N/A | ✅ `"env": {}` block |
+| Shell environment | Inherited | Not inherited |
+| `--env` flag | `claude mcp add --env` | N/A |
+| Config file | N/A | `"env": {}` block |
 
 **Required Variables**:
 ```bash
@@ -3958,7 +3958,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | mcp-reasoning
 **Step 2: Verify Claude Code Connection**
 ```bash
 claude mcp list
-# Should show: mcp-reasoning: ... - ✓ Connected
+# Should show: mcp-reasoning: ... -  Connected
 ```
 
 **Step 3: Test Tool Invocation**
@@ -5183,7 +5183,7 @@ claude mcp add mcp-reasoning \
 
 ```bash
 claude mcp list
-# mcp-reasoning: ... - ✓ Connected
+# mcp-reasoning: ... -  Connected
 ```
 
 ## Available Tools
@@ -5339,28 +5339,28 @@ This design maximizes utilization of available SDKs and APIs.
 
 | Feature | Status | Usage |
 |---------|--------|-------|
-| `#[tool]` macro | ✅ Used | Tool definitions (Section 9.1) |
-| `#[tool_router]` macro | ✅ Used | Handler routing (Section 9.1) |
-| `#[arg]` attribute | ✅ Used | Parameter descriptions (Section 9.1) |
-| JsonSchema derive | ✅ Used | Output schema generation (Section 9.2) |
-| Server registration | ✅ Used | Main entry point (Section 9.3) |
-| Stdio transport | ✅ Used | CLI integration (Section 8.2) |
-| SSE transport | ✅ Used | Web clients (Section 9.3) |
-| Axum integration | ✅ Used | HTTP transport (Section 8.1) |
-| Tool annotations | ✅ Used | Behavior hints (Section 3) |
-| Output schemas | ✅ Used | Type-safe responses (Section 3) |
+| `#[tool]` macro | Used | Tool definitions (Section 9.1) |
+| `#[tool_router]` macro | Used | Handler routing (Section 9.1) |
+| `#[arg]` attribute | Used | Parameter descriptions (Section 9.1) |
+| JsonSchema derive | Used | Output schema generation (Section 9.2) |
+| Server registration | Used | Main entry point (Section 9.3) |
+| Stdio transport | Used | CLI integration (Section 8.2) |
+| SSE transport | Used | Web clients (Section 9.3) |
+| Axum integration | Used | HTTP transport (Section 8.1) |
+| Tool annotations | Used | Behavior hints (Section 3) |
+| Output schemas | Used | Type-safe responses (Section 3) |
 
 ### B.2 Anthropic Rust SDK Features Used
 
 | Feature | Status | Usage |
 |---------|--------|-------|
-| Messages API | ✅ Used | Core reasoning (Section 11) |
-| Streaming | ✅ Used | Long-running operations (Section 11.3) |
-| Extended Thinking | ✅ Used | Deep analysis modes (Section 11.2, 11.4) |
-| Tool Use | ✅ Used | Agentic reasoning (Section 11.2) |
-| Vision (Images) | ✅ Used | Image-based reasoning (Section 11.2) |
-| Retry logic | ✅ Used | Resilience (Section 11.1) |
-| Error types | ✅ Used | Error handling (Section 10.1) |
+| Messages API | Used | Core reasoning (Section 11) |
+| Streaming | Used | Long-running operations (Section 11.3) |
+| Extended Thinking | Used | Deep analysis modes (Section 11.2, 11.4) |
+| Tool Use | Used | Agentic reasoning (Section 11.2) |
+| Vision (Images) | Used | Image-based reasoning (Section 11.2) |
+| Retry logic | Used | Resilience (Section 11.1) |
+| Error types | Used | Error handling (Section 10.1) |
 
 ### B.3 Extended Thinking Budget by Mode
 

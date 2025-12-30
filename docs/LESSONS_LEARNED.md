@@ -6,16 +6,16 @@ The langbase project was well-engineered but accumulated structural debt. This d
 
 ---
 
-## REPLICATE (What Worked Well)
+## What Worked Well
 
 ### 1. Error Handling Architecture
 ```rust
 // Hierarchical error types with clear separation
 AppError
-├── AnthropicError (API layer)
-├── StorageError (database layer)
-├── McpError (protocol layer)
-└── ModeError (business logic)
++-- AnthropicError (API layer)
++-- StorageError (database layer)
++-- McpError (protocol layer)
++-- ModeError (business logic)
 ```
 - Use `thiserror` for all error types
 - Each subsystem owns its errors
@@ -123,11 +123,11 @@ mod tests {
 - 2000+ tests is not excessive
 - Test error cases explicitly
 - Use `serial_test` for DB tests
-- **Test code uses `.unwrap()`/`.expect()`** - this is acceptable and preferred for test clarity
+- Test code uses `.unwrap()`/`.expect()` - acceptable and preferred for test clarity
 
 ---
 
-## AVOID (What Caused Problems)
+## What Caused Problems
 
 ### 1. Giant Files
 **Problem:** `sqlite.rs` was 4533 lines, `storage/mod.rs` was 3513 lines
@@ -135,12 +135,12 @@ mod tests {
 **Solution for new project:**
 ```
 src/storage/
-├── mod.rs           # Trait + re-exports only (~100 lines)
-├── sqlite.rs        # Main implementation (~500 lines)
-├── session.rs       # Session operations (~300 lines)
-├── thought.rs       # Thought operations (~300 lines)
-├── graph.rs         # Graph operations (~400 lines)
-└── metrics.rs       # Metrics operations (~200 lines)
++-- mod.rs           # Trait + re-exports only (~100 lines)
++-- sqlite.rs        # Main implementation (~500 lines)
++-- session.rs       # Session operations (~300 lines)
++-- thought.rs       # Thought operations (~300 lines)
++-- graph.rs         # Graph operations (~400 lines)
++-- metrics.rs       # Metrics operations (~200 lines)
 ```
 
 ### 2. Tool Explosion (40 tools)
@@ -198,10 +198,10 @@ pub enum ModeParams {
 **Solution:** Organize by category
 ```
 src/prompts/
-├── mod.rs           # get_prompt_for_mode() router
-├── core.rs          # linear, tree, divergent, reflection
-├── analysis.rs      # detect, decision, evidence
-└── advanced.rs      # graph, timeline, mcts, counterfactual
++-- mod.rs           # get_prompt_for_mode() router
++-- core.rs          # linear, tree, divergent, reflection
++-- analysis.rs      # detect, decision, evidence
++-- advanced.rs      # graph, timeline, mcts, counterfactual
 ```
 
 ### 6. No Config Validation
@@ -248,9 +248,9 @@ fn validate_request(req: &Request) -> Result<(), Error> {
 **Problem:** 14 interconnected files made it hard to understand
 
 **Solution for new project:** Implement from day one, but with clearer organization
-- Self-improvement is CRITICAL - implement immediately
+- Self-improvement is important - implement immediately
 - Simplify the file structure (fewer files, clearer boundaries)
-- Keep the 4-phase loop: Monitor → Analyzer → Executor → Learner
+- Keep the 4-phase loop: Monitor -> Analyzer -> Executor -> Learner
 - Keep safety features: circuit breaker, rate limiting
 - Better documentation of the architecture
 
@@ -268,38 +268,38 @@ fn validate_request(req: &Request) -> Result<(), Error> {
 ### Module Organization
 ```
 src/
-├── main.rs              # Entry point only (<100 lines)
-├── lib.rs               # Module declarations only
-├── config/
-│   ├── mod.rs           # Config struct + from_env()
-│   └── validation.rs    # Validation logic
-├── error/
-│   └── mod.rs           # All error types (<500 lines)
-├── anthropic/
-│   ├── mod.rs           # Client + exports
-│   ├── types.rs         # Request/Response types
-│   └── config.rs        # Model settings
-├── prompts/
-│   ├── mod.rs           # Router function
-│   ├── core.rs          # Core mode prompts
-│   └── advanced.rs      # Advanced mode prompts
-├── modes/
-│   ├── mod.rs           # ModeCore + exports
-│   ├── linear.rs        # One file per mode
-│   ├── tree.rs
-│   └── ...
-├── server/
-│   ├── mod.rs           # AppState
-│   ├── mcp.rs           # Protocol handling
-│   ├── tools.rs         # Tool definitions (schemas)
-│   └── handlers.rs      # Tool handlers (registry pattern)
-├── storage/
-│   ├── mod.rs           # Trait definition
-│   ├── sqlite.rs        # Implementation
-│   ├── session.rs       # Session operations
-│   └── types.rs         # Storage types
-└── metrics/
-    └── mod.rs           # Simple metrics (no over-engineering)
++-- main.rs              # Entry point only (<100 lines)
++-- lib.rs               # Module declarations only
++-- config/
+|   +-- mod.rs           # Config struct + from_env()
+|   +-- validation.rs    # Validation logic
++-- error/
+|   +-- mod.rs           # All error types (<500 lines)
++-- anthropic/
+|   +-- mod.rs           # Client + exports
+|   +-- types.rs         # Request/Response types
+|   +-- config.rs        # Model settings
++-- prompts/
+|   +-- mod.rs           # Router function
+|   +-- core.rs          # Core mode prompts
+|   +-- advanced.rs      # Advanced mode prompts
++-- modes/
+|   +-- mod.rs           # ModeCore + exports
+|   +-- linear.rs        # One file per mode
+|   +-- tree.rs
+|   +-- ...
++-- server/
+|   +-- mod.rs           # AppState
+|   +-- mcp.rs           # Protocol handling
+|   +-- tools.rs         # Tool definitions (schemas)
+|   +-- handlers.rs      # Tool handlers (registry pattern)
++-- storage/
+|   +-- mod.rs           # Trait definition
+|   +-- sqlite.rs        # Implementation
+|   +-- session.rs       # Session operations
+|   +-- types.rs         # Storage types
++-- metrics/
+    +-- mod.rs           # Simple metrics (no over-engineering)
 ```
 
 ### Testing Strategy
@@ -378,7 +378,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 **When to use Result<()> in tests:**
 - Integration tests with complex error chains
-- Tests that need to propagate errors through multiple operations  
+- Tests that need to propagate errors through multiple operations
 - Error recovery testing where full error context is valuable
 
 See `docs/TEST_ERROR_HANDLING_PLAN.md` for complete analysis.
@@ -390,8 +390,8 @@ See `docs/TEST_ERROR_HANDLING_PLAN.md` for complete analysis.
 Fixed 8+ clippy pedantic warnings using a hybrid automated + manual approach.
 
 **Issues resolved:**
-- Removed unnecessary raw string hashes (`r#""#` → `r""`) - 5 locations
-- Added numeric separators for readability (`120000` → `120_000`) - 3 locations
+- Removed unnecessary raw string hashes (`r#""#` -> `r""`) - 5 locations
+- Added numeric separators for readability (`120000` -> `120_000`) - 3 locations
 - Simplified pattern matches (removed unnecessary field patterns)
 - Other auto-fixed style improvements (17 fixes total)
 

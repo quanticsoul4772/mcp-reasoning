@@ -33,7 +33,7 @@ These are non-critical style issues that don't affect functionality but reduce c
 - `src/server/params.rs:970` - `r#"{}"#`
 
 **Rationale:** Raw string hashes (`#`) are only needed when the string contains `"`  
-**Fix:** Remove hashes: `r#"text"#` → `r"text"`
+**Fix:** Remove hashes: `r#"text"#` -> `r"text"`
 
 ### 2. Unreadable Long Literals (3 instances)
 
@@ -45,7 +45,7 @@ These are non-critical style issues that don't affect functionality but reduce c
 - `src/self_improvement/cli.rs:977` - `172800`
 
 **Rationale:** Hard to read large numbers at a glance  
-**Fix:** Add underscores: `120000` → `120_000`
+**Fix:** Add underscores: `120000` -> `120_000`
 
 ### 3. Redundant Default Constructor (1 instance)
 
@@ -95,25 +95,25 @@ let _cloned = provider;
 Use `cargo clippy --fix` to automatically apply most fixes.
 
 **Pros:**
-- ✅ Fast (1-2 minutes)
-- ✅ Safe (clippy validates changes)
-- ✅ Handles most cases automatically
+- Fast (1-2 minutes)
+- Safe (clippy validates changes)
+- Handles most cases automatically
 
 **Cons:**
-- ⚠️ May not fix all issues (some require manual review)
-- ⚠️ Requires `--allow-dirty` if uncommitted changes exist
+- May not fix all issues (some require manual review)
+- Requires `--allow-dirty` if uncommitted changes exist
 
 ### **Approach B: Manual Fix**
 
 Edit each file individually with precise changes.
 
 **Pros:**
-- ✅ Full control over changes
-- ✅ Can review each change
+- Full control over changes
+- Can review each change
 
 **Cons:**
-- ❌ Time-consuming (15-30 minutes)
-- ❌ Risk of typos
+- Time-consuming (15-30 minutes)
+- Risk of typos
 
 ---
 
@@ -318,9 +318,9 @@ Add to code quality section:
 ### Pedantic Lint Fixes (2024-12-29)
 
 **Fixed 8 clippy pedantic warnings:**
-- Removed unnecessary raw string hashes (r#""# → r"")
-- Added numeric separators for readability (120000 → 120_000)
-- Simplified default constructors (::default() → direct construction)
+- Removed unnecessary raw string hashes (r#""# -> r"")
+- Added numeric separators for readability (120000 -> 120_000)
+- Simplified default constructors (::default() -> direct construction)
 - Removed no-effect underscore bindings
 - Removed unnecessary async from test helpers
 
@@ -403,19 +403,19 @@ cargo clippy --all-targets -- -D clippy::pedantic -D clippy::nursery || exit 1
 ## Success Criteria
 
 **Must Have:**
-- ✅ All 8 pedantic warnings resolved
-- ✅ All 1,674 tests passing
-- ✅ Clean clippy output for our files
-- ✅ No functional changes
+- All 8 pedantic warnings resolved
+- All 1,674 tests passing
+- Clean clippy output for our files
+- No functional changes
 
 **Should Have:**
-- ✅ Clean git diff (only expected changes)
-- ✅ Documentation updated
-- ✅ Changes reviewed
+- Clean git diff (only expected changes)
+- Documentation updated
+- Changes reviewed
 
 **Nice to Have:**
-- ✅ Automated clippy in CI/CD
-- ✅ Pre-commit hook for future prevention
+- Automated clippy in CI/CD
+- Pre-commit hook for future prevention
 
 ---
 
@@ -474,7 +474,7 @@ Files modified:
 - src/traits/mod.rs
 - src/anthropic/client.rs
 
-All 1,674 tests passing ✓
+All 1,674 tests passing 
 
 Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>
 ```
@@ -510,13 +510,13 @@ Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.g
 ### Common Patterns to Avoid
 
 ```rust
-// ❌ Avoid
+// Avoid
 let x = r#"simple"#;          // No quotes inside, no need for hashes
 let n = 1000000;               // Hard to read
 let y = Thing::default();      // Unit struct, direct construction better
 let _unused = expensive();     // Underscore but still executes
 
-// ✅ Prefer
+// Prefer
 let x = r"simple";             // Clean raw string
 let n = 1_000_000;             // Easy to read
 let y = Thing;                 // Direct construction

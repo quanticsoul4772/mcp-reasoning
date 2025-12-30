@@ -11,14 +11,14 @@ Address `unwrap()`/`expect()` usage in test code to enable strict clippy lints w
 **Approach:** Use `#[allow(clippy::unwrap_used, clippy::expect_used)]` in test modules
 
 **Pros:**
-- ✅ Fast implementation (1-2 hours)
-- ✅ Maintains test readability
-- ✅ Industry standard practice (tests have different panic tolerance)
-- ✅ Enables strict lints for production code
-- ✅ Clear test failure messages with `.expect()`
+- Fast implementation (1-2 hours)
+- Maintains test readability
+- Industry standard practice (tests have different panic tolerance)
+- Enables strict lints for production code
+- Clear test failure messages with `.expect()`
 
 **Cons:**
-- ⚠️ Tests can still panic (acceptable in test context)
+- Tests can still panic (acceptable in test context)
 
 **Rationale:** Rust community consensus is that test panics are acceptable and often preferable for clarity. See [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/documentation.html#examples-use-panics-not-try-not-unwrap-c-question-mark).
 
@@ -28,14 +28,14 @@ Address `unwrap()`/`expect()` usage in test code to enable strict clippy lints w
 **Approach:** Convert all test assertions to use `Result<(), Box<dyn std::error::Error>>`
 
 **Pros:**
-- ✅ Uniform error handling
-- ✅ No clippy exceptions
+- Uniform error handling
+- No clippy exceptions
 
 **Cons:**
-- ❌ 40+ hours of work (872 errors across 50+ files)
-- ❌ Reduced test readability
-- ❌ More verbose test code
-- ❌ Questionable value (tests are allowed to panic)
+- 40+ hours of work (872 errors across 50+ files)
+- Reduced test readability
+- More verbose test code
+- Questionable value (tests are allowed to panic)
 
 ---
 
@@ -43,12 +43,12 @@ Address `unwrap()`/`expect()` usage in test code to enable strict clippy lints w
 **Approach:** Allow test code exceptions + selectively rewrite critical integration tests
 
 **Pros:**
-- ✅ Best of both worlds
-- ✅ Critical paths use `Result<()>`
+- Best of both worlds
+- Critical paths use `Result<()>`
 
 **Cons:**
-- ⚠️ Inconsistent patterns
-- ⚠️ More time than Option A (4-6 hours)
+- Inconsistent patterns
+- More time than Option A (4-6 hours)
 
 ---
 
@@ -263,16 +263,16 @@ Add section:
 ## Expected Outcomes
 
 ### **Immediate (After Phase 1-2)**
-- ✅ All 872 clippy test errors resolved
-- ✅ Strict lints enabled: `cargo clippy --all-targets -- -D warnings` passes
-- ✅ All 1,624 tests still passing
-- ✅ Only 8 pedantic warnings remain (unrelated to test code)
+- All 872 clippy test errors resolved
+- Strict lints enabled: `cargo clippy --all-targets -- -D warnings` passes
+- All 1,624 tests still passing
+- Only 8 pedantic warnings remain (unrelated to test code)
 
 ### **Long-term Benefits**
-- ✅ Production code enforces zero unwrap/expect
-- ✅ Test code remains readable and maintainable
-- ✅ Clear separation between production and test error handling standards
-- ✅ CI/CD can enforce strict lints without false positives
+- Production code enforces zero unwrap/expect
+- Test code remains readable and maintainable
+- Clear separation between production and test error handling standards
+- CI/CD can enforce strict lints without false positives
 
 ---
 

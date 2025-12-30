@@ -13,10 +13,10 @@
 ### For Each File
 ```
 1. Write tests FIRST (in same file or tests/ directory)
-2. Run tests → MUST FAIL (red)
+2. Run tests -> MUST FAIL (red)
 3. Implement minimum code to pass
-4. Run tests → MUST PASS (green)
-5. Run coverage → MUST be 100%
+4. Run tests -> MUST PASS (green)
+5. Run coverage -> MUST be 100%
 6. Refactor if needed (maintain green + 100%)
 7. Commit
 ```
@@ -272,11 +272,11 @@ set -e
 echo "Running coverage check..."
 COVERAGE=$(cargo llvm-cov --json 2>/dev/null | jq -r '.data[0].totals.lines.percent')
 if (( $(echo "$COVERAGE < 100" | bc -l) )); then
-    echo "❌ Coverage is ${COVERAGE}%, required 100%"
+    echo "Coverage is ${COVERAGE}%, required 100%"
     cargo llvm-cov --show-missing-lines 2>/dev/null | grep -E "^\s+\d+\|" | head -20
     exit 1
 fi
-echo "✅ Coverage: ${COVERAGE}%"
+echo "Coverage: ${COVERAGE}%"
 ```
 
 **Verify coverage commands work**:
@@ -323,9 +323,9 @@ git commit -m "Initial scaffold with coverage infrastructure"
 **TDD Workflow**:
 
 1. **Write tests FIRST** at bottom of file
-2. **Run tests** → Should fail (types don't exist)
+2. **Run tests** -> Should fail (types don't exist)
 3. **Implement types** to make tests pass
-4. **Run coverage** → Must be 100%
+4. **Run coverage** -> Must be 100%
 
 **File content** (from DESIGN.md Section 18.9):
 - `AppError` enum with variants: Anthropic, Storage, Config, Mcp, Mode
@@ -912,7 +912,7 @@ cargo llvm-cov --fail-under-lines 100
 - assess: source credibility evaluation
 - probabilistic: Bayesian updates
 
-**Tests**: Credibility scoring, prior→posterior calculation.
+**Tests**: Credibility scoring, prior->posterior calculation.
 
 ### Step 8.5: Timeline Mode (src/modes/timeline.rs)
 
@@ -935,7 +935,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 8.7: Counterfactual Mode (src/modes/counterfactual.rs)
 
 **Single operation**:
-- analyze scenario + intervention → consequences
+- analyze scenario + intervention -> consequences
 
 **Tests**: Pearl's Ladder levels (association, intervention, counterfactual).
 
@@ -1527,7 +1527,7 @@ cargo llvm-cov --fail-under-lines 100
 
 ### Step 12.1: Integration Tests (tests/integration/)
 
-- Full workflow: create session → use modes → checkpoint → restore
+- Full workflow: create session -> use modes -> checkpoint -> restore
 - Multi-mode scenarios
 - Error recovery paths
 
@@ -1617,7 +1617,7 @@ claude mcp add mcp-reasoning \
 ```bash
 # Check server is registered
 claude mcp list
-# Expected: mcp-reasoning: /path/to/mcp-reasoning - ✓ Connected
+# Expected: mcp-reasoning: /path/to/mcp-reasoning -  Connected
 
 # Get detailed config
 claude mcp get mcp-reasoning

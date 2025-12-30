@@ -54,25 +54,25 @@ Running `cargo tree --duplicates` reveals 14 duplicate crates:
 Use `[patch.crates-io]` to force version unification where safe.
 
 **Pros:**
-- ✅ Minimal code changes
-- ✅ Can be applied selectively
-- ✅ Reversible if issues arise
-- ✅ Doesn't require upstream changes
+- Minimal code changes
+- Can be applied selectively
+- Reversible if issues arise
+- Doesn't require upstream changes
 
 **Cons:**
-- ⚠️ May break if APIs are incompatible
-- ⚠️ Requires testing after each patch
+- May break if APIs are incompatible
+- Requires testing after each patch
 
 ### **Approach B: Update Direct Dependencies**
 Update `Cargo.toml` to use newer versions that align dependencies.
 
 **Pros:**
-- ✅ Clean long-term solution
-- ✅ May bring bug fixes
+- Clean long-term solution
+- May bring bug fixes
 
 **Cons:**
-- ⚠️ May require code changes
-- ⚠️ Riskier for major updates
+- May require code changes
+- Riskier for major updates
 
 ### **Approach C: Hybrid Approach**
 Combine patches with selective updates.
@@ -296,16 +296,16 @@ cargo test
 ## Expected Outcomes
 
 ### **Immediate (After Phase 1-2)**
-- ✅ 8-10 duplicate crates eliminated
-- ✅ 400-600KB binary size reduction
-- ✅ 10-15% faster compile times
-- ✅ Cleaner `cargo tree` output
+- 8-10 duplicate crates eliminated
+- 400-600KB binary size reduction
+- 10-15% faster compile times
+- Cleaner `cargo tree` output
 
 ### **Long-term Benefits**
-- ✅ Easier security audits (fewer versions to track)
-- ✅ Simpler dependency updates
-- ✅ Reduced chance of trait incompatibilities
-- ✅ Better IDE/tooling performance
+- Easier security audits (fewer versions to track)
+- Simpler dependency updates
+- Reduced chance of trait incompatibilities
+- Better IDE/tooling performance
 
 ### **Remaining Duplicates**
 
@@ -391,7 +391,7 @@ Add section:
 **Results:**
 - Binary size: -500KB
 - Compile time: -12%
-- Duplicates: 14 → 4-6 remaining
+- Duplicates: 14 -> 4-6 remaining
 
 **Testing:** All 1,624 tests pass with patches applied.
 ```
@@ -496,21 +496,21 @@ Pragmatic approach:
 ## Success Criteria
 
 **Must Have:**
-- ✅ All 1,624 tests pass
-- ✅ No new compilation errors
-- ✅ At least 8 duplicates eliminated
-- ✅ At least 300KB binary size reduction
+- All 1,624 tests pass
+- No new compilation errors
+- At least 8 duplicates eliminated
+- At least 300KB binary size reduction
 
 **Should Have:**
-- ✅ 10+ duplicates eliminated
-- ✅ 400-500KB binary size reduction
-- ✅ 10%+ faster compile times
-- ✅ Clean `cargo tree --duplicates` output
+- 10+ duplicates eliminated
+- 400-500KB binary size reduction
+- 10%+ faster compile times
+- Clean `cargo tree --duplicates` output
 
 **Nice to Have:**
-- ✅ All duplicates eliminated (except unavoidable)
-- ✅ 500KB+ binary size reduction
-- ✅ 15%+ faster compile times
+- All duplicates eliminated (except unavoidable)
+- 500KB+ binary size reduction
+- 15%+ faster compile times
 
 ---
 
@@ -558,8 +558,8 @@ Risk: LOW
 
 #### base64 (2 versions: 0.21.7, 0.22.1)
 ```
-v0.21.7 ← rmcp
-v0.22.1 ← reqwest, sqlx-core, wiremock
+v0.21.7 <- rmcp
+v0.22.1 <- reqwest, sqlx-core, wiremock
 Size impact: ~50KB
 Solution: Patch to 0.22
 Risk: LOW (API compatible)
@@ -567,8 +567,8 @@ Risk: LOW (API compatible)
 
 #### getrandom (2 versions: 0.2.16, 0.3.4)
 ```
-v0.2.16 ← Various old dependencies
-v0.3.4 ← Current standard
+v0.2.16 <- Various old dependencies
+v0.3.4 <- Current standard
 Size impact: ~30KB
 Solution: Patch to 0.3
 Risk: LOW
@@ -578,8 +578,8 @@ Risk: LOW
 
 #### hashbrown (2 versions: 0.15.5, 0.16.1)
 ```
-v0.15.5 ← sqlx-core
-v0.16.1 ← indexmap
+v0.15.5 <- sqlx-core
+v0.16.1 <- indexmap
 Size impact: ~80KB
 Solution: Patch to 0.16 (test carefully)
 Risk: MEDIUM
@@ -595,7 +595,7 @@ Multiple small crates with minimal size impact. Accept as-is unless causing issu
 
 | Item | Status | Date | Notes |
 |------|--------|------|-------|
-| Plan Created | ✅ | 2024-12-29 | Initial version |
+| Plan Created | | 2024-12-29 | Initial version |
 | Phase 1 | ⬜ | - | Not started |
 | Phase 2 | ⬜ | - | Pending Phase 1 |
 | Phase 3 | ⬜ | - | Optional |

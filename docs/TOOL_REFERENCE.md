@@ -908,7 +908,7 @@ All tools support `session_id` for context continuity. Sessions enable:
 1. Use consistent session IDs for related reasoning tasks
 2. Create checkpoints before exploring risky approaches
 3. Use `reasoning_auto` when unsure which mode to use
-4. Combine tools in workflows (e.g., divergent → decision → reflection)
+4. Combine tools in workflows (e.g., divergent -> decision -> reflection)
 
 ---
 

@@ -26,7 +26,7 @@ pie showData title Codebase Distribution (56K+ lines)
 - **Monte Carlo Tree Search** - UCB1-guided exploration with auto-backtracking
 - **Session Persistence** - Save and restore reasoning state with checkpoints across sessions
 - **Built-in Workflow Presets** - Pre-configured workflows for code review, debugging, and architecture decisions
-- **Self-Improvement System** - 4-phase optimization loop (Monitor → Analyze → Execute → Learn) with circuit breaker safety
+- **Self-Improvement System** - 4-phase optimization loop (Monitor -> Analyze -> Execute -> Learn) with circuit breaker safety
 - **Extended Thinking** - Configurable thinking budgets (standard/deep/maximum) for complex reasoning
 
 ## Architecture

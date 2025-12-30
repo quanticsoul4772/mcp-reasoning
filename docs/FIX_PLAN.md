@@ -50,7 +50,7 @@ BEFORE:
 ┌──────────────┐    ┌──────────────┐
 │  TreeMode    │    │   Storage    │
 │  (HashMap)   │    │   (SQLite)   │
-│  branches    │    │   branches   │  ← Never used
+│  branches    │    │   branches   │  <- Never used
 └──────────────┘    └──────────────┘
 
 AFTER:
@@ -415,10 +415,10 @@ Existing tests only cover single operations. No tests verify that multi-step wor
 
 | File | Purpose |
 |------|---------|
-| `tests/workflow_tree.rs` | Tree: create → list → focus → complete |
-| `tests/workflow_graph.rs` | Graph: init → generate → score → aggregate → finalize |
-| `tests/workflow_checkpoint.rs` | Checkpoint: create → checkpoint → modify → restore |
-| `tests/workflow_preset.rs` | Preset: list → run multi-step preset |
+| `tests/workflow_tree.rs` | Tree: create -> list -> focus -> complete |
+| `tests/workflow_graph.rs` | Graph: init -> generate -> score -> aggregate -> finalize |
+| `tests/workflow_checkpoint.rs` | Checkpoint: create -> checkpoint -> modify -> restore |
+| `tests/workflow_preset.rs` | Preset: list -> run multi-step preset |
 
 #### Test Structure
 
@@ -585,11 +585,11 @@ async fn test_graph_full_workflow() {
 After implementation, re-run the tool validation from the original session:
 
 ```
-✅ reasoning_tree list: Returns previously created branches
-✅ reasoning_tree focus: Can focus on persisted branch
-✅ reasoning_graph state: Returns graph structure without content
-✅ reasoning_graph generate: Works with node_id parameter
-✅ reasoning_metrics summary: Shows recorded invocations
+reasoning_tree list: Returns previously created branches
+reasoning_tree focus: Can focus on persisted branch
+reasoning_graph state: Returns graph structure without content
+reasoning_graph generate: Works with node_id parameter
+reasoning_metrics summary: Shows recorded invocations
 ```
 
 ### Regression Tests

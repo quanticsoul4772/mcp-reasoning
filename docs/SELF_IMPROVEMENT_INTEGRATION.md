@@ -44,7 +44,7 @@ src/self_improvement/
 │  │  AppState     │   │        SelfImprovementManager            │  │
 │  │  ├─storage    │   │  ┌────────────────────────────────────┐  │  │
 │  │  ├─client     │◀──┼──│  SelfImprovementSystem             │  │  │
-│  │  ├─config     │   │  │  ├─Monitor (metrics → triggers)    │  │  │
+│  │  ├─config     │   │  │  ├─Monitor (metrics -> triggers)    │  │  │
 │  │  ├─metrics ◀──┼───┼──│  ├─Analyzer (LLM diagnosis)        │  │  │
 │  │  └─presets    │   │  │  ├─Executor (action execution)     │  │  │
 │  └───────────────┘   │  │  └─Learner (reward calculation)    │  │  │
@@ -384,16 +384,16 @@ Files to modify:
 
 After integration, validate that:
 
-1. ✅ Server starts and self-improvement background task runs automatically
-2. ✅ Metrics are collected from reasoning tool invocations
-3. ✅ Diagnoses are generated when metrics cross thresholds
-4. ✅ Approval flow works via MCP tools (when require_approval=true)
-5. ✅ Actions auto-execute when require_approval=false
-6. ✅ Actions are recorded in database with pre/post metrics
-7. ✅ Rollback works correctly
-8. ✅ Circuit breaker trips on consecutive failures
-9. ✅ Learnings are extracted and stored
-10. ✅ Graceful shutdown completes cleanly
+1. Server starts and self-improvement background task runs automatically
+2. Metrics are collected from reasoning tool invocations
+3. Diagnoses are generated when metrics cross thresholds
+4. Approval flow works via MCP tools (when require_approval=true)
+5. Actions auto-execute when require_approval=false
+6. Actions are recorded in database with pre/post metrics
+7. Rollback works correctly
+8. Circuit breaker trips on consecutive failures
+9. Learnings are extracted and stored
+10. Graceful shutdown completes cleanly
 
 ## File Summary
 
