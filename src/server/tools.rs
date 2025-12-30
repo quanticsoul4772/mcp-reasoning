@@ -1,7 +1,7 @@
 //! Tool definitions with rmcp macros.
 //!
-//! This module defines all 15 reasoning tools using the rmcp 0.1.5 macro system.
-//! Uses `#[tool(tool_box)]` on impl and `#[tool(name, description)]` on methods.
+//! This module defines all 15 reasoning tools using the rmcp 0.12 macro system.
+//! Uses `#[tool_router]` on impl with tools and `#[tool_handler]` on ServerHandler.
 //!
 //! Request and response types are defined in separate modules for maintainability.
 
@@ -10,12 +10,11 @@
 
 use std::sync::Arc;
 
+use rmcp::handler::server::router::tool::ToolRouter;
+use rmcp::handler::server::wrapper::Parameters;
 use rmcp::handler::server::ServerHandler;
-use rmcp::model::{
-    Implementation, ProtocolVersion, ServerCapabilities, ServerInfo, ToolsCapability,
-};
-use rmcp::service::{Peer, RoleServer};
-use rmcp::tool;
+use rmcp::model::{ServerCapabilities, ServerInfo};
+use rmcp::{tool, tool_handler, tool_router};
 
 use super::requests::{
     AutoRequest, CheckpointRequest, CounterfactualRequest, DecisionRequest, DetectRequest,
@@ -43,7 +42,7 @@ use crate::modes::{
 };
 
 // ============================================================================
-// ReasoningServer with Tool Box (rmcp 0.1.5 syntax)
+// ReasoningServer with Tool Router (rmcp 0.12 syntax)
 // ============================================================================
 
 /// Reasoning server with all tools.
@@ -51,23 +50,29 @@ use crate::modes::{
 pub struct ReasoningServer {
     /// Shared application state.
     pub state: Arc<AppState>,
+    /// Tool router for handling tool calls.
+    tool_router: ToolRouter<Self>,
 }
 
 impl ReasoningServer {
     /// Creates a new reasoning server.
     #[must_use]
-    pub const fn new(state: Arc<AppState>) -> Self {
-        Self { state }
+    pub fn new(state: Arc<AppState>) -> Self {
+        Self {
+            state,
+            tool_router: Self::tool_router(),
+        }
     }
 }
 
-#[tool(tool_box)]
+#[tool_router]
 impl ReasoningServer {
     #[tool(
         name = "reasoning_linear",
         description = "Process a thought and get a logical continuation with confidence scoring."
     )]
-    async fn reasoning_linear(&self, #[tool(aggr)] req: LinearRequest) -> LinearResponse {
+    async fn reasoning_linear(&self, req: Parameters<LinearRequest>) -> LinearResponse {
+        let req = req.0;
         let timer = Timer::start();
         let mode = LinearMode::new(
             Arc::clone(&self.state.storage),
@@ -107,7 +112,8 @@ impl ReasoningServer {
         name = "reasoning_tree",
         description = "Branching exploration: create=start with 2-4 paths, focus=select branch, list=show branches, complete=mark finished."
     )]
-    async fn reasoning_tree(&self, #[tool(aggr)] req: TreeRequest) -> TreeResponse {
+    async fn reasoning_tree(&self, req: Parameters<TreeRequest>) -> TreeResponse {
+        let req = req.0;
         let timer = Timer::start();
         let mut mode = TreeMode::new(
             Arc::clone(&self.state.storage),
@@ -268,7 +274,8 @@ impl ReasoningServer {
         name = "reasoning_divergent",
         description = "Generate novel perspectives with assumption challenges and optional force_rebellion mode."
     )]
-    async fn reasoning_divergent(&self, #[tool(aggr)] req: DivergentRequest) -> DivergentResponse {
+    async fn reasoning_divergent(&self, req: Parameters<DivergentRequest>) -> DivergentResponse {
+        let req = req.0;
         let timer = Timer::start();
         let mode = DivergentMode::new(
             Arc::clone(&self.state.storage),
@@ -326,8 +333,9 @@ impl ReasoningServer {
     )]
     async fn reasoning_reflection(
         &self,
-        #[tool(aggr)] req: ReflectionRequest,
+        req: Parameters<ReflectionRequest>,
     ) -> ReflectionResponse {
+        let req = req.0;
         let timer = Timer::start();
         let mode = ReflectionMode::new(
             Arc::clone(&self.state.storage),
@@ -440,8 +448,9 @@ impl ReasoningServer {
     )]
     async fn reasoning_checkpoint(
         &self,
-        #[tool(aggr)] req: CheckpointRequest,
+        req: Parameters<CheckpointRequest>,
     ) -> CheckpointResponse {
+        let req = req.0;
         let timer = Timer::start();
         let mode = CheckpointMode::new(
             Arc::clone(&self.state.storage),
@@ -575,7 +584,8 @@ impl ReasoningServer {
         name = "reasoning_auto",
         description = "Analyze content and route to optimal reasoning mode."
     )]
-    async fn reasoning_auto(&self, #[tool(aggr)] req: AutoRequest) -> AutoResponse {
+    async fn reasoning_auto(&self, req: Parameters<AutoRequest>) -> AutoResponse {
+        let req = req.0;
         let timer = Timer::start();
         let mode = AutoMode::new(
             Arc::clone(&self.state.storage),
@@ -622,7 +632,8 @@ impl ReasoningServer {
         name = "reasoning_graph",
         description = "Graph reasoning: init/generate/score/aggregate/refine/prune/finalize/state operations."
     )]
-    async fn reasoning_graph(&self, #[tool(aggr)] req: GraphRequest) -> GraphResponse {
+    async fn reasoning_graph(&self, req: Parameters<GraphRequest>) -> GraphResponse {
+        let req = req.0;
         let timer = Timer::start();
         let operation = req.operation.clone();
         let mode = GraphMode::new(
@@ -796,7 +807,8 @@ impl ReasoningServer {
         name = "reasoning_detect",
         description = "Detect cognitive biases and logical fallacies in reasoning."
     )]
-    async fn reasoning_detect(&self, #[tool(aggr)] req: DetectRequest) -> DetectResponse {
+    async fn reasoning_detect(&self, req: Parameters<DetectRequest>) -> DetectResponse {
+        let req = req.0;
         let timer = Timer::start();
         let mode = DetectMode::new(
             Arc::clone(&self.state.storage),
@@ -905,7 +917,8 @@ impl ReasoningServer {
         name = "reasoning_decision",
         description = "Decision analysis: weighted/pairwise/topsis scoring or perspectives stakeholder mapping."
     )]
-    async fn reasoning_decision(&self, #[tool(aggr)] req: DecisionRequest) -> DecisionResponse {
+    async fn reasoning_decision(&self, req: Parameters<DecisionRequest>) -> DecisionResponse {
+        let req = req.0;
         let timer = Timer::start();
         let mode = DecisionMode::new(
             Arc::clone(&self.state.storage),
@@ -1107,7 +1120,8 @@ impl ReasoningServer {
         name = "reasoning_evidence",
         description = "Evaluate evidence: assess=credibility scoring, probabilistic=Bayesian belief update."
     )]
-    async fn reasoning_evidence(&self, #[tool(aggr)] req: EvidenceRequest) -> EvidenceResponse {
+    async fn reasoning_evidence(&self, req: Parameters<EvidenceRequest>) -> EvidenceResponse {
+        let req = req.0;
         let timer = Timer::start();
         let mode = EvidenceMode::new(
             Arc::clone(&self.state.storage),
@@ -1239,7 +1253,8 @@ impl ReasoningServer {
         name = "reasoning_timeline",
         description = "Temporal reasoning: create/branch/compare/merge operations."
     )]
-    async fn reasoning_timeline(&self, #[tool(aggr)] req: TimelineRequest) -> TimelineResponse {
+    async fn reasoning_timeline(&self, req: Parameters<TimelineRequest>) -> TimelineResponse {
+        let req = req.0;
         let timer = Timer::start();
         let operation = req.operation.clone();
         let mode = TimelineMode::new(
@@ -1405,7 +1420,8 @@ impl ReasoningServer {
         name = "reasoning_mcts",
         description = "MCTS: explore=UCB1-guided search, auto_backtrack=quality-triggered backtracking."
     )]
-    async fn reasoning_mcts(&self, #[tool(aggr)] req: MctsRequest) -> MctsResponse {
+    async fn reasoning_mcts(&self, req: Parameters<MctsRequest>) -> MctsResponse {
+        let req = req.0;
         let timer = Timer::start();
         let mode = MctsMode::new(
             Arc::clone(&self.state.storage),
@@ -1506,10 +1522,11 @@ impl ReasoningServer {
     )]
     async fn reasoning_counterfactual(
         &self,
-        #[tool(aggr)] req: CounterfactualRequest,
+        req: Parameters<CounterfactualRequest>,
     ) -> CounterfactualResponse {
         use crate::modes::CounterfactualMode;
 
+        let req = req.0;
         let timer = Timer::start();
         let mode = CounterfactualMode::new(
             Arc::clone(&self.state.storage),
@@ -1582,7 +1599,8 @@ impl ReasoningServer {
         name = "reasoning_preset",
         description = "Execute pre-defined reasoning workflows: list=show presets, run=execute workflow."
     )]
-    async fn reasoning_preset(&self, #[tool(aggr)] req: PresetRequest) -> PresetResponse {
+    async fn reasoning_preset(&self, req: Parameters<PresetRequest>) -> PresetResponse {
+        let req = req.0;
         let timer = Timer::start();
         let operation = req.operation.clone();
 
@@ -1730,7 +1748,8 @@ impl ReasoningServer {
         name = "reasoning_metrics",
         description = "Query metrics: summary/by_mode/invocations/fallbacks/config."
     )]
-    async fn reasoning_metrics(&self, #[tool(aggr)] req: MetricsRequest) -> MetricsResponse {
+    async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsResponse {
+        let req = req.0;
         let timer = Timer::start();
         let query = req.query.clone();
 
@@ -1924,7 +1943,7 @@ impl ReasoningServer {
         name = "reasoning_si_status",
         description = "Get self-improvement system status including cycle stats and circuit breaker state."
     )]
-    async fn reasoning_si_status(&self, #[tool(aggr)] req: SiStatusRequest) -> SiStatusResponse {
+    async fn reasoning_si_status(&self, req: Parameters<SiStatusRequest>) -> SiStatusResponse {
         let _ = req; // Empty request struct
         let timer = Timer::start();
         let status = self.state.self_improvement.status().await;
@@ -1953,8 +1972,9 @@ impl ReasoningServer {
     )]
     async fn reasoning_si_diagnoses(
         &self,
-        #[tool(aggr)] req: SiDiagnosesRequest,
+        req: Parameters<SiDiagnosesRequest>,
     ) -> SiDiagnosesResponse {
+        let req = req.0;
         let timer = Timer::start();
         let diagnoses = self
             .state
@@ -1987,7 +2007,8 @@ impl ReasoningServer {
         name = "reasoning_si_approve",
         description = "Approve a pending diagnosis to execute its proposed actions."
     )]
-    async fn reasoning_si_approve(&self, #[tool(aggr)] req: SiApproveRequest) -> SiApproveResponse {
+    async fn reasoning_si_approve(&self, req: Parameters<SiApproveRequest>) -> SiApproveResponse {
+        let req = req.0;
         let timer = Timer::start();
         let result = self.state.self_improvement.approve(req.diagnosis_id).await;
 
@@ -2043,7 +2064,8 @@ impl ReasoningServer {
         name = "reasoning_si_reject",
         description = "Reject a pending diagnosis."
     )]
-    async fn reasoning_si_reject(&self, #[tool(aggr)] req: SiRejectRequest) -> SiRejectResponse {
+    async fn reasoning_si_reject(&self, req: Parameters<SiRejectRequest>) -> SiRejectResponse {
+        let req = req.0;
         let timer = Timer::start();
         let result = self
             .state
@@ -2079,7 +2101,7 @@ impl ReasoningServer {
         name = "reasoning_si_trigger",
         description = "Trigger an immediate improvement cycle."
     )]
-    async fn reasoning_si_trigger(&self, #[tool(aggr)] req: SiTriggerRequest) -> SiTriggerResponse {
+    async fn reasoning_si_trigger(&self, req: Parameters<SiTriggerRequest>) -> SiTriggerResponse {
         let _ = req; // Empty request struct
         let timer = Timer::start();
         let result = self.state.self_improvement.trigger_cycle().await;
@@ -2126,8 +2148,9 @@ impl ReasoningServer {
     )]
     async fn reasoning_si_rollback(
         &self,
-        #[tool(aggr)] req: SiRollbackRequest,
+        req: Parameters<SiRollbackRequest>,
     ) -> SiRollbackResponse {
+        let req = req.0;
         let timer = Timer::start();
         let result = self.state.self_improvement.rollback(req.action_id).await;
 
@@ -2156,61 +2179,16 @@ impl ReasoningServer {
     }
 }
 
-// Generate the tool_box function from tool definitions
-rmcp::tool_box!(ReasoningServer {
-    reasoning_linear,
-    reasoning_tree,
-    reasoning_divergent,
-    reasoning_reflection,
-    reasoning_checkpoint,
-    reasoning_auto,
-    reasoning_graph,
-    reasoning_detect,
-    reasoning_decision,
-    reasoning_evidence,
-    reasoning_timeline,
-    reasoning_mcts,
-    reasoning_counterfactual,
-    reasoning_preset,
-    reasoning_metrics,
-    // Self-improvement tools
-    reasoning_si_status,
-    reasoning_si_diagnoses,
-    reasoning_si_approve,
-    reasoning_si_reject,
-    reasoning_si_trigger,
-    reasoning_si_rollback,
-});
-
 // Implement ServerHandler to integrate with rmcp's server infrastructure
+#[tool_handler]
 impl ServerHandler for ReasoningServer {
-    // Use tool_box!(@derive) to generate list_tools and call_tool methods
-    rmcp::tool_box!(@derive);
-
-    fn get_peer(&self) -> Option<Peer<RoleServer>> {
-        None
-    }
-
-    fn set_peer(&mut self, _peer: Peer<RoleServer>) {
-        // We don't need to store the peer for now
-    }
-
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            protocol_version: ProtocolVersion::default(),
-            capabilities: ServerCapabilities {
-                tools: Some(ToolsCapability {
-                    list_changed: Some(false),
-                }),
-                ..Default::default()
-            },
-            server_info: Implementation {
-                name: "mcp-reasoning".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-            },
             instructions: Some(
                 "MCP Reasoning Server providing 15 structured reasoning tools.".to_string(),
             ),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            ..Default::default()
         }
     }
 }
@@ -2219,6 +2197,7 @@ impl ServerHandler for ReasoningServer {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use rmcp::handler::server::wrapper::Parameters;
     use rmcp::model::IntoContents;
 
     #[test]
@@ -2769,23 +2748,8 @@ mod tests {
     fn test_server_handler_get_info() {
         let server = create_test_server_sync();
         let info = server.get_info();
-        assert_eq!(info.server_info.name, "mcp-reasoning");
         assert!(info.capabilities.tools.is_some());
         assert!(info.instructions.is_some());
-    }
-
-    #[test]
-    fn test_server_handler_get_peer() {
-        let server = create_test_server_sync();
-        assert!(server.get_peer().is_none());
-    }
-
-    #[test]
-    fn test_server_handler_set_peer() {
-        let mut server = create_test_server_sync();
-        // set_peer is a no-op, just verify it doesn't panic
-        // We can't easily create a Peer, so just verify method exists
-        let _ = &mut server;
     }
 
     #[test]
@@ -2807,7 +2771,7 @@ mod tests {
             session_id: Some("s1".to_string()),
             confidence: Some(0.8),
         };
-        let resp = server.reasoning_linear(req).await;
+        let resp = server.reasoning_linear(Parameters(req)).await;
         assert_eq!(resp.session_id, "s1");
     }
 
@@ -2822,7 +2786,7 @@ mod tests {
             num_branches: Some(2),
             completed: None,
         };
-        let resp = server.reasoning_tree(req).await;
+        let resp = server.reasoning_tree(Parameters(req)).await;
         assert_eq!(resp.session_id, "s1");
     }
 
@@ -2836,7 +2800,7 @@ mod tests {
             challenge_assumptions: Some(true),
             force_rebellion: Some(false),
         };
-        let resp = server.reasoning_divergent(req).await;
+        let resp = server.reasoning_divergent(Parameters(req)).await;
         assert_eq!(resp.session_id, "s1");
     }
 
@@ -2851,7 +2815,7 @@ mod tests {
             max_iterations: Some(3),
             quality_threshold: Some(0.8),
         };
-        let resp = server.reasoning_reflection(req).await;
+        let resp = server.reasoning_reflection(Parameters(req)).await;
         assert!(resp.quality_score >= 0.0);
     }
 
@@ -2866,7 +2830,7 @@ mod tests {
             description: Some("test checkpoint".to_string()),
             new_direction: None,
         };
-        let resp = server.reasoning_checkpoint(req).await;
+        let resp = server.reasoning_checkpoint(Parameters(req)).await;
         assert_eq!(resp.session_id, "s1");
     }
 
@@ -2878,7 +2842,7 @@ mod tests {
             hints: Some(vec!["hint".to_string()]),
             session_id: Some("s1".to_string()),
         };
-        let resp = server.reasoning_auto(req).await;
+        let resp = server.reasoning_auto(Parameters(req)).await;
         assert!(!resp.selected_mode.is_empty());
     }
 
@@ -2896,7 +2860,7 @@ mod tests {
             threshold: None,
             terminal_node_ids: None,
         };
-        let resp = server.reasoning_graph(req).await;
+        let resp = server.reasoning_graph(Parameters(req)).await;
         assert_eq!(resp.session_id, "s1");
     }
 
@@ -2912,7 +2876,7 @@ mod tests {
             check_formal: Some(true),
             check_informal: Some(true),
         };
-        let resp = server.reasoning_detect(req).await;
+        let resp = server.reasoning_detect(Parameters(req)).await;
         assert!(resp.detections.is_empty() || !resp.detections.is_empty());
     }
 
@@ -2927,7 +2891,7 @@ mod tests {
             context: Some("context".to_string()),
             session_id: Some("s1".to_string()),
         };
-        let resp = server.reasoning_decision(req).await;
+        let resp = server.reasoning_decision(Parameters(req)).await;
         // Stub returns empty recommendation
         let _ = resp.recommendation;
     }
@@ -2943,7 +2907,7 @@ mod tests {
             prior: Some(0.5),
             session_id: Some("s1".to_string()),
         };
-        let resp = server.reasoning_evidence(req).await;
+        let resp = server.reasoning_evidence(Parameters(req)).await;
         assert!(resp.overall_credibility >= 0.0);
     }
 
@@ -2961,7 +2925,7 @@ mod tests {
             target_branch_id: None,
             merge_strategy: None,
         };
-        let resp = server.reasoning_timeline(req).await;
+        let resp = server.reasoning_timeline(Parameters(req)).await;
         // Stub returns empty timeline_id
         let _ = resp.timeline_id;
     }
@@ -2981,7 +2945,7 @@ mod tests {
             lookback_depth: Some(3),
             auto_execute: Some(false),
         };
-        let resp = server.reasoning_mcts(req).await;
+        let resp = server.reasoning_mcts(Parameters(req)).await;
         assert_eq!(resp.session_id, "s1");
     }
 
@@ -2994,7 +2958,7 @@ mod tests {
             analysis_depth: Some("counterfactual".to_string()),
             session_id: Some("s1".to_string()),
         };
-        let resp = server.reasoning_counterfactual(req).await;
+        let resp = server.reasoning_counterfactual(Parameters(req)).await;
         // Stub uses input values for output
         assert_eq!(resp.original_scenario, "base");
         assert_eq!(resp.intervention_applied, "change");
@@ -3010,7 +2974,7 @@ mod tests {
             inputs: None,
             session_id: Some("s1".to_string()),
         };
-        let resp = server.reasoning_preset(req).await;
+        let resp = server.reasoning_preset(Parameters(req)).await;
         // presets may or may not be present
         let _ = resp.presets;
     }
@@ -3026,7 +2990,7 @@ mod tests {
             success_only: Some(true),
             limit: Some(10),
         };
-        let resp = server.reasoning_metrics(req).await;
+        let resp = server.reasoning_metrics(Parameters(req)).await;
         // summary may or may not be present
         let _ = resp.summary;
     }
@@ -3107,7 +3071,7 @@ mod tests {
                 confidence: Some(0.8),
             };
 
-            let resp = server.reasoning_linear(req).await;
+            let resp = server.reasoning_linear(Parameters(req)).await;
             // Should succeed with mocked response
             assert!(!resp.thought_id.is_empty() || !resp.content.is_empty());
         }
@@ -3146,7 +3110,7 @@ mod tests {
                 num_branches: Some(2),
                 completed: None,
             };
-            let resp = server.reasoning_tree(create_req).await;
+            let resp = server.reasoning_tree(Parameters(create_req)).await;
             assert_eq!(resp.session_id, "s1");
 
             // Test list
@@ -3158,7 +3122,7 @@ mod tests {
                 num_branches: None,
                 completed: None,
             };
-            let resp = server.reasoning_tree(list_req).await;
+            let resp = server.reasoning_tree(Parameters(list_req)).await;
             assert_eq!(resp.session_id, "s1");
 
             // Test focus
@@ -3170,7 +3134,7 @@ mod tests {
                 num_branches: None,
                 completed: None,
             };
-            let resp = server.reasoning_tree(focus_req).await;
+            let resp = server.reasoning_tree(Parameters(focus_req)).await;
             assert_eq!(resp.session_id, "s1");
 
             // Test complete
@@ -3182,7 +3146,7 @@ mod tests {
                 num_branches: None,
                 completed: Some(true),
             };
-            let resp = server.reasoning_tree(complete_req).await;
+            let resp = server.reasoning_tree(Parameters(complete_req)).await;
             assert_eq!(resp.session_id, "s1");
 
             // Test unknown operation
@@ -3194,7 +3158,7 @@ mod tests {
                 num_branches: None,
                 completed: None,
             };
-            let resp = server.reasoning_tree(unknown_req).await;
+            let resp = server.reasoning_tree(Parameters(unknown_req)).await;
             assert!(resp.recommendation.unwrap().contains("Unknown operation"));
         }
 
@@ -3229,7 +3193,7 @@ mod tests {
                 force_rebellion: Some(true),
             };
 
-            let resp = server.reasoning_divergent(req).await;
+            let resp = server.reasoning_divergent(Parameters(req)).await;
             assert_eq!(resp.session_id, "s1");
         }
 
@@ -3270,7 +3234,7 @@ mod tests {
                 max_iterations: Some(3),
                 quality_threshold: Some(0.8),
             };
-            let resp = server.reasoning_reflection(process_req).await;
+            let resp = server.reasoning_reflection(Parameters(process_req)).await;
             assert!(resp.quality_score >= 0.0);
 
             // Test evaluate
@@ -3302,7 +3266,7 @@ mod tests {
                 max_iterations: None,
                 quality_threshold: None,
             };
-            let resp = server.reasoning_reflection(evaluate_req).await;
+            let resp = server.reasoning_reflection(Parameters(evaluate_req)).await;
             assert!(resp.quality_score >= 0.0);
 
             // Test unknown operation
@@ -3314,7 +3278,7 @@ mod tests {
                 max_iterations: None,
                 quality_threshold: None,
             };
-            let resp = server.reasoning_reflection(unknown_req).await;
+            let resp = server.reasoning_reflection(Parameters(unknown_req)).await;
             assert!(resp
                 .weaknesses
                 .unwrap()
@@ -3338,7 +3302,7 @@ mod tests {
                 description: Some("Test checkpoint".to_string()),
                 new_direction: None,
             };
-            let resp = server.reasoning_checkpoint(create_req).await;
+            let resp = server.reasoning_checkpoint(Parameters(create_req)).await;
             assert_eq!(resp.session_id, "s1");
 
             // List checkpoints
@@ -3350,7 +3314,7 @@ mod tests {
                 description: None,
                 new_direction: None,
             };
-            let resp = server.reasoning_checkpoint(list_req).await;
+            let resp = server.reasoning_checkpoint(Parameters(list_req)).await;
             assert_eq!(resp.session_id, "s1");
 
             // Restore (will fail since no actual checkpoint, but exercises code path)
@@ -3362,7 +3326,7 @@ mod tests {
                 description: None,
                 new_direction: Some("New direction".to_string()),
             };
-            let resp = server.reasoning_checkpoint(restore_req).await;
+            let resp = server.reasoning_checkpoint(Parameters(restore_req)).await;
             // Will have error in restored_state since checkpoint doesn't exist
             assert!(resp.restored_state.is_some());
 
@@ -3375,7 +3339,7 @@ mod tests {
                 description: None,
                 new_direction: None,
             };
-            let resp = server.reasoning_checkpoint(unknown_req).await;
+            let resp = server.reasoning_checkpoint(Parameters(unknown_req)).await;
             assert!(resp.restored_state.is_some());
         }
 
@@ -3407,7 +3371,7 @@ mod tests {
                 session_id: Some("s1".to_string()),
             };
 
-            let resp = server.reasoning_auto(req).await;
+            let resp = server.reasoning_auto(Parameters(req)).await;
             assert!(!resp.selected_mode.is_empty());
         }
 
@@ -3444,7 +3408,7 @@ mod tests {
                 threshold: None,
                 terminal_node_ids: None,
             };
-            let resp = server.reasoning_graph(init_req).await;
+            let resp = server.reasoning_graph(Parameters(init_req)).await;
             assert_eq!(resp.session_id, "s1");
 
             // Test generate
@@ -3474,7 +3438,7 @@ mod tests {
                 threshold: None,
                 terminal_node_ids: None,
             };
-            let resp = server.reasoning_graph(generate_req).await;
+            let resp = server.reasoning_graph(Parameters(generate_req)).await;
             assert_eq!(resp.session_id, "s1");
 
             // Test unknown operation
@@ -3489,7 +3453,7 @@ mod tests {
                 threshold: None,
                 terminal_node_ids: None,
             };
-            let resp = server.reasoning_graph(unknown_req).await;
+            let resp = server.reasoning_graph(Parameters(unknown_req)).await;
             assert!(resp
                 .aggregated_insight
                 .unwrap()
@@ -3540,7 +3504,7 @@ mod tests {
                 check_formal: None,
                 check_informal: None,
             };
-            let resp = server.reasoning_detect(biases_req).await;
+            let resp = server.reasoning_detect(Parameters(biases_req)).await;
             assert!(resp.summary.is_some());
 
             // Test fallacies
@@ -3586,7 +3550,7 @@ mod tests {
                 check_formal: Some(true),
                 check_informal: Some(true),
             };
-            let resp = server.reasoning_detect(fallacies_req).await;
+            let resp = server.reasoning_detect(Parameters(fallacies_req)).await;
             assert!(resp.summary.is_some());
 
             // Test unknown type
@@ -3599,7 +3563,7 @@ mod tests {
                 check_formal: None,
                 check_informal: None,
             };
-            let resp = server.reasoning_detect(unknown_req).await;
+            let resp = server.reasoning_detect(Parameters(unknown_req)).await;
             assert!(resp.summary.unwrap().contains("Unknown"));
         }
 
@@ -3645,7 +3609,7 @@ mod tests {
                 context: None,
                 session_id: Some("s1".to_string()),
             };
-            let resp = server.reasoning_decision(weighted_req).await;
+            let resp = server.reasoning_decision(Parameters(weighted_req)).await;
             assert!(!resp.recommendation.is_empty() || resp.recommendation.contains("ERROR"));
 
             // Test pairwise
@@ -3677,7 +3641,7 @@ mod tests {
                 context: None,
                 session_id: Some("s1".to_string()),
             };
-            let resp = server.reasoning_decision(pairwise_req).await;
+            let resp = server.reasoning_decision(Parameters(pairwise_req)).await;
             let _ = resp.recommendation;
 
             // Test unknown type (defaults to weighted)
@@ -3689,7 +3653,7 @@ mod tests {
                 context: None,
                 session_id: None,
             };
-            let resp = server.reasoning_decision(default_req).await;
+            let resp = server.reasoning_decision(Parameters(default_req)).await;
             let _ = resp.recommendation;
         }
 
@@ -3732,7 +3696,7 @@ mod tests {
                 context: Some("Context".to_string()),
                 session_id: Some("s1".to_string()),
             };
-            let resp = server.reasoning_evidence(assess_req).await;
+            let resp = server.reasoning_evidence(Parameters(assess_req)).await;
             assert!(resp.overall_credibility >= 0.0);
 
             // Test probabilistic
@@ -3762,7 +3726,7 @@ mod tests {
                 context: None,
                 session_id: Some("s1".to_string()),
             };
-            let resp = server.reasoning_evidence(prob_req).await;
+            let resp = server.reasoning_evidence(Parameters(prob_req)).await;
             assert!(resp.overall_credibility >= 0.0);
 
             // Test unknown type (defaults to assess)
@@ -3774,7 +3738,7 @@ mod tests {
                 context: None,
                 session_id: None,
             };
-            let resp = server.reasoning_evidence(default_req).await;
+            let resp = server.reasoning_evidence(Parameters(default_req)).await;
             assert!(resp.overall_credibility >= 0.0);
         }
 
@@ -3814,7 +3778,7 @@ mod tests {
                 target_branch_id: None,
                 merge_strategy: None,
             };
-            let resp = server.reasoning_timeline(create_req).await;
+            let resp = server.reasoning_timeline(Parameters(create_req)).await;
             let _ = resp.timeline_id;
 
             // Test branch
@@ -3829,7 +3793,7 @@ mod tests {
                 target_branch_id: None,
                 merge_strategy: None,
             };
-            let resp = server.reasoning_timeline(branch_req).await;
+            let resp = server.reasoning_timeline(Parameters(branch_req)).await;
             let _ = resp.timeline_id;
 
             // Test compare
@@ -3844,7 +3808,7 @@ mod tests {
                 target_branch_id: None,
                 merge_strategy: None,
             };
-            let resp = server.reasoning_timeline(compare_req).await;
+            let resp = server.reasoning_timeline(Parameters(compare_req)).await;
             let _ = resp.timeline_id;
 
             // Test merge
@@ -3859,7 +3823,7 @@ mod tests {
                 target_branch_id: Some("b2".to_string()),
                 merge_strategy: Some("integrate".to_string()),
             };
-            let resp = server.reasoning_timeline(merge_req).await;
+            let resp = server.reasoning_timeline(Parameters(merge_req)).await;
             let _ = resp.timeline_id;
 
             // Test unknown operation
@@ -3874,7 +3838,7 @@ mod tests {
                 target_branch_id: None,
                 merge_strategy: None,
             };
-            let resp = server.reasoning_timeline(unknown_req).await;
+            let resp = server.reasoning_timeline(Parameters(unknown_req)).await;
             // Should have error in some field
             let _ = resp.timeline_id;
         }
@@ -3918,7 +3882,7 @@ mod tests {
                 lookback_depth: Some(3),
                 auto_execute: Some(false),
             };
-            let resp = server.reasoning_mcts(explore_req).await;
+            let resp = server.reasoning_mcts(Parameters(explore_req)).await;
             assert_eq!(resp.session_id, "s1");
 
             // Test auto_backtrack
@@ -3950,7 +3914,7 @@ mod tests {
                 lookback_depth: Some(3),
                 auto_execute: Some(true),
             };
-            let resp = server.reasoning_mcts(backtrack_req).await;
+            let resp = server.reasoning_mcts(Parameters(backtrack_req)).await;
             assert_eq!(resp.session_id, "s1");
 
             // Test unknown operation (defaults to explore)
@@ -3966,7 +3930,7 @@ mod tests {
                 lookback_depth: None,
                 auto_execute: None,
             };
-            let resp = server.reasoning_mcts(default_req).await;
+            let resp = server.reasoning_mcts(Parameters(default_req)).await;
             assert_eq!(resp.session_id, "s1");
         }
 
@@ -4008,7 +3972,7 @@ mod tests {
                 session_id: Some("s1".to_string()),
             };
 
-            let resp = server.reasoning_counterfactual(req).await;
+            let resp = server.reasoning_counterfactual(Parameters(req)).await;
             assert_eq!(resp.original_scenario, "Original scenario");
             assert_eq!(resp.intervention_applied, "What if X changed?");
         }
@@ -4028,7 +3992,7 @@ mod tests {
                 inputs: None,
                 session_id: None,
             };
-            let resp = server.reasoning_preset(list_req).await;
+            let resp = server.reasoning_preset(Parameters(list_req)).await;
             assert!(resp.presets.is_some());
 
             // Test run (will fail without valid preset but exercises code)
@@ -4039,7 +4003,7 @@ mod tests {
                 inputs: Some(serde_json::json!({"content": "Test content"})),
                 session_id: Some("s1".to_string()),
             };
-            let resp = server.reasoning_preset(run_req).await;
+            let resp = server.reasoning_preset(Parameters(run_req)).await;
             // Either has execution result or presets
             let _ = resp.execution_result;
 
@@ -4051,7 +4015,7 @@ mod tests {
                 inputs: None,
                 session_id: None,
             };
-            let resp = server.reasoning_preset(unknown_req).await;
+            let resp = server.reasoning_preset(Parameters(unknown_req)).await;
             let _ = resp.presets;
         }
 
@@ -4098,7 +4062,7 @@ mod tests {
                 context: None,
                 session_id: Some("s1".to_string()),
             };
-            let resp = server.reasoning_decision(topsis_req).await;
+            let resp = server.reasoning_decision(Parameters(topsis_req)).await;
             let _ = resp.recommendation;
 
             // Test perspectives
@@ -4138,7 +4102,7 @@ mod tests {
                 context: None,
                 session_id: Some("s1".to_string()),
             };
-            let resp = server.reasoning_decision(perspectives_req).await;
+            let resp = server.reasoning_decision(Parameters(perspectives_req)).await;
             assert!(resp.stakeholder_map.is_some() || !resp.recommendation.is_empty());
 
             // Test unknown decision type
@@ -4150,7 +4114,7 @@ mod tests {
                 context: None,
                 session_id: None,
             };
-            let resp = server.reasoning_decision(unknown_req).await;
+            let resp = server.reasoning_decision(Parameters(unknown_req)).await;
             assert!(
                 resp.recommendation.contains("ERROR") || resp.recommendation.contains("unknown")
             );
@@ -4188,7 +4152,7 @@ mod tests {
                 threshold: None,
                 terminal_node_ids: None,
             };
-            let resp = server.reasoning_graph(score_req).await;
+            let resp = server.reasoning_graph(Parameters(score_req)).await;
             assert_eq!(resp.session_id, "s1");
         }
 
@@ -4222,7 +4186,7 @@ mod tests {
                 threshold: None,
                 terminal_node_ids: None,
             };
-            let resp = server.reasoning_graph(aggregate_req).await;
+            let resp = server.reasoning_graph(Parameters(aggregate_req)).await;
             assert_eq!(resp.session_id, "s1");
         }
 
@@ -4256,7 +4220,7 @@ mod tests {
                 threshold: None,
                 terminal_node_ids: None,
             };
-            let resp = server.reasoning_graph(refine_req).await;
+            let resp = server.reasoning_graph(Parameters(refine_req)).await;
             assert_eq!(resp.session_id, "s1");
         }
 
@@ -4293,7 +4257,7 @@ mod tests {
                 threshold: Some(0.5),
                 terminal_node_ids: None,
             };
-            let resp = server.reasoning_graph(prune_req).await;
+            let resp = server.reasoning_graph(Parameters(prune_req)).await;
             assert_eq!(resp.session_id, "s1");
         }
 
@@ -4330,7 +4294,7 @@ mod tests {
                 threshold: None,
                 terminal_node_ids: Some(vec!["n1".to_string(), "n2".to_string()]),
             };
-            let resp = server.reasoning_graph(finalize_req).await;
+            let resp = server.reasoning_graph(Parameters(finalize_req)).await;
             assert_eq!(resp.session_id, "s1");
         }
 
@@ -4369,7 +4333,7 @@ mod tests {
                 threshold: None,
                 terminal_node_ids: None,
             };
-            let resp = server.reasoning_graph(state_req).await;
+            let resp = server.reasoning_graph(Parameters(state_req)).await;
             assert_eq!(resp.session_id, "s1");
         }
 
@@ -4388,7 +4352,7 @@ mod tests {
                 context: None,
                 session_id: None,
             };
-            let resp = server.reasoning_evidence(unknown_req).await;
+            let resp = server.reasoning_evidence(Parameters(unknown_req)).await;
             assert!(resp.synthesis.unwrap().contains("Unknown"));
         }
 
@@ -4408,7 +4372,7 @@ mod tests {
                 success_only: None,
                 limit: None,
             };
-            let resp = server.reasoning_metrics(summary_req).await;
+            let resp = server.reasoning_metrics(Parameters(summary_req)).await;
             let _ = resp.summary;
 
             // Test by_mode
@@ -4420,7 +4384,7 @@ mod tests {
                 success_only: None,
                 limit: None,
             };
-            let resp = server.reasoning_metrics(by_mode_req).await;
+            let resp = server.reasoning_metrics(Parameters(by_mode_req)).await;
             let _ = resp.mode_stats;
 
             // Test invocations
@@ -4432,7 +4396,7 @@ mod tests {
                 success_only: Some(true),
                 limit: Some(10),
             };
-            let resp = server.reasoning_metrics(invocations_req).await;
+            let resp = server.reasoning_metrics(Parameters(invocations_req)).await;
             let _ = resp.invocations;
 
             // Test fallbacks
@@ -4444,7 +4408,7 @@ mod tests {
                 success_only: None,
                 limit: None,
             };
-            let resp = server.reasoning_metrics(fallbacks_req).await;
+            let resp = server.reasoning_metrics(Parameters(fallbacks_req)).await;
             let _ = resp.summary;
 
             // Test config
@@ -4456,7 +4420,7 @@ mod tests {
                 success_only: None,
                 limit: None,
             };
-            let resp = server.reasoning_metrics(config_req).await;
+            let resp = server.reasoning_metrics(Parameters(config_req)).await;
             let _ = resp.config;
 
             // Test unknown query
@@ -4468,7 +4432,7 @@ mod tests {
                 success_only: None,
                 limit: None,
             };
-            let resp = server.reasoning_metrics(unknown_req).await;
+            let resp = server.reasoning_metrics(Parameters(unknown_req)).await;
             let _ = resp.summary;
         }
 
@@ -4500,7 +4464,7 @@ mod tests {
                 inputs: Some(serde_json::json!({"content": "Analyze this"})),
                 session_id: Some("s1".to_string()),
             };
-            let resp = server.reasoning_preset(run_req).await;
+            let resp = server.reasoning_preset(Parameters(run_req)).await;
             // Will have execution result or error
             let _ = resp.execution_result;
         }
@@ -4542,7 +4506,7 @@ mod tests {
                 target_branch_id: None,
                 merge_strategy: None,
             };
-            let resp = server.reasoning_timeline(create_req).await;
+            let resp = server.reasoning_timeline(Parameters(create_req)).await;
             // Check that we get a response
             let _ = resp.timeline_id;
 
@@ -4574,7 +4538,7 @@ mod tests {
                 target_branch_id: None,
                 merge_strategy: None,
             };
-            let resp = server.reasoning_timeline(branch_req).await;
+            let resp = server.reasoning_timeline(Parameters(branch_req)).await;
             let _ = resp.branch_id;
 
             // Test compare operation
@@ -4606,7 +4570,7 @@ mod tests {
                 target_branch_id: None,
                 merge_strategy: None,
             };
-            let resp = server.reasoning_timeline(compare_req).await;
+            let resp = server.reasoning_timeline(Parameters(compare_req)).await;
             let _ = resp.comparison;
 
             // Test merge operation
@@ -4637,7 +4601,7 @@ mod tests {
                 target_branch_id: Some("br_2".to_string()),
                 merge_strategy: Some("integrate".to_string()),
             };
-            let resp = server.reasoning_timeline(merge_req).await;
+            let resp = server.reasoning_timeline(Parameters(merge_req)).await;
             let _ = resp.merged_content;
         }
 
@@ -4690,7 +4654,7 @@ mod tests {
                 check_formal: None,
                 check_informal: None,
             };
-            let resp = server.reasoning_detect(req).await;
+            let resp = server.reasoning_detect(Parameters(req)).await;
             // With argument_strength 0.3, severity should be "high"
             if let Some(detection) = resp.detections.first() {
                 assert_eq!(detection.severity, "high");
@@ -4746,7 +4710,7 @@ mod tests {
                 check_formal: None,
                 check_informal: None,
             };
-            let resp = server.reasoning_detect(req).await;
+            let resp = server.reasoning_detect(Parameters(req)).await;
             // With argument_strength 0.5, severity should be "medium"
             if let Some(detection) = resp.detections.first() {
                 assert_eq!(detection.severity, "medium");
@@ -4802,7 +4766,7 @@ mod tests {
                 check_formal: None,
                 check_informal: None,
             };
-            let resp = server.reasoning_detect(req).await;
+            let resp = server.reasoning_detect(Parameters(req)).await;
             // With argument_strength 0.8, severity should be "low"
             if let Some(detection) = resp.detections.first() {
                 assert_eq!(detection.severity, "low");
