@@ -314,19 +314,17 @@ impl ConfigScope {
                     ))
                 }
             }
-            Self::Tool(tool_str) => {
-                match tool_str.strip_prefix("reasoning_") {
-                    Some(mode_part) if Self::VALID_MODES.contains(&mode_part) => Ok(()),
-                    Some(_) => Err(format!(
-                        "Unknown tool '{}'. Tool name should be reasoning_<mode>",
-                        tool_str
-                    )),
-                    None => Err(format!(
-                        "Invalid tool format '{}'. Expected 'reasoning_<mode>'",
-                        tool_str
-                    )),
-                }
-            }
+            Self::Tool(tool_str) => match tool_str.strip_prefix("reasoning_") {
+                Some(mode_part) if Self::VALID_MODES.contains(&mode_part) => Ok(()),
+                Some(_) => Err(format!(
+                    "Unknown tool '{}'. Tool name should be reasoning_<mode>",
+                    tool_str
+                )),
+                None => Err(format!(
+                    "Invalid tool format '{}'. Expected 'reasoning_<mode>'",
+                    tool_str
+                )),
+            },
         }
     }
 }

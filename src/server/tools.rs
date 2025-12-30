@@ -11,7 +11,9 @@
 use std::sync::Arc;
 
 use rmcp::handler::server::ServerHandler;
-use rmcp::model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo, ToolsCapability};
+use rmcp::model::{
+    Implementation, ProtocolVersion, ServerCapabilities, ServerInfo, ToolsCapability,
+};
 use rmcp::service::{Peer, RoleServer};
 use rmcp::tool;
 
@@ -20,6 +22,8 @@ use super::requests::{
     DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, MctsRequest, MetricsRequest,
     PresetRequest, ReflectionRequest, TimelineRequest, TreeRequest,
 };
+#[cfg(test)]
+use super::responses::ConfidenceInterval;
 use super::responses::{
     AutoResponse, BacktrackSuggestion, Branch, BranchComparison, CausalStep, Checkpoint,
     CheckpointResponse, CounterfactualResponse, DecisionResponse, DetectResponse, Detection,
@@ -28,8 +32,6 @@ use super::responses::{
     Perspective, PresetExecution, PresetInfo, PresetResponse, RankedOption, ReflectionResponse,
     StakeholderMap, TimelineBranch, TimelineResponse, TreeResponse,
 };
-#[cfg(test)]
-use super::responses::ConfidenceInterval;
 use super::types::AppState;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::{

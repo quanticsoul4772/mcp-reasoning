@@ -250,8 +250,7 @@ fn test_legacy_action_new() {
 
 #[test]
 fn test_legacy_action_lifecycle() {
-    let mut action =
-        SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", 0.1);
+    let mut action = SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", 0.1);
 
     action.approve();
     assert_eq!(action.status, ActionStatus::Approved);
@@ -545,8 +544,8 @@ fn test_self_diagnosis_with_action_rationale() {
         threshold: 0.15,
     };
     let action = SuggestedAction::no_op("Test", Duration::from_secs(60));
-    let diagnosis = SelfDiagnosis::new("d", trigger, "test", action)
-        .with_action_rationale("Increase retries");
+    let diagnosis =
+        SelfDiagnosis::new("d", trigger, "test", action).with_action_rationale("Increase retries");
 
     assert_eq!(
         diagnosis.action_rationale,
@@ -723,9 +722,8 @@ fn test_lesson_with_contexts() {
 // SelfImprovementAction additional methods
 #[test]
 fn test_legacy_action_with_parameters() {
-    let action =
-        SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", 0.1)
-            .with_parameters(serde_json::json!({"key": "value"}));
+    let action = SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", 0.1)
+        .with_parameters(serde_json::json!({"key": "value"}));
 
     assert!(action.parameters.is_some());
     assert_eq!(action.parameters.unwrap()["key"], "value");
@@ -733,8 +731,7 @@ fn test_legacy_action_with_parameters() {
 
 #[test]
 fn test_legacy_action_fail() {
-    let mut action =
-        SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", 0.1);
+    let mut action = SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", 0.1);
     action.approve();
     action.start_execution();
     action.fail();
@@ -745,8 +742,7 @@ fn test_legacy_action_fail() {
 
 #[test]
 fn test_legacy_action_rollback() {
-    let mut action =
-        SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", 0.1);
+    let mut action = SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", 0.1);
     action.approve();
     action.start_execution();
     action.complete(0.12);
@@ -760,14 +756,8 @@ fn test_legacy_action_rollback() {
 fn test_legacy_action_type_display_all() {
     assert_eq!(ActionType::ConfigAdjust.to_string(), "config_adjust");
     assert_eq!(ActionType::PromptTune.to_string(), "prompt_tune");
-    assert_eq!(
-        ActionType::ThresholdAdjust.to_string(),
-        "threshold_adjust"
-    );
-    assert_eq!(
-        ActionType::LogObservation.to_string(),
-        "log_observation"
-    );
+    assert_eq!(ActionType::ThresholdAdjust.to_string(), "threshold_adjust");
+    assert_eq!(ActionType::LogObservation.to_string(), "log_observation");
 }
 
 // ResourceType display all variants
@@ -999,8 +989,8 @@ fn test_system_metrics_serialization() {
 
 #[test]
 fn test_lesson_serialization() {
-    let lesson = Lesson::new("lesson-1", "action-1", "Insight", 0.5)
-        .with_contexts(vec!["context1".into()]);
+    let lesson =
+        Lesson::new("lesson-1", "action-1", "Insight", 0.5).with_contexts(vec!["context1".into()]);
 
     let json = serde_json::to_string(&lesson).unwrap();
     assert!(json.contains("lesson-1"));
@@ -1010,9 +1000,8 @@ fn test_lesson_serialization() {
 
 #[test]
 fn test_self_improvement_action_serialization() {
-    let action =
-        SelfImprovementAction::new("a", ActionType::ConfigAdjust, "desc", "rat", 0.15)
-            .with_parameters(serde_json::json!({"key": "value"}));
+    let action = SelfImprovementAction::new("a", ActionType::ConfigAdjust, "desc", "rat", 0.15)
+        .with_parameters(serde_json::json!({"key": "value"}));
 
     let json = serde_json::to_string(&action).unwrap();
     assert!(json.contains("config_adjust"));
@@ -1023,12 +1012,10 @@ fn test_self_improvement_action_serialization() {
 // Expected improvement clamping
 #[test]
 fn test_legacy_action_expected_improvement_clamping() {
-    let action =
-        SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", 1.5);
+    let action = SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", 1.5);
     assert!((action.expected_improvement - 1.0).abs() < f64::EPSILON);
 
-    let action2 =
-        SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", -0.5);
+    let action2 = SelfImprovementAction::new("a", ActionType::ConfigAdjust, "d", "r", -0.5);
     assert!((action2.expected_improvement - 0.0).abs() < f64::EPSILON);
 }
 
