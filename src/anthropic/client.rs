@@ -320,7 +320,7 @@ impl AnthropicClientTrait for AnthropicClient {
     }
 }
 
-/// Blanket implementation for Arc<AnthropicClient>.
+/// Blanket implementation for `Arc<AnthropicClient>`.
 #[async_trait]
 impl AnthropicClientTrait for Arc<AnthropicClient> {
     async fn complete(

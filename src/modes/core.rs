@@ -40,7 +40,7 @@ use crate::storage::SqliteStorage;
 /// that all reasoning modes need. Modes hold this via composition.
 ///
 /// Note: This uses concrete types (`SqliteStorage`, `AnthropicClient`).
-/// For generic mode implementations, see [`LinearMode`] which uses trait bounds.
+/// For generic mode implementations, see [`crate::modes::LinearMode`] which uses trait bounds.
 #[derive(Clone)]
 pub struct ModeCore {
     storage: Arc<SqliteStorage>,
