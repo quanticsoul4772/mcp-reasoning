@@ -1,6 +1,6 @@
 # MCP Reasoning Server
 
-A high-performance MCP server that adds structured reasoning capabilities to Claude Code and Claude Desktop. Built in Rust with direct Anthropic API integration.
+An MCP server providing structured reasoning capabilities for Claude Code and Claude Desktop. Built in Rust with Anthropic API integration.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
@@ -190,7 +190,7 @@ sequenceDiagram
 | `reasoning_divergent` | Multi-perspective generation with assumption challenges | force_rebellion mode for contrarian views |
 | `reasoning_reflection` | Meta-cognitive analysis and iterative refinement | process, evaluate |
 | `reasoning_checkpoint` | State management for backtracking | create, list, restore |
-| `reasoning_auto` | Intelligent mode selection based on content | Automatic routing |
+| `reasoning_auto` | Mode selection based on content | Automatic routing |
 
 ### Graph Reasoning (1 tool)
 
@@ -368,7 +368,7 @@ Run a preset:
 
 ## Self-Improvement System
 
-The server includes a 4-phase autonomous optimization loop with comprehensive safety mechanisms:
+The server includes a 4-phase optimization loop with safety mechanisms:
 
 ### Optimization Loop
 
@@ -507,7 +507,7 @@ src/
 
 - **Zero unsafe code** - `#![forbid(unsafe_code)]` enforced
 - **No panics** - No `.unwrap()` or `.expect()` in production paths
-- **1,752 tests** - Comprehensive unit, integration, and handler test coverage (95%+ coverage)
+- **1,752 tests** - Unit, integration, and handler tests (95%+ coverage)
 - **Max 500 lines per file** - Enforced for maintainability
 - **Structured logging** - Via `tracing` crate, logs to stderr
 - **Clippy pedantic** - All pedantic lints enabled as warnings

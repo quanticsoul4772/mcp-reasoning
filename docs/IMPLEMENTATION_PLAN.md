@@ -727,7 +727,7 @@ Shared mode infrastructure:
 - Anthropic client reference
 - Common helpers
 
-**JSON Extraction Robustness** (from LESSONS_LEARNED.md):
+**JSON Extraction** (from LESSONS_LEARNED.md):
 ```rust
 /// Extract JSON from LLM response, handling multiple formats
 pub fn extract_json(text: &str) -> Result<serde_json::Value, ModeError> {

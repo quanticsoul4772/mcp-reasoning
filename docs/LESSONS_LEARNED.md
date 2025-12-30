@@ -2,7 +2,7 @@
 
 ## Summary
 
-The langbase project was well-engineered but accumulated structural debt. This document captures what to replicate and what to avoid.
+The langbase project accumulated structural debt over time. This document captures what to replicate and what to avoid.
 
 ---
 
@@ -54,7 +54,7 @@ impl Config {
 - Sensible defaults for optional values
 - Struct-based, not scattered env reads
 
-### 4. JSON Extraction Robustness
+### 4. JSON Extraction
 ```rust
 // Handle multiple response formats
 fn extract_json(text: &str) -> Result<Value, Error> {
@@ -69,7 +69,7 @@ fn extract_json(text: &str) -> Result<Value, Error> {
 
 ### 5. Retry Logic with Exponential Backoff
 ```rust
-// Production-grade retry
+// Retry with backoff
 while retries <= max_retries {
     match execute().await {
         Ok(r) => return Ok(r),

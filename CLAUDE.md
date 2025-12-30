@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 15 consolidated reasoning tools (vs 40 in the predecessor mcp-langbase-reasoning).
 
-**Status**: Production-ready. Fully implemented with 56,000+ lines of Rust code and 1,752 tests.
+**Status**: Complete. 56,000+ lines of Rust code and 1,752 tests.
 
 **Key Stats**:
 - 84 source files, 56,000+ lines of code
@@ -176,7 +176,7 @@ let handlers: HashMap<&str, Box<dyn ToolHandler>> = create_handlers();
 handlers.get(tool_name)?.handle(args).await
 ```
 
-### JSON Extraction Robustness
+### JSON Extraction
 ```rust
 fn extract_json(text: &str) -> Result<Value, ModeError> {
     // Fast path: raw JSON
