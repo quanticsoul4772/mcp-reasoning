@@ -715,4 +715,70 @@ That's all!"#;
         let result = extract_from_code_block(text, "```json");
         assert_eq!(result, None);
     }
+
+    #[test]
+    fn test_extract_balanced_braces_with_escaped_quotes() {
+        // Test JSON with escaped quotes inside strings
+        let result = extract_balanced_braces(r#"{"key": "value with \" escaped"}"#, '{', '}');
+        assert_eq!(
+            result,
+            Some(r#"{"key": "value with \" escaped"}"#.to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_balanced_braces_with_multiple_escapes() {
+        // Test JSON with multiple escape sequences
+        let result = extract_balanced_braces(r#"{"key": "line1\nline2\\path"}"#, '{', '}');
+        assert_eq!(result, Some(r#"{"key": "line1\nline2\\path"}"#.to_string()));
+    }
+
+    #[test]
+    fn test_extract_balanced_braces_array() {
+        let result = extract_balanced_braces("[1, 2, 3]", '[', ']');
+        assert_eq!(result, Some("[1, 2, 3]".to_string()));
+    }
+
+    #[test]
+    fn test_extract_balanced_braces_array_nested() {
+        let result = extract_balanced_braces("[[1, 2], [3, 4]]", '[', ']');
+        assert_eq!(result, Some("[[1, 2], [3, 4]]".to_string()));
+    }
+
+    #[test]
+    fn test_serialize_for_log_truncation() {
+        let long_string = "a".repeat(200);
+        let result = serialize_for_log(&long_string, 50);
+        assert!(result.len() <= 54); // 50 + "..." + surrounding quotes
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_serialize_for_log_short_string() {
+        let short = "hello";
+        let result = serialize_for_log(&short, 100);
+        assert_eq!(result, "\"hello\"");
+    }
+
+    #[test]
+    fn test_find_json_in_text_object() {
+        let text = "Some text before {\"key\": \"value\"} and after";
+        let result = find_json_in_text(text);
+        assert_eq!(result, Some("{\"key\": \"value\"}".to_string()));
+    }
+
+    #[test]
+    fn test_find_json_in_text_array() {
+        let text = "Some text before [1, 2, 3] and after";
+        let result = find_json_in_text(text);
+        assert_eq!(result, Some("[1, 2, 3]".to_string()));
+    }
+
+    #[test]
+    fn test_find_json_in_text_prefers_object() {
+        // When both exist, should find object first (appears before array in search)
+        let text = "{\"obj\": true} [1, 2]";
+        let result = find_json_in_text(text);
+        assert_eq!(result, Some("{\"obj\": true}".to_string()));
+    }
 }

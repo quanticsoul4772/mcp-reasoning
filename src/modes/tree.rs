@@ -1032,4 +1032,91 @@ mod tests {
         let debug = format!("{mode:?}");
         assert!(debug.contains("TreeMode"));
     }
+
+    #[test]
+    fn test_branch_from_stored_with_json_content() {
+        let stored = StoredBranch::new(
+            "b-1",
+            "s-1",
+            r#"{"title":"My Title","content":"My Content"}"#,
+        )
+        .with_score(0.9)
+        .with_status(StoredBranchStatus::Active);
+
+        let branch = Branch::from_stored(&stored);
+        assert_eq!(branch.id, "b-1");
+        assert_eq!(branch.title, "My Title");
+        assert_eq!(branch.content, "My Content");
+        assert!((branch.score - 0.9).abs() < f64::EPSILON);
+        assert_eq!(branch.status, BranchStatus::Active);
+    }
+
+    #[test]
+    fn test_branch_from_stored_with_invalid_json() {
+        // Non-JSON content should use fallback
+        let stored = StoredBranch::new("b-1", "s-1", "Just plain text content")
+            .with_score(0.85)
+            .with_status(StoredBranchStatus::Completed);
+
+        let branch = Branch::from_stored(&stored);
+        assert_eq!(branch.id, "b-1");
+        assert_eq!(branch.title, "Untitled");
+        assert_eq!(branch.content, "Just plain text content");
+        assert_eq!(branch.status, BranchStatus::Completed);
+    }
+
+    #[test]
+    fn test_branch_from_stored_completed_status() {
+        let stored =
+            StoredBranch::new("b-1", "s-1", "content").with_status(StoredBranchStatus::Completed);
+
+        let branch = Branch::from_stored(&stored);
+        assert_eq!(branch.status, BranchStatus::Completed);
+    }
+
+    #[test]
+    fn test_branch_from_stored_abandoned_status() {
+        let stored =
+            StoredBranch::new("b-1", "s-1", "content").with_status(StoredBranchStatus::Abandoned);
+
+        let branch = Branch::from_stored(&stored);
+        assert_eq!(branch.status, BranchStatus::Abandoned);
+    }
+
+    #[test]
+    fn test_branch_to_stored_completed() {
+        let branch =
+            Branch::new("b-1", "title", "content", 0.8).with_status(BranchStatus::Completed);
+        let stored = branch.to_stored("s-1");
+        assert_eq!(stored.status, StoredBranchStatus::Completed);
+    }
+
+    #[test]
+    fn test_branch_to_stored_abandoned() {
+        let branch =
+            Branch::new("b-1", "title", "content", 0.8).with_status(BranchStatus::Abandoned);
+        let stored = branch.to_stored("s-1");
+        assert_eq!(stored.status, StoredBranchStatus::Abandoned);
+    }
+
+    #[test]
+    fn test_branch_from_stored_missing_title() {
+        // JSON without title field should use "Untitled"
+        let stored =
+            StoredBranch::new("b-1", "s-1", r#"{"content":"Only content"}"#).with_score(0.75);
+
+        let branch = Branch::from_stored(&stored);
+        assert_eq!(branch.title, "Untitled");
+        assert_eq!(branch.content, "Only content");
+    }
+
+    #[test]
+    fn test_branch_from_stored_missing_content() {
+        // JSON without content field should use original stored content
+        let stored = StoredBranch::new("b-1", "s-1", r#"{"title":"Has Title"}"#).with_score(0.75);
+
+        let branch = Branch::from_stored(&stored);
+        assert_eq!(branch.title, "Has Title");
+        assert_eq!(branch.content, r#"{"title":"Has Title"}"#);
+    }
 }

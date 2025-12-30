@@ -581,4 +581,47 @@ mod tests {
         let debug = format!("{:?}", acc);
         assert!(debug.contains("StreamAccumulator"));
     }
+
+    #[test]
+    fn test_parse_sse_non_data_line() {
+        // Lines that don't start with "data: " should return None
+        assert!(parse_sse_line("event: message").is_none());
+        assert!(parse_sse_line("id: 123").is_none());
+        assert!(parse_sse_line("retry: 1000").is_none());
+        assert!(parse_sse_line("random text").is_none());
+    }
+
+    #[test]
+    fn test_parse_sse_content_block_stop_event() {
+        let line = r#"data: {"type": "content_block_stop", "index": 0}"#;
+        let result = parse_sse_line(line);
+        assert!(result.is_some());
+
+        match result.unwrap().unwrap() {
+            StreamEvent::ContentBlockStop { index } => {
+                assert_eq!(index, 0);
+            }
+            e => panic!("Wrong event type: {e:?}"),
+        }
+    }
+
+    #[test]
+    fn test_accumulator_content_block_stop() {
+        let mut acc = StreamAccumulator::new();
+        acc.process(StreamEvent::MessageStart {
+            message_id: "msg_123".to_string(),
+        });
+        acc.process(StreamEvent::ContentBlockStart {
+            index: 0,
+            block_type: "text".to_string(),
+        });
+        acc.process(StreamEvent::TextDelta {
+            index: 0,
+            text: "Hello".to_string(),
+        });
+        acc.process(StreamEvent::ContentBlockStop { index: 0 });
+
+        // After content block stop, text should still be available
+        assert_eq!(acc.text(), "Hello");
+    }
 }

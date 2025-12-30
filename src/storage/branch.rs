@@ -207,4 +207,44 @@ mod tests {
             .expect("exists");
         assert_eq!(fetched.status, BranchStatus::Completed);
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_update_branch_status_not_found() {
+        let storage = test_storage().await;
+
+        let result = storage
+            .update_branch_status("nonexistent", BranchStatus::Completed)
+            .await;
+        assert!(result.is_err());
+        assert!(matches!(result, Err(StorageError::Internal { .. })));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_get_branch_with_parent() {
+        let storage = test_storage().await;
+        storage
+            .create_session_with_id("sess-123")
+            .await
+            .expect("create session");
+
+        // Create parent branch
+        let parent = StoredBranch::new("parent-1", "sess-123", "Parent content");
+        storage.save_branch(&parent).await.expect("save parent");
+
+        // Create child branch with parent
+        let child = StoredBranch::new("child-1", "sess-123", "Child content")
+            .with_parent("parent-1".to_string());
+        storage.save_branch(&child).await.expect("save child");
+
+        // Retrieve and verify parent is preserved
+        let fetched = storage
+            .get_branch("child-1")
+            .await
+            .expect("fetch")
+            .expect("exists");
+        assert_eq!(fetched.id, "child-1");
+        assert_eq!(fetched.parent_branch_id, Some("parent-1".to_string()));
+    }
 }

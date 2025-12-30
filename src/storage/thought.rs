@@ -212,4 +212,41 @@ mod tests {
             .expect("exists");
         assert_eq!(fetched.parent_id, Some("t-1".to_string()));
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_get_stored_thought_with_metadata() {
+        let storage = test_storage().await;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        storage
+            .create_session_with_id("sess-meta")
+            .await
+            .expect("create session");
+
+        // Insert a thought with metadata directly via SQL
+        sqlx::query(
+            "INSERT INTO thoughts (id, session_id, mode, content, confidence, created_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind("t-meta")
+        .bind("sess-meta")
+        .bind("linear")
+        .bind("Test content")
+        .bind(0.85)
+        .bind(&now)
+        .bind(r#"{"key":"value"}"#)
+        .execute(&storage.pool)
+        .await
+        .expect("insert");
+
+        // Retrieve and verify metadata is preserved
+        let fetched = storage
+            .get_stored_thought("t-meta")
+            .await
+            .expect("fetch")
+            .expect("exists");
+
+        assert_eq!(fetched.id, "t-meta");
+        assert_eq!(fetched.metadata, Some(r#"{"key":"value"}"#.to_string()));
+    }
 }

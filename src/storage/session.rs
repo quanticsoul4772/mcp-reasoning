@@ -207,4 +207,33 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(result, Err(StorageError::SessionNotFound { .. })));
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_get_stored_session_with_metadata() {
+        let storage = test_storage().await;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Insert a session with metadata directly via SQL
+        sqlx::query(
+            "INSERT INTO sessions (id, created_at, updated_at, metadata) VALUES (?, ?, ?, ?)",
+        )
+        .bind("sess-meta")
+        .bind(&now)
+        .bind(&now)
+        .bind(r#"{"key":"value"}"#)
+        .execute(&storage.pool)
+        .await
+        .expect("insert");
+
+        // Retrieve and verify metadata is preserved
+        let fetched = storage
+            .get_stored_session("sess-meta")
+            .await
+            .expect("fetch")
+            .expect("should exist");
+
+        assert_eq!(fetched.id, "sess-meta");
+        assert_eq!(fetched.metadata, Some(r#"{"key":"value"}"#.to_string()));
+    }
 }
