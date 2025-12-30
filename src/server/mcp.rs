@@ -54,7 +54,7 @@ impl McpServer {
 
         // Create Anthropic client for MCP tools
         let client_config = ClientConfig::default()
-            .with_timeout_ms(self.config.request_timeout_ms)
+            .with_timeout_ms(self.config.request_timeout_maximum_ms) // Use maximum timeout for deep thinking modes
             .with_max_retries(self.config.max_retries);
         let client = AnthropicClient::new(self.config.api_key.expose(), client_config)?;
 
@@ -64,7 +64,7 @@ impl McpServer {
         // Initialize self-improvement system (ALWAYS enabled - core feature)
         let si_config = SelfImprovementConfig::from_env();
         let si_client_config = ClientConfig::default()
-            .with_timeout_ms(self.config.request_timeout_ms)
+            .with_timeout_ms(self.config.request_timeout_maximum_ms) // Use maximum timeout for deep thinking modes
             .with_max_retries(self.config.max_retries);
         let si_client = AnthropicClient::new(self.config.api_key.expose(), si_client_config)?;
         let si_storage = Arc::new(SelfImprovementStorage::new(storage.pool.clone()));
@@ -125,6 +125,8 @@ mod tests {
             database_path: ":memory:".to_string(),
             log_level: "info".to_string(),
             request_timeout_ms: 30000,
+            request_timeout_deep_ms: 60000,
+            request_timeout_maximum_ms: 120000,
             max_retries: 3,
             model: "claude-sonnet-4-20250514".to_string(),
         }

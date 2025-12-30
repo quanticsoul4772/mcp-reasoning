@@ -92,6 +92,8 @@ mod tests {
             database_path: ":memory:".to_string(),
             log_level: "info".to_string(),
             request_timeout_ms: 30000,
+            request_timeout_deep_ms: 60000,
+            request_timeout_maximum_ms: 120000,
             max_retries: 3,
             model: "claude-sonnet-4-20250514".to_string(),
         }
