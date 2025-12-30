@@ -1085,7 +1085,8 @@ fn test_parse_action_response_invalid_json() {
 #[test]
 fn test_parse_action_response_scale_resource_missing_old_value() {
     // Test scale_resource with missing old_value (covers lines 56-59)
-    let response = r#"{"action_type": "scale_resource", "resource": "cache_size", "new_value": 20}"#;
+    let response =
+        r#"{"action_type": "scale_resource", "resource": "cache_size", "new_value": 20}"#;
     let result = parse_action_response(response);
     assert!(result.is_err());
     match result {
@@ -1099,7 +1100,8 @@ fn test_parse_action_response_scale_resource_missing_old_value() {
 #[test]
 fn test_parse_action_response_scale_resource_missing_new_value() {
     // Test scale_resource with missing new_value (covers lines 64-67)
-    let response = r#"{"action_type": "scale_resource", "resource": "cache_size", "old_value": 10}"#;
+    let response =
+        r#"{"action_type": "scale_resource", "resource": "cache_size", "old_value": 10}"#;
     let result = parse_action_response(response);
     assert!(result.is_err());
     match result {

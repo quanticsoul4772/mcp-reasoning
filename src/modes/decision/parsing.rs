@@ -1138,7 +1138,9 @@ mod tests {
             "distances": {"a": {"to_ideal": 0.2}}
         });
         let result = parse_distances(&json);
-        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "to_anti_ideal"));
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "to_anti_ideal")
+        );
     }
 
     #[test]
@@ -1219,7 +1221,9 @@ mod tests {
             }]
         });
         let result = parse_stakeholders(&json);
-        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "preferred_option"));
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "preferred_option")
+        );
     }
 
     #[test]
@@ -1270,7 +1274,9 @@ mod tests {
             "alignments": [{"common_ground": "shared"}]
         });
         let result = parse_alignments(&json);
-        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "stakeholders"));
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "stakeholders")
+        );
     }
 
     #[test]
@@ -1279,7 +1285,9 @@ mod tests {
             "alignments": [{"stakeholders": ["A", "B"]}]
         });
         let result = parse_alignments(&json);
-        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "common_ground"));
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "common_ground")
+        );
     }
 
     #[test]
@@ -1354,7 +1362,9 @@ mod tests {
             }]
         });
         let result = parse_stakeholders(&json);
-        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "influence_level"));
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "influence_level")
+        );
     }
 
     #[test]

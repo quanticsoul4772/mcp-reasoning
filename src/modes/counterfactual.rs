@@ -889,7 +889,10 @@ mod tests {
 
         assert!(result.is_ok());
         let response = result.unwrap();
-        assert_eq!(response.causal_question.ladder_rung, LadderRung::Association);
+        assert_eq!(
+            response.causal_question.ladder_rung,
+            LadderRung::Association
+        );
         assert_eq!(response.conclusions.strength, CausalStrength::Strong);
     }
 
@@ -1152,9 +1155,7 @@ mod tests {
         let mode = CounterfactualMode::new(mock_storage, mock_client);
         let result = mode.analyze("Test", None).await;
 
-        assert!(
-            matches!(result, Err(ModeError::MissingField { field }) if field == "conclusions")
-        );
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "conclusions"));
     }
 
     #[tokio::test]

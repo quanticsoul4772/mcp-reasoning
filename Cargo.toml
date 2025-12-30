@@ -36,7 +36,6 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 
 # Error handling
 thiserror = "2"
-anyhow = "1"
 
 # Logging
 tracing = "0.1"
@@ -46,9 +45,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 async-trait = "0.1"
-futures = "0.3"
-async-stream = "0.3"
-bytes = "1.0"
 
 # Environment
 dotenvy = "0.15"
