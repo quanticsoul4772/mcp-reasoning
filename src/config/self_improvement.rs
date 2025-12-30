@@ -304,7 +304,10 @@ mod tests {
         env::set_var("SELF_IMPROVEMENT_CIRCUIT_BREAKER_THRESHOLD", "50"); // Above maximum
 
         let config = SelfImprovementConfig::from_env();
-        assert_eq!(config.circuit_breaker_threshold, MAX_CIRCUIT_BREAKER_THRESHOLD);
+        assert_eq!(
+            config.circuit_breaker_threshold,
+            MAX_CIRCUIT_BREAKER_THRESHOLD
+        );
 
         clear_si_env_vars();
     }

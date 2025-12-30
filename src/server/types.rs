@@ -104,7 +104,9 @@ mod tests {
     fn create_mock_client() -> MockAnthropicClientTrait {
         let mut client = MockAnthropicClientTrait::new();
         client.expect_complete().returning(|_, _| {
-            Ok(mock_response(r#"{"summary": "Test", "confidence": 0.8, "actions": []}"#))
+            Ok(mock_response(
+                r#"{"summary": "Test", "confidence": 0.8, "actions": []}"#,
+            ))
         });
         client
     }
@@ -176,7 +178,10 @@ mod tests {
         assert!(Arc::ptr_eq(&state1.config, &state2.config));
         assert!(Arc::ptr_eq(&state1.metrics, &state2.metrics));
         assert!(Arc::ptr_eq(&state1.presets, &state2.presets));
-        assert!(Arc::ptr_eq(&state1.self_improvement, &state2.self_improvement));
+        assert!(Arc::ptr_eq(
+            &state1.self_improvement,
+            &state2.self_improvement
+        ));
     }
 
     #[test]

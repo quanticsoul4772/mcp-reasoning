@@ -705,3 +705,483 @@ impl_into_contents!(
     SiTriggerResponse,
     SiRollbackResponse,
 );
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use rmcp::model::IntoContents;
+
+    #[test]
+    fn test_linear_response_into_contents() {
+        let response = LinearResponse {
+            thought_id: "t-1".to_string(),
+            session_id: "s-1".to_string(),
+            content: "Analysis result".to_string(),
+            confidence: 0.85,
+            next_step: Some("Continue".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("thought_id"));
+        assert!(text.text.contains("t-1"));
+    }
+
+    #[test]
+    fn test_tree_response_into_contents() {
+        let response = TreeResponse {
+            session_id: "s-1".to_string(),
+            branch_id: Some("b-1".to_string()),
+            branches: Some(vec![Branch {
+                id: "b-1".to_string(),
+                content: "Branch content".to_string(),
+                score: 0.8,
+                status: "active".to_string(),
+            }]),
+            recommendation: Some("Explore branch 1".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("branch_id"));
+    }
+
+    #[test]
+    fn test_divergent_response_into_contents() {
+        let response = DivergentResponse {
+            thought_id: "t-1".to_string(),
+            session_id: "s-1".to_string(),
+            perspectives: vec![Perspective {
+                viewpoint: "Technical".to_string(),
+                content: "Technical view".to_string(),
+                novelty_score: 0.7,
+            }],
+            challenged_assumptions: Some(vec!["Assumption 1".to_string()]),
+            synthesis: Some("Unified view".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("perspectives"));
+    }
+
+    #[test]
+    fn test_reflection_response_into_contents() {
+        let response = ReflectionResponse {
+            quality_score: 0.75,
+            thought_id: Some("t-1".to_string()),
+            session_id: Some("s-1".to_string()),
+            iterations_used: Some(2),
+            strengths: Some(vec!["Clear".to_string()]),
+            weaknesses: Some(vec!["Verbose".to_string()]),
+            recommendations: Some(vec!["Be concise".to_string()]),
+            refined_content: Some("Better content".to_string()),
+            coherence_score: Some(0.8),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("quality_score"));
+    }
+
+    #[test]
+    fn test_checkpoint_response_into_contents() {
+        let response = CheckpointResponse {
+            session_id: "s-1".to_string(),
+            checkpoint_id: Some("cp-1".to_string()),
+            checkpoints: Some(vec![Checkpoint {
+                id: "cp-1".to_string(),
+                name: "Checkpoint 1".to_string(),
+                description: Some("Test checkpoint".to_string()),
+                created_at: "2024-01-01T00:00:00Z".to_string(),
+                thought_count: 5,
+            }]),
+            restored_state: None,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("checkpoint_id"));
+    }
+
+    #[test]
+    fn test_auto_response_into_contents() {
+        let response = AutoResponse {
+            selected_mode: "linear".to_string(),
+            confidence: 0.9,
+            rationale: "Simple analysis".to_string(),
+            result: serde_json::json!({"key": "value"}),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("selected_mode"));
+    }
+
+    #[test]
+    fn test_graph_response_into_contents() {
+        let response = GraphResponse {
+            session_id: "s-1".to_string(),
+            node_id: Some("n-1".to_string()),
+            nodes: Some(vec![GraphNode {
+                id: "n-1".to_string(),
+                content: "Node content".to_string(),
+                score: Some(0.8),
+                depth: Some(1),
+                parent_id: None,
+            }]),
+            aggregated_insight: Some("Insight".to_string()),
+            conclusions: Some(vec!["Conclusion 1".to_string()]),
+            state: Some(GraphState {
+                total_nodes: 10,
+                active_nodes: 8,
+                max_depth: 3,
+                pruned_count: 2,
+            }),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("node_id"));
+    }
+
+    #[test]
+    fn test_detect_response_into_contents() {
+        let response = DetectResponse {
+            detections: vec![Detection {
+                detection_type: "confirmation_bias".to_string(),
+                category: Some("cognitive".to_string()),
+                severity: "high".to_string(),
+                confidence: 0.8,
+                evidence: "Only cited supporting".to_string(),
+                explanation: "Ignored contrary".to_string(),
+                remediation: Some("Seek disconfirming".to_string()),
+            }],
+            summary: Some("1 bias found".to_string()),
+            overall_quality: Some(0.6),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("detections"));
+    }
+
+    #[test]
+    fn test_decision_response_into_contents() {
+        let response = DecisionResponse {
+            recommendation: "Option A".to_string(),
+            rankings: Some(vec![RankedOption {
+                option: "Option A".to_string(),
+                score: 0.9,
+                rank: 1,
+            }]),
+            stakeholder_map: None,
+            conflicts: None,
+            alignments: None,
+            rationale: Some("Best fit".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("recommendation"));
+    }
+
+    #[test]
+    fn test_evidence_response_into_contents() {
+        let response = EvidenceResponse {
+            overall_credibility: 0.75,
+            evidence_assessments: Some(vec![EvidenceAssessment {
+                content: "Study shows...".to_string(),
+                credibility_score: 0.8,
+                source_tier: "primary".to_string(),
+                corroborated_by: Some(vec![1, 2]),
+            }]),
+            posterior: Some(0.8),
+            prior: Some(0.5),
+            likelihood_ratio: Some(2.0),
+            entropy: Some(0.3),
+            confidence_interval: Some(ConfidenceInterval {
+                lower: 0.7,
+                upper: 0.9,
+            }),
+            synthesis: Some("Strong evidence".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("overall_credibility"));
+    }
+
+    #[test]
+    fn test_timeline_response_into_contents() {
+        let response = TimelineResponse {
+            timeline_id: "tl-1".to_string(),
+            branch_id: Some("br-1".to_string()),
+            branches: Some(vec![TimelineBranch {
+                id: "br-1".to_string(),
+                label: Some("Main".to_string()),
+                content: "Branch content".to_string(),
+                created_at: "2024-01-01T00:00:00Z".to_string(),
+            }]),
+            comparison: None,
+            merged_content: None,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("timeline_id"));
+    }
+
+    #[test]
+    fn test_mcts_response_into_contents() {
+        let response = MctsResponse {
+            session_id: "s-1".to_string(),
+            best_path: Some(vec![MctsNode {
+                node_id: "n-1".to_string(),
+                content: "Node content".to_string(),
+                ucb_score: 1.5,
+                visits: 10,
+            }]),
+            iterations_completed: Some(50),
+            backtrack_suggestion: Some(BacktrackSuggestion {
+                should_backtrack: false,
+                target_step: None,
+                reason: None,
+                quality_drop: None,
+            }),
+            executed: Some(false),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("session_id"));
+    }
+
+    #[test]
+    fn test_counterfactual_response_into_contents() {
+        let response = CounterfactualResponse {
+            counterfactual_outcome: "Different result".to_string(),
+            causal_chain: vec![CausalStep {
+                step: 1,
+                cause: "X".to_string(),
+                effect: "Y".to_string(),
+                probability: 0.8,
+            }],
+            session_id: Some("s-1".to_string()),
+            original_scenario: "Original".to_string(),
+            intervention_applied: "Change X".to_string(),
+            analysis_depth: "counterfactual".to_string(),
+            key_differences: vec!["Diff 1".to_string()],
+            confidence: 0.75,
+            assumptions: vec!["Assumption 1".to_string()],
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("counterfactual_outcome"));
+    }
+
+    #[test]
+    fn test_preset_response_into_contents() {
+        let response = PresetResponse {
+            presets: Some(vec![PresetInfo {
+                id: "p-1".to_string(),
+                name: "Preset 1".to_string(),
+                description: "Test preset".to_string(),
+                category: "analysis".to_string(),
+                required_inputs: vec!["topic".to_string()],
+            }]),
+            execution_result: None,
+            session_id: Some("s-1".to_string()),
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("presets"));
+    }
+
+    #[test]
+    fn test_metrics_response_into_contents() {
+        let response = MetricsResponse {
+            summary: Some(MetricsSummary {
+                total_calls: 100,
+                success_rate: 0.95,
+                avg_latency_ms: 150.0,
+                by_mode: serde_json::json!({"linear": 50}),
+            }),
+            mode_stats: None,
+            invocations: None,
+            config: None,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("total_calls"));
+    }
+
+    #[test]
+    fn test_si_status_response_into_contents() {
+        let response = SiStatusResponse {
+            running: true,
+            circuit_state: "closed".to_string(),
+            total_cycles: 10,
+            successful_cycles: 8,
+            failed_cycles: 2,
+            pending_diagnoses: 0,
+            total_actions_executed: 5,
+            total_actions_rolled_back: 1,
+            last_cycle_at: Some(1234567890),
+            average_reward: 0.75,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("running"));
+    }
+
+    #[test]
+    fn test_si_diagnoses_response_into_contents() {
+        let response = SiDiagnosesResponse {
+            diagnoses: vec![SiPendingDiagnosis {
+                id: "d-1".to_string(),
+                action_type: "adjust_param".to_string(),
+                description: "Adjust threshold".to_string(),
+                rationale: "Performance issue".to_string(),
+                expected_improvement: 0.2,
+                created_at: 1234567890,
+            }],
+            total: 1,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("diagnoses"));
+    }
+
+    #[test]
+    fn test_si_approve_response_into_contents() {
+        let response = SiApproveResponse {
+            success: true,
+            actions_executed: 2,
+            lessons_learned: 1,
+            execution_results: vec![SiExecutionSummary {
+                action_id: "a-1".to_string(),
+                success: true,
+                error: None,
+            }],
+            learning_results: vec![SiLearningSummary {
+                action_id: "a-1".to_string(),
+                insight: "Improved latency".to_string(),
+                reward: 0.5,
+            }],
+            error: None,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("actions_executed"));
+    }
+
+    #[test]
+    fn test_si_reject_response_into_contents() {
+        let response = SiRejectResponse {
+            success: true,
+            error: None,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("success"));
+    }
+
+    #[test]
+    fn test_si_trigger_response_into_contents() {
+        let response = SiTriggerResponse {
+            success: true,
+            actions_proposed: 3,
+            actions_executed: 2,
+            analysis_skipped: false,
+            error: None,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("actions_proposed"));
+    }
+
+    #[test]
+    fn test_si_rollback_response_into_contents() {
+        let response = SiRollbackResponse {
+            success: true,
+            error: None,
+        };
+        let contents = response.into_contents();
+        assert_eq!(contents.len(), 1);
+        let text = contents[0].as_text().unwrap();
+        assert!(text.text.contains("success"));
+    }
+
+    #[test]
+    fn test_branch_serialize() {
+        let branch = Branch {
+            id: "b-1".to_string(),
+            content: "Content".to_string(),
+            score: 0.8,
+            status: "active".to_string(),
+        };
+        let json = serde_json::to_string(&branch).unwrap();
+        assert!(json.contains("b-1"));
+    }
+
+    #[test]
+    fn test_perspective_serialize() {
+        let p = Perspective {
+            viewpoint: "Tech".to_string(),
+            content: "View".to_string(),
+            novelty_score: 0.5,
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains("Tech"));
+    }
+
+    #[test]
+    fn test_graph_node_serialize() {
+        let node = GraphNode {
+            id: "n-1".to_string(),
+            content: "Content".to_string(),
+            score: Some(0.9),
+            depth: Some(2),
+            parent_id: Some("n-0".to_string()),
+        };
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("n-1"));
+    }
+
+    #[test]
+    fn test_detection_serialize() {
+        let d = Detection {
+            detection_type: "bias".to_string(),
+            category: None,
+            severity: "high".to_string(),
+            confidence: 0.9,
+            evidence: "Proof".to_string(),
+            explanation: "Reason".to_string(),
+            remediation: None,
+        };
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(json.contains("bias"));
+    }
+
+    #[test]
+    fn test_stakeholder_map_serialize() {
+        let sm = StakeholderMap {
+            key_players: vec!["CEO".to_string()],
+            keep_satisfied: vec!["Board".to_string()],
+            keep_informed: vec!["Users".to_string()],
+            minimal_effort: vec!["Others".to_string()],
+        };
+        let json = serde_json::to_string(&sm).unwrap();
+        assert!(json.contains("key_players"));
+    }
+}

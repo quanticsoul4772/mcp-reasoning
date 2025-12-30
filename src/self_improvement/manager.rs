@@ -328,7 +328,9 @@ impl ManagerHandle {
             return self.status_rx.borrow().clone();
         }
 
-        response_rx.await.unwrap_or_else(|_| self.status_rx.borrow().clone())
+        response_rx
+            .await
+            .unwrap_or_else(|_| self.status_rx.borrow().clone())
     }
 
     /// Get pending diagnoses.
@@ -529,10 +531,16 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
                     tracing::error!(error = ?result.error, "Improvement cycle failed");
                 } else {
                     self.state.successful_cycles += 1;
-                    self.state.total_actions_executed +=
-                        result.execution_results.iter().filter(|r| r.success).count() as u64;
+                    self.state.total_actions_executed += result
+                        .execution_results
+                        .iter()
+                        .filter(|r| r.success)
+                        .count() as u64;
                     tracing::info!(
-                        actions_proposed = result.analysis_result.as_ref().map_or(0, |a| a.actions.len()),
+                        actions_proposed = result
+                            .analysis_result
+                            .as_ref()
+                            .map_or(0, |a| a.actions.len()),
                         actions_executed = result.execution_results.len(),
                         "Improvement cycle completed"
                     );
@@ -606,8 +614,14 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
 
         Ok(ApproveResult {
             diagnosis_id: diagnosis_id.to_string(),
-            execution_results: exec_results.iter().map(ExecutionResultSummary::from).collect(),
-            learning_results: learn_results.iter().map(LearningResultSummary::from).collect(),
+            execution_results: exec_results
+                .iter()
+                .map(ExecutionResultSummary::from)
+                .collect(),
+            learning_results: learn_results
+                .iter()
+                .map(LearningResultSummary::from)
+                .collect(),
         })
     }
 
@@ -740,8 +754,13 @@ mod tests {
     fn test_pending_diagnosis_from_action() {
         use super::super::types::ActionType;
 
-        let action =
-            SelfImprovementAction::new("test-id", ActionType::ConfigAdjust, "Test desc", "Rationale", 0.15);
+        let action = SelfImprovementAction::new(
+            "test-id",
+            ActionType::ConfigAdjust,
+            "Test desc",
+            "Rationale",
+            0.15,
+        );
 
         let pending = PendingDiagnosis::from(&action);
 
@@ -771,7 +790,8 @@ mod tests {
     fn test_execution_result_summary_from() {
         use super::super::types::ActionType;
 
-        let action = SelfImprovementAction::new("action-1", ActionType::ConfigAdjust, "Test", "Test", 0.1);
+        let action =
+            SelfImprovementAction::new("action-1", ActionType::ConfigAdjust, "Test", "Test", 0.1);
 
         let result = ExecutionResult {
             action,

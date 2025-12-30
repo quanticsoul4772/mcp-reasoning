@@ -31,9 +31,9 @@ use super::responses::{
     DivergentResponse, EvidenceAssessment, EvidenceResponse, GraphNode, GraphResponse, GraphState,
     Invocation, LinearResponse, MctsNode, MctsResponse, MetricsResponse, MetricsSummary, ModeStats,
     Perspective, PresetExecution, PresetInfo, PresetResponse, RankedOption, ReflectionResponse,
-    SiApproveResponse, SiDiagnosesResponse, SiExecutionSummary, SiLearningSummary, SiPendingDiagnosis,
-    SiRejectResponse, SiRollbackResponse, SiStatusResponse, SiTriggerResponse, StakeholderMap,
-    TimelineBranch, TimelineResponse, TreeResponse,
+    SiApproveResponse, SiDiagnosesResponse, SiExecutionSummary, SiLearningSummary,
+    SiPendingDiagnosis, SiRejectResponse, SiRollbackResponse, SiStatusResponse, SiTriggerResponse,
+    StakeholderMap, TimelineBranch, TimelineResponse, TreeResponse,
 };
 use super::types::AppState;
 use crate::metrics::{MetricEvent, Timer};
@@ -1924,10 +1924,7 @@ impl ReasoningServer {
         name = "reasoning_si_status",
         description = "Get self-improvement system status including cycle stats and circuit breaker state."
     )]
-    async fn reasoning_si_status(
-        &self,
-        #[tool(aggr)] req: SiStatusRequest,
-    ) -> SiStatusResponse {
+    async fn reasoning_si_status(&self, #[tool(aggr)] req: SiStatusRequest) -> SiStatusResponse {
         let _ = req; // Empty request struct
         let timer = Timer::start();
         let status = self.state.self_improvement.status().await;
@@ -1959,7 +1956,11 @@ impl ReasoningServer {
         #[tool(aggr)] req: SiDiagnosesRequest,
     ) -> SiDiagnosesResponse {
         let timer = Timer::start();
-        let diagnoses = self.state.self_improvement.pending_diagnoses(req.limit).await;
+        let diagnoses = self
+            .state
+            .self_improvement
+            .pending_diagnoses(req.limit)
+            .await;
         let total = diagnoses.len();
 
         self.state
@@ -1986,10 +1987,7 @@ impl ReasoningServer {
         name = "reasoning_si_approve",
         description = "Approve a pending diagnosis to execute its proposed actions."
     )]
-    async fn reasoning_si_approve(
-        &self,
-        #[tool(aggr)] req: SiApproveRequest,
-    ) -> SiApproveResponse {
+    async fn reasoning_si_approve(&self, #[tool(aggr)] req: SiApproveRequest) -> SiApproveResponse {
         let timer = Timer::start();
         let result = self.state.self_improvement.approve(req.diagnosis_id).await;
 
@@ -2081,10 +2079,7 @@ impl ReasoningServer {
         name = "reasoning_si_trigger",
         description = "Trigger an immediate improvement cycle."
     )]
-    async fn reasoning_si_trigger(
-        &self,
-        #[tool(aggr)] req: SiTriggerRequest,
-    ) -> SiTriggerResponse {
+    async fn reasoning_si_trigger(&self, #[tool(aggr)] req: SiTriggerRequest) -> SiTriggerResponse {
         let _ = req; // Empty request struct
         let timer = Timer::start();
         let result = self.state.self_improvement.trigger_cycle().await;
@@ -2706,11 +2701,14 @@ mod tests {
             ))
         });
 
-        let si_storage =
-            std::sync::Arc::new(SelfImprovementStorage::new(storage.pool.clone()));
+        let si_storage = std::sync::Arc::new(SelfImprovementStorage::new(storage.pool.clone()));
 
-        let (_manager, handle) =
-            SelfImprovementManager::new(SelfImprovementConfig::default(), client, metrics, si_storage);
+        let (_manager, handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            client,
+            metrics,
+            si_storage,
+        );
         handle
     }
 
