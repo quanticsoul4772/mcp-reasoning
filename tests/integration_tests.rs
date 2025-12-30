@@ -5,7 +5,14 @@
 //! - Multi-mode reasoning scenarios
 //! - Configuration handling
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::used_underscore_binding,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss
+)]
 
 use mcp_reasoning::config::Config;
 use mcp_reasoning::error::ConfigError;

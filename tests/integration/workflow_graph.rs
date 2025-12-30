@@ -4,7 +4,7 @@
 //! Note: Full workflow tests with wiremock require careful node ID coordination
 //! which is tested in the unit tests for `GraphMode`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use mcp_reasoning::storage::SqliteStorage;
 use mcp_reasoning::traits::{StorageTrait, Thought};

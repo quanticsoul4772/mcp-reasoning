@@ -16,7 +16,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::ModeError;
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 use crate::modes::generate_session_id;
 use crate::modes::{extract_json, generate_thought_id, validate_content};
 use crate::prompts::{get_prompt_for_mode, ReasoningMode};
@@ -238,23 +237,34 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::approx_constant,
+    clippy::unreadable_literal
+)]
 mod tests {
     use super::*;
     use crate::error::StorageError;
     use crate::traits::{CompletionResponse, MockAnthropicClientTrait, MockStorageTrait, Usage};
 
     fn mock_json_response(analysis: &str, confidence: f64, next_step: Option<&str>) -> String {
-        match next_step {
-            Some(step) => format!(
-                r#"{{"analysis": "{}", "confidence": {}, "next_step": "{}"}}"#,
-                analysis, confidence, step
-            ),
-            None => format!(
-                r#"{{"analysis": "{}", "confidence": {}}}"#,
-                analysis, confidence
-            ),
-        }
+        next_step.map_or_else(
+            || {
+                format!(
+                    r#"{{"analysis": "{}", "confidence": {}}}"#,
+                    analysis, confidence
+                )
+            },
+            |step| {
+                format!(
+                    r#"{{"analysis": "{}", "confidence": {}, "next_step": "{}"}}"#,
+                    analysis, confidence, step
+                )
+            },
+        )
     }
 
     #[tokio::test]

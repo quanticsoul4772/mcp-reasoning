@@ -223,7 +223,16 @@ impl TimeProvider for RealTimeProvider {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::approx_constant,
+    clippy::unreadable_literal,
+    clippy::unused_async,
+    clippy::no_effect_underscore_binding
+)]
 mod tests {
     use super::*;
     use static_assertions::assert_impl_all;

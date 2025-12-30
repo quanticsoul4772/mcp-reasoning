@@ -7,8 +7,6 @@
 //!
 //! Only compiled for tests (`#[cfg(test)]`).
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
 use crate::error::{ModeError, StorageError};
 use crate::traits::{
     CompletionConfig, CompletionResponse, Message, MockAnthropicClientTrait, MockStorageTrait,

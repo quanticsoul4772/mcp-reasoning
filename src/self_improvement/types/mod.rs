@@ -21,6 +21,14 @@ mod metrics;
 mod rewards;
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::approx_constant,
+    clippy::unreadable_literal
+)]
 mod tests;
 
 // Re-export all public types from submodules

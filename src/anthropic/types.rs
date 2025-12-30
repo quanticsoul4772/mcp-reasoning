@@ -621,7 +621,14 @@ pub struct ApiErrorDetails {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::approx_constant,
+    clippy::unreadable_literal
+)]
 mod tests {
     use super::*;
     use serde_json::json;
@@ -711,7 +718,7 @@ mod tests {
         assert_eq!(msg.role, "user");
         match msg.content {
             MessageContent::Parts(p) => assert_eq!(p.len(), 2),
-            _ => panic!("Expected Parts"),
+            MessageContent::Text(_) => panic!("Expected Parts"),
         }
     }
 

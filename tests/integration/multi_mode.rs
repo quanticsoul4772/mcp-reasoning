@@ -2,7 +2,7 @@
 //!
 //! Tests combinations of different reasoning modes in a single workflow.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use mcp_reasoning::storage::SqliteStorage;
 use mcp_reasoning::traits::{StorageTrait, Thought};

@@ -266,7 +266,14 @@ impl StreamAccumulator {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::approx_constant,
+    clippy::unreadable_literal
+)]
 mod tests {
     use super::*;
 

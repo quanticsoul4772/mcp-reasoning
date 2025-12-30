@@ -4,7 +4,12 @@
 //! Note: Full workflow tests with wiremock require careful coordination
 //! which is tested in the unit tests for `CheckpointMode`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::needless_collect
+)]
 
 use mcp_reasoning::storage::SqliteStorage;
 use mcp_reasoning::traits::{StorageTrait, Thought};

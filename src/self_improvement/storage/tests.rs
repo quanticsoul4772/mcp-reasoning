@@ -1,7 +1,5 @@
 //! Tests for self-improvement storage.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
 use super::helpers::{
     parse_action_status, parse_datetime, parse_diagnosis_status, parse_severity, query_error,
 };

@@ -341,7 +341,14 @@ pub fn get_string_array(json: &serde_json::Value, field: &str) -> Result<Vec<Str
 // ============================================================================
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::approx_constant,
+    clippy::unreadable_literal
+)]
 mod tests {
     use super::*;
     use serde_json::json;

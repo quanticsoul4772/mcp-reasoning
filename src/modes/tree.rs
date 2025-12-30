@@ -561,7 +561,15 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::approx_constant,
+    clippy::unreadable_literal,
+    clippy::significant_drop_tightening
+)]
 mod tests {
     use super::*;
     use crate::traits::{CompletionResponse, MockAnthropicClientTrait, MockStorageTrait, Usage};

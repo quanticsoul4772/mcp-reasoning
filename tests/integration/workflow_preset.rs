@@ -9,7 +9,12 @@
 //! Note: Preset execution is handled by the server/tools.rs handlers.
 //! These tests focus on the preset registry and definitions.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::needless_collect
+)]
 
 use mcp_reasoning::presets::{Preset, PresetCategory, PresetInfo, PresetRegistry, PresetStep};
 
