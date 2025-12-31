@@ -1031,4 +1031,415 @@ mod tests {
         let pending = manager.get_pending_diagnoses(None);
         assert!(pending.is_empty());
     }
+
+    #[tokio::test]
+    async fn test_manager_handle_reject_not_found() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let result = manager.handle_reject("nonexistent", Some("reason"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_handle_approve_not_found() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let result = manager.handle_approve("nonexistent");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_handle_rollback_not_found() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let result = manager.handle_rollback("nonexistent");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_update_status() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (manager, handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        // Initial status
+        let status1 = handle.status_rx.borrow().clone();
+        assert!(status1.running);
+        assert_eq!(status1.total_cycles, 0);
+
+        // Update status should send to receiver
+        manager.update_status();
+
+        // Status should still be same (nothing changed in state)
+        let status2 = handle.status_rx.borrow().clone();
+        assert!(status2.running);
+        assert_eq!(status2.total_cycles, 0);
+    }
+
+    #[tokio::test]
+    async fn test_manager_run_with_immediate_shutdown() {
+        let config = SelfImprovementConfig {
+            cycle_interval_secs: 1,
+            ..Default::default()
+        };
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (manager, handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        // Spawn the manager
+        let manager_handle = tokio::spawn(async move {
+            manager.run(shutdown_rx).await;
+        });
+
+        // Give it a moment to start
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Verify it's running
+        let status = handle.status_rx.borrow().clone();
+        assert!(status.running);
+
+        // Send shutdown signal
+        shutdown_tx.send(true).unwrap();
+
+        // Wait for manager to finish
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), manager_handle).await;
+    }
+
+    #[tokio::test]
+    async fn test_manager_command_get_status() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let (response_tx, response_rx) = oneshot::channel();
+        manager
+            .handle_command(ManagerCommand::GetStatus { response_tx })
+            .await;
+
+        let status = response_rx.await.unwrap();
+        assert!(status.running);
+        assert_eq!(status.circuit_state, "closed");
+    }
+
+    #[tokio::test]
+    async fn test_manager_command_get_pending() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let (response_tx, response_rx) = oneshot::channel();
+        manager
+            .handle_command(ManagerCommand::GetPending {
+                limit: Some(10),
+                response_tx,
+            })
+            .await;
+
+        let pending = response_rx.await.unwrap();
+        assert!(pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_manager_command_trigger_cycle() {
+        let config = SelfImprovementConfig::default();
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Ok(mock_response(
+                r#"{
+                "summary": "Test analysis",
+                "confidence": 0.8,
+                "actions": []
+            }"#,
+            ))
+        });
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let (response_tx, response_rx) = oneshot::channel();
+        manager
+            .handle_command(ManagerCommand::TriggerCycle { response_tx })
+            .await;
+
+        let result = response_rx.await.unwrap();
+        assert!(result.is_ok());
+
+        // Should have incremented cycle count
+        assert_eq!(manager.state.total_cycles, 1);
+    }
+
+    #[tokio::test]
+    async fn test_manager_command_approve_not_found() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let (response_tx, response_rx) = oneshot::channel();
+        manager
+            .handle_command(ManagerCommand::Approve {
+                diagnosis_id: "nonexistent".to_string(),
+                response_tx,
+            })
+            .await;
+
+        let result = response_rx.await.unwrap();
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_manager_command_reject_not_found() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let (response_tx, response_rx) = oneshot::channel();
+        manager
+            .handle_command(ManagerCommand::Reject {
+                diagnosis_id: "nonexistent".to_string(),
+                reason: Some("test reason".to_string()),
+                response_tx,
+            })
+            .await;
+
+        let result = response_rx.await.unwrap();
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_manager_command_rollback_not_found() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let (response_tx, response_rx) = oneshot::channel();
+        manager
+            .handle_command(ManagerCommand::Rollback {
+                action_id: "nonexistent".to_string(),
+                response_tx,
+            })
+            .await;
+
+        let result = response_rx.await.unwrap();
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_manager_run_cycle() {
+        let config = SelfImprovementConfig::default();
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Ok(mock_response(
+                r#"{
+                "summary": "Test analysis",
+                "confidence": 0.8,
+                "actions": []
+            }"#,
+            ))
+        });
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        // Run a cycle directly
+        manager.run_cycle().await;
+
+        // Should have updated state
+        assert_eq!(manager.state.total_cycles, 1);
+        assert!(manager.state.last_cycle_at.is_some());
+        // Success or failure depends on analysis
+        assert!(manager.state.successful_cycles + manager.state.failed_cycles >= 1);
+    }
+
+    #[tokio::test]
+    async fn test_manager_should_run_cycle_with_enough_invocations() {
+        use crate::metrics::MetricEvent;
+
+        let config = SelfImprovementConfig {
+            min_invocations_for_analysis: 5,
+            ..Default::default()
+        };
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        // Record some invocations
+        for _ in 0..10 {
+            metrics.record(MetricEvent {
+                mode: "test_tool".to_string(),
+                operation: None,
+                latency_ms: 100,
+                success: true,
+                timestamp: 1234567890,
+            });
+        }
+
+        let (manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        // Now should run cycle
+        assert!(manager.should_run_cycle());
+    }
+
+    #[tokio::test]
+    async fn test_manager_circuit_state_in_status() {
+        let config = SelfImprovementConfig::default();
+        let client = create_mock_client();
+        let metrics = Arc::new(MetricsCollector::new());
+        let storage = create_test_storage().await;
+
+        let (manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+
+        let status = manager.build_status();
+        // Circuit starts closed
+        assert_eq!(status.circuit_state, "closed");
+    }
+
+    #[test]
+    fn test_approve_result_debug_and_clone() {
+        let result = ApproveResult {
+            diagnosis_id: "test".to_string(),
+            execution_results: vec![],
+            learning_results: vec![],
+        };
+
+        let cloned = result.clone();
+        assert_eq!(cloned.diagnosis_id, "test");
+
+        let debug = format!("{result:?}");
+        assert!(debug.contains("ApproveResult"));
+    }
+
+    #[test]
+    fn test_execution_result_summary_debug_and_clone() {
+        let summary = ExecutionResultSummary {
+            action_id: "act-1".to_string(),
+            success: true,
+            message: "Done".to_string(),
+        };
+
+        let cloned = summary.clone();
+        assert_eq!(cloned.action_id, "act-1");
+
+        let debug = format!("{summary:?}");
+        assert!(debug.contains("ExecutionResultSummary"));
+    }
+
+    #[test]
+    fn test_learning_result_summary_debug_and_clone() {
+        let summary = LearningResultSummary {
+            action_id: "act-2".to_string(),
+            lesson: "Test lesson".to_string(),
+            reward: 0.75,
+        };
+
+        let cloned = summary.clone();
+        assert_eq!(cloned.lesson, "Test lesson");
+
+        let debug = format!("{summary:?}");
+        assert!(debug.contains("LearningResultSummary"));
+    }
+
+    #[test]
+    fn test_manager_status_serialization() {
+        let status = ManagerStatus {
+            running: true,
+            circuit_state: "open".to_string(),
+            total_cycles: 5,
+            successful_cycles: 4,
+            failed_cycles: 1,
+            pending_diagnoses: 2,
+            total_actions_executed: 10,
+            total_actions_rolled_back: 1,
+            last_cycle_at: Some(1234567890),
+            learning_summary: LearningSummaryData {
+                total_lessons: 3,
+                average_reward: 0.8,
+            },
+        };
+
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("\"running\":true"));
+
+        let parsed: ManagerStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.total_cycles, 5);
+    }
+
+    #[test]
+    fn test_pending_diagnosis_serialization() {
+        let pending = PendingDiagnosis {
+            id: "diag-1".to_string(),
+            action_type: "ConfigAdjust".to_string(),
+            description: "Test action".to_string(),
+            rationale: "Test reason".to_string(),
+            expected_improvement: 0.15,
+            created_at: 1234567890,
+        };
+
+        let json = serde_json::to_string(&pending).unwrap();
+        assert!(json.contains("\"id\":\"diag-1\""));
+
+        let parsed: PendingDiagnosis = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.description, "Test action");
+    }
+
+    #[test]
+    fn test_learning_summary_data_serialization() {
+        let summary = LearningSummaryData {
+            total_lessons: 10,
+            average_reward: 0.65,
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: LearningSummaryData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.total_lessons, 10);
+    }
+
+    #[test]
+    fn test_manager_command_debug() {
+        let (response_tx, _) = oneshot::channel::<ManagerStatus>();
+        let cmd = ManagerCommand::GetStatus { response_tx };
+        let debug = format!("{cmd:?}");
+        assert!(debug.contains("GetStatus"));
+    }
 }
