@@ -2,6 +2,7 @@
 //!
 //! This module contains all response types with JsonSchema support.
 
+use crate::metadata::ResponseMetadata;
 use rmcp::model::{Content, IntoContents};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -527,6 +528,8 @@ pub struct PresetResponse {
     pub execution_result: Option<PresetExecution>,
     /// Session identifier.
     pub session_id: Option<String>,
+    /// Metadata about execution timing and suggestions
+    pub metadata: Option<ResponseMetadata>,
 }
 
 /// Summary statistics.

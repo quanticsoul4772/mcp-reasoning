@@ -2,7 +2,7 @@
 
 use super::{
     timing::ComplexityMetrics, ContextMetadata, PresetIndex, ResponseMetadata,
-    SuggestionEngine, SuggestionMetadata, TimingDatabase, TimingMetadata, ToolSuggestion,
+    SuggestionEngine, SuggestionMetadata, TimingDatabase, TimingMetadata,
 };
 use crate::error::AppError;
 use std::sync::Arc;

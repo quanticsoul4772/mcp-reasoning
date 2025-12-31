@@ -168,8 +168,13 @@ mod tests {
         let config = test_config();
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_handle(metrics.clone(), &storage).await;
+        let metadata_builder = crate::metadata::MetadataBuilder::new(
+            Arc::new(crate::metadata::TimingDatabase::new(storage.clone()).await.unwrap()),
+            Arc::new(crate::metadata::PresetIndex::build()),
+            30000,
+        );
 
-        let state = AppState::new(storage, client, config, metrics, si_handle);
+        let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
         let debug = format!("{:?}", state);
 
         assert!(debug.contains("AppState"));
@@ -184,8 +189,13 @@ mod tests {
         let config = test_config();
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_handle(metrics.clone(), &storage).await;
+        let metadata_builder = crate::metadata::MetadataBuilder::new(
+            Arc::new(crate::metadata::TimingDatabase::new(storage.clone()).await.unwrap()),
+            Arc::new(crate::metadata::PresetIndex::build()),
+            30000,
+        );
 
-        let state1 = AppState::new(storage, client, config, metrics, si_handle);
+        let state1 = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
         let state2 = state1.clone();
 
         // Both should share the same Arc pointers
