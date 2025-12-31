@@ -4,27 +4,28 @@ An MCP server providing structured reasoning capabilities for Claude Code and Cl
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/Tests-1908%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/Tests-1818%20passing-brightgreen.svg)](#development)
 [![Coverage](https://img.shields.io/badge/Coverage-95%25-brightgreen.svg)](#development)
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'pie1': '#4fc3f7', 'pie2': '#81c784', 'pie3': '#ffb74d', 'pie4': '#f06292', 'pie5': '#ba68c8'}}}%%
-pie showData title Codebase Distribution (56K+ lines)
+pie showData title Codebase Distribution (38K+ lines)
     "Reasoning Modes" : 35
     "Storage Layer" : 15
     "Server/Transport" : 15
-    "Tests (1,752)" : 30
+    "Tests (1,818)" : 30
     "Config/Utils" : 5
 ```
 
 ## Features
 
 - **15 Structured Reasoning Tools** - Linear, tree-based, graph-based, and advanced reasoning patterns
-- **AI Agent Metadata Enrichment** ✨ **NEW** - Rich metadata in responses including:
-  - **Timeout Prediction** - Estimated duration and confidence levels to avoid API timeouts
-  - **Tool Suggestions** - Next logical tools to call based on current results
-  - **Workflow Discovery** - Relevant preset recommendations for complex tasks
-  - **Historical Learning** - Improves predictions over time from actual execution data
+- **AI Agent Metadata Enrichment** - Rich metadata in all tool responses:
+  - **Timeout Prediction** - Duration estimates with confidence levels (Low/Medium/High) to prevent API timeouts
+  - **Tool Suggestions** - Context-aware recommendations for next steps (2-5 suggestions per response)
+  - **Workflow Discovery** - Relevant preset matching based on tool history and complexity
+  - **Historical Learning** - SQLite-backed timing database improves predictions from actual execution data
+  - **Complexity Analysis** - Content length, operation depth, and branching factor metrics
 - **Decision Analysis** - Weighted scoring, pairwise comparison, TOPSIS, stakeholder mapping
 - **Bias & Fallacy Detection** - Identify cognitive biases and logical fallacies with remediation suggestions
 - **Counterfactual Analysis** - What-if scenarios using Pearl's causal framework (Ladder of Causation)
@@ -264,16 +265,157 @@ flowchart TB
     Preset -->|"orchestrates"| Detect["Detect"]
 ```
 
+## Metadata Enrichment for AI Agents
+
+All tool responses include metadata to help AI agents make better decisions about tool usage, timeout management, and workflow composition.
+
+### Metadata Structure
+
+```typescript
+interface ResponseMetadata {
+  timing: {
+    estimated_duration_ms: number;    // Predicted execution time
+    confidence: "Low" | "Medium" | "High";  // Prediction confidence
+    complexity_score: number;         // 0.0-5.0 complexity metric
+    factors: {
+      content_length: number;         // Input size
+      operation_depth?: number;       // Graph/tree depth
+      branching_factor?: number;      // Number of branches
+    }
+  };
+  suggestions: {
+    next_tools: string[];             // 2-5 recommended tools
+    reasoning: string;                // Why these tools were suggested
+  };
+  context: {
+    tools_used: string[];             // Tools in current session
+    preset_recommendations?: string[];// Matching workflow presets
+    result_summary: string;           // High-level outcome
+  };
+}
+```
+
+### How It Works
+
+#### 1. Timeout Prediction
+
+The `TimingDatabase` tracks actual execution times and learns from historical data:
+
+- **Cold Start**: Uses baseline estimates from `timing_defaults.rs`
+- **Warm**: Averages last 100 executions for the tool + mode combination
+- **Adjusts for Complexity**: Multiplies baseline by complexity factors
+- **Confidence Levels**:
+  - **Low**: < 10 historical samples
+  - **Medium**: 10-50 samples
+  - **High**: 50+ samples
+
+**Example:**
+```json
+{
+  "estimated_duration_ms": 45000,
+  "confidence": "High",
+  "complexity_score": 3.2
+}
+```
+→ Agent knows to use 60s timeout tier instead of 30s
+
+#### 2. Tool Suggestions
+
+The `SuggestionEngine` uses rule-based logic to recommend next steps:
+
+- **Context-Aware**: Considers current tool, operation type, and result
+- **Ranked**: 2-5 suggestions ordered by relevance
+- **Explains Why**: Includes reasoning for each suggestion
+
+**Example after `reasoning_divergent`:**
+```json
+{
+  "next_tools": [
+    "reasoning_decision",
+    "reasoning_detect", 
+    "reasoning_evidence"
+  ],
+  "reasoning": "Multiple perspectives generated - use decision tool to evaluate options, or detect tool to check for biases"
+}
+```
+
+#### 3. Workflow Discovery
+
+The `PresetIndex` matches tool history to built-in workflow presets:
+
+- **Pattern Matching**: Compares tools used vs preset requirements
+- **Scored**: 0.0-1.0 match score (1.0 = exact match)
+- **Contextual**: Considers complexity and operation types
+
+**Example:**
+```json
+{
+  "preset_recommendations": [
+    "architecture-decision",
+    "strategic-decision"
+  ]
+}
+```
+→ Agent discovers the "architecture-decision" preset is relevant
+
+#### 4. Complexity Analysis
+
+Factors that influence duration estimates:
+
+| Factor | Impact | Example |
+|--------|--------|---------|
+| Content Length | >10k chars = 1.5x | Long documents take longer |
+| Operation Depth | >5 levels = 2.0x | Deep graph traversal |
+| Branching Factor | >3 branches = 1.5x | Multiple perspectives |
+| Thinking Budget | deep/maximum = 2-4x | Extended thinking modes |
+
+### Benefits for AI Agents
+
+1. **Prevent Timeouts**: Choose appropriate timeout tiers before making calls
+2. **Optimize Workflows**: Discover multi-tool patterns (presets) instead of one-off calls
+3. **Learn Progressively**: Predictions improve with usage (historical learning)
+4. **Context Awareness**: Know what tools were used and what comes next
+5. **Self-Document**: Result summaries help agents track reasoning chains
+
+---
+
 ## Usage Examples
 
 ### Linear Reasoning
 
+**Request:**
 ```json
 {
   "tool": "reasoning_linear",
   "arguments": {
     "content": "Analyze the trade-offs between microservices and monolithic architectures",
     "confidence": 0.8
+  }
+}
+```
+
+**Response (with metadata):**
+```json
+{
+  "thought_id": "uuid",
+  "session_id": "session123",
+  "content": "Step-by-step analysis...",
+  "confidence": 0.85,
+  "next_step": "Consider decision analysis",
+  "metadata": {
+    "timing": {
+      "estimated_duration_ms": 12000,
+      "confidence": "High",
+      "complexity_score": 1.5
+    },
+    "suggestions": {
+      "next_tools": ["reasoning_decision", "reasoning_evidence"],
+      "reasoning": "Analysis complete - use decision tool to evaluate options"
+    },
+    "context": {
+      "tools_used": ["reasoning_linear"],
+      "result_summary": "Trade-off analysis between architectural patterns"
+    }
   }
 }
 ```
@@ -447,11 +589,14 @@ cargo build
 # Release build (optimized)
 cargo build --release
 
-# Run all tests (1,908 tests)
+# Run all tests (1,818 tests)
 cargo test
 
 # Run specific test module
 cargo test modes::linear
+
+# Test metadata module specifically
+cargo test metadata::
 
 # Check formatting
 cargo fmt --check
@@ -484,6 +629,13 @@ src/
 │   ├── branch.rs        # Branch management
 │   ├── checkpoint.rs    # Checkpoint storage
 │   └── graph.rs         # Graph node/edge storage
+├── metadata/            # Response metadata enrichment
+│   ├── mod.rs           # Core types (ResponseMetadata, TimingMetadata, etc.)
+│   ├── timing.rs        # TimingDatabase with SQLite backend
+│   ├── suggestions.rs   # SuggestionEngine for tool recommendations
+│   ├── preset_index.rs  # PresetIndex with workflow matching
+│   ├── builder.rs       # MetadataBuilder orchestrator
+│   └── timing_defaults.rs # Baseline duration estimates
 ├── prompts/             # Mode-specific prompts
 ├── modes/               # 13 reasoning mode implementations
 │   ├── linear.rs        # Sequential reasoning
@@ -497,6 +649,11 @@ src/
 │   ├── mcts/            # Monte Carlo Tree Search
 │   └── counterfactual.rs# Causal analysis
 ├── server/              # MCP server infrastructure (rmcp)
+│   ├── mod.rs           # Server setup & graceful shutdown
+│   ├── tools.rs         # 15 tool handlers with metadata
+│   ├── types.rs         # AppState with MetadataBuilder
+│   ├── responses.rs     # All response types with metadata field
+│   └── metadata_builders.rs # Tool-specific metadata builders
 ├── presets/             # Built-in workflow presets
 ├── metrics/             # Usage metrics collection
 └── self_improvement/    # 4-phase optimization system
@@ -512,10 +669,11 @@ src/
 
 - **Zero unsafe code** - `#![forbid(unsafe_code)]` enforced
 - **No panics** - No `.unwrap()` or `.expect()` in production paths
-- **1,908 tests** - Unit, integration, and handler tests (95%+ coverage)
+- **1,818 tests** - Unit, integration, and handler tests (95%+ coverage)
 - **Max 500 lines per file** - Enforced for maintainability
 - **Structured logging** - Via `tracing` crate, logs to stderr
 - **Clippy pedantic** - All pedantic lints enabled as warnings
+- **Clean release build** - 0 warnings, 0 errors in production builds
 
 ### Extended Thinking
 

@@ -2,6 +2,50 @@
 
 This document provides detailed API documentation for all 15 reasoning tools.
 
+## Response Metadata
+
+**All tool responses include a `metadata` field** with timing predictions, tool suggestions, and workflow recommendations. This enables AI agents to:
+- Predict execution time and choose appropriate timeouts
+- Discover optimal next steps and tool sequences
+- Find relevant workflow presets for complex tasks
+- Track complexity factors and historical learning
+
+### Metadata Schema
+
+```typescript
+interface ResponseMetadata {
+  timing: {
+    estimated_duration_ms: number;    // Predicted execution time
+    confidence: "Low" | "Medium" | "High";  // Prediction confidence
+    complexity_score: number;         // 0.0-5.0 complexity metric
+    factors: {
+      content_length: number;
+      operation_depth?: number;
+      branching_factor?: number;
+    }
+  };
+  suggestions: {
+    next_tools: string[];             // 2-5 recommended tools
+    reasoning: string;                // Why these tools were suggested
+  };
+  context: {
+    tools_used: string[];             // Tools in current session
+    preset_recommendations?: string[];
+    result_summary: string;
+  };
+}
+```
+
+### Metadata in Responses
+
+Every tool response includes `"metadata": ResponseMetadata | null` as a top-level field. Metadata is `null` only when:
+- The metadata builder fails (logged as warning)
+- Historical data is unavailable (cold start)
+
+For complete metadata documentation, see [README - Metadata Enrichment](../README.md#metadata-enrichment-for-ai-agents).
+
+---
+
 ## Table of Contents
 
 - [Core Reasoning Tools](#core-reasoning-tools)
@@ -49,7 +93,12 @@ Process content with sequential step-by-step reasoning and confidence scoring.
   "session_id": "string",
   "content": "Detailed step-by-step analysis...",
   "confidence": 0.85,
-  "next_step": "Suggested next reasoning step"
+  "next_step": "Suggested next reasoning step",
+  "metadata": {
+    "timing": { "estimated_duration_ms": 12000, "confidence": "High" },
+    "suggestions": { "next_tools": ["reasoning_decision"] },
+    "context": { "tools_used": ["reasoning_linear"] }
+  }
 }
 ```
 
