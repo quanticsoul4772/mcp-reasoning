@@ -6,13 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 15 consolidated reasoning tools (vs 40 in the predecessor mcp-langbase-reasoning).
 
-**Status**: Complete. 36,000+ lines of Rust code and 1,908 tests.
+**Status**: Complete. 38,000+ lines of Rust code and 1,985 tests.
 
 **Key Stats**:
-- 122 source files, 36,000+ lines of code
-- 1,908 tests (95%+ coverage)
+- 118 source files, 38,000+ lines of code
+- 1,985 tests (95%+ coverage)
 - 15 reasoning tools, 5 workflow presets
 - 4-phase self-improvement system with safety mechanisms
+- Tool chain tracking with pattern detection
+- Error enhancement with contextual alternatives
 
 **Key Documents**:
 - `docs/DESIGN.md` - Complete technical specification
@@ -80,7 +82,9 @@ src/
 ├── lib.rs               # Module declarations + lints
 ├── traits.rs            # Mockable traits (AnthropicClientTrait, StorageTrait, TimeProvider)
 ├── test_utils.rs        # Mock factories (test only)
-├── error/mod.rs         # AppError, StorageError, ConfigError, ModeError
+├── error/
+│   ├── mod.rs           # AppError, StorageError, ConfigError, ModeError
+│   └── enhanced.rs      # ErrorEnhancer, ComplexityMetrics, contextual alternatives
 ├── config/
 │   ├── mod.rs           # Config struct + from_env()
 │   └── validation.rs    # Validation logic
@@ -124,7 +128,7 @@ src/
 ├── presets/
 │   ├── mod.rs           # PresetMode (list/run)
 │   └── builtin.rs       # 5 built-in presets
-├── metrics/mod.rs       # Usage metrics collection
+├── metrics/mod.rs       # Usage metrics + tool chain tracking (ToolTransition, ChainSummary)
 └── self_improvement/
     ├── mod.rs           # Re-exports
     ├── system.rs        # SelfImprovementSystem orchestrator

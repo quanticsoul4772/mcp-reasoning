@@ -4,7 +4,7 @@ An MCP server providing structured reasoning capabilities for Claude Code and Cl
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/Tests-1818%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/Tests-1985%20passing-brightgreen.svg)](#development)
 [![Coverage](https://img.shields.io/badge/Coverage-95%25-brightgreen.svg)](#development)
 
 ```mermaid
@@ -13,7 +13,7 @@ pie showData title Codebase Distribution (38K+ lines)
     "Reasoning Modes" : 35
     "Storage Layer" : 15
     "Server/Transport" : 15
-    "Tests (1,818)" : 30
+    "Tests (1,985)" : 30
     "Config/Utils" : 5
 ```
 
