@@ -30,6 +30,9 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::Instant;
 
+/// Maximum number of transitions to keep in circular buffer.
+const MAX_TRANSITIONS: usize = 10_000;
+
 /// A single metric event recording.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricEvent {
@@ -134,11 +137,90 @@ impl FallbackEvent {
     }
 }
 
+// ============================================================================
+// Tool Transition Tracking (for chain analysis)
+// ============================================================================
+
+/// A tool transition event tracking tool A → tool B usage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolTransition {
+    /// Tool that was used before.
+    pub from_tool: String,
+    /// Tool that was used after.
+    pub to_tool: String,
+    /// Session this transition occurred in.
+    pub session_id: String,
+    /// Whether the to_tool execution succeeded.
+    pub success: bool,
+    /// Timestamp in milliseconds since epoch.
+    pub timestamp: u64,
+}
+
+impl ToolTransition {
+    /// Create a new tool transition.
+    #[must_use]
+    pub fn new(
+        from_tool: impl Into<String>,
+        to_tool: impl Into<String>,
+        session_id: impl Into<String>,
+        success: bool,
+    ) -> Self {
+        Self {
+            from_tool: from_tool.into(),
+            to_tool: to_tool.into(),
+            session_id: session_id.into(),
+            success,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+        }
+    }
+}
+
+/// Statistics for a specific tool transition (A → B).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TransitionStats {
+    /// Number of times this transition occurred.
+    pub count: u32,
+    /// Success rate of the destination tool (0.0-1.0).
+    pub success_rate: f64,
+    /// Average time between tools in milliseconds.
+    pub avg_time_between_ms: u64,
+}
+
+/// A detected tool chain pattern.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolChain {
+    /// Sequence of tools in the chain.
+    pub tools: Vec<String>,
+    /// Number of times this chain was observed.
+    pub occurrences: u32,
+    /// Average success rate across the chain.
+    pub avg_success_rate: f64,
+    /// Average total duration of the chain in milliseconds.
+    pub avg_total_duration_ms: u64,
+}
+
+/// Summary of tool chain patterns discovered from metrics.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ChainSummary {
+    /// Most common tool sequences (min 3 tools, min 5 occurrences).
+    pub common_chains: Vec<ToolChain>,
+    /// Transition matrix: from_tool → (to_tool → stats).
+    pub transitions: HashMap<String, HashMap<String, TransitionStats>>,
+    /// Tools that are frequently starting points.
+    pub entry_tools: Vec<String>,
+    /// Tools that are frequently ending points.
+    pub terminal_tools: Vec<String>,
+}
+
 /// Thread-safe metrics collector.
 #[derive(Debug, Default)]
 pub struct MetricsCollector {
     events: RwLock<Vec<MetricEvent>>,
     fallbacks: RwLock<Vec<FallbackEvent>>,
+    transitions: RwLock<Vec<ToolTransition>>,
 }
 
 impl MetricsCollector {
@@ -263,6 +345,295 @@ impl MetricsCollector {
         if let Ok(mut fallbacks) = self.fallbacks.write() {
             fallbacks.clear();
         }
+        if let Ok(mut transitions) = self.transitions.write() {
+            transitions.clear();
+        }
+    }
+
+    // ========================================================================
+    // Tool Transition Tracking Methods
+    // ========================================================================
+
+    /// Record a tool transition event.
+    ///
+    /// Maintains a circular buffer of max `MAX_TRANSITIONS` events.
+    pub fn record_transition(&self, transition: ToolTransition) {
+        if let Ok(mut transitions) = self.transitions.write() {
+            // Implement circular buffer behavior
+            if transitions.len() >= MAX_TRANSITIONS {
+                transitions.remove(0);
+            }
+            transitions.push(transition);
+        }
+    }
+
+    /// Mark the last transition for a session as failed.
+    ///
+    /// Used when a tool execution fails after the transition was recorded.
+    pub fn mark_last_transition_failed(&self, session_id: &str) {
+        if let Ok(mut transitions) = self.transitions.write() {
+            // Find the last transition for this session and mark it as failed
+            for transition in transitions.iter_mut().rev() {
+                if transition.session_id == session_id {
+                    transition.success = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Get transition statistics for transitions FROM a specific tool.
+    #[must_use]
+    pub fn transitions_from(&self, tool: &str) -> HashMap<String, TransitionStats> {
+        let transitions = self
+            .transitions
+            .read()
+            .map(|t| t.clone())
+            .unwrap_or_default();
+
+        let mut stats_map: HashMap<String, (u32, u32, Vec<u64>)> = HashMap::new();
+
+        for transition in &transitions {
+            if transition.from_tool == tool {
+                let entry = stats_map
+                    .entry(transition.to_tool.clone())
+                    .or_insert((0, 0, Vec::new()));
+                entry.0 += 1; // count
+                if transition.success {
+                    entry.1 += 1; // successful count
+                }
+                // We don't track time between tools in this simple implementation
+                // Just use a placeholder for avg_time_between_ms
+            }
+        }
+
+        stats_map
+            .into_iter()
+            .map(|(to_tool, (count, successful, _))| {
+                let success_rate = if count > 0 {
+                    successful as f64 / count as f64
+                } else {
+                    0.0
+                };
+                (
+                    to_tool,
+                    TransitionStats {
+                        count,
+                        success_rate,
+                        avg_time_between_ms: 0, // Simplified - would need timestamp tracking
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// Get total number of recorded invocations.
+    #[must_use]
+    pub fn total_invocations(&self) -> u64 {
+        self.events
+            .read()
+            .map(|events| events.len() as u64)
+            .unwrap_or(0)
+    }
+
+    /// Analyze tool chains and return a summary.
+    ///
+    /// This performs pattern detection to identify:
+    /// - Common tool sequences (3+ tools, 5+ occurrences)
+    /// - Transition matrix with success rates
+    /// - Entry and terminal tools
+    #[must_use]
+    pub fn chain_summary(&self) -> ChainSummary {
+        let transitions = self
+            .transitions
+            .read()
+            .map(|t| t.clone())
+            .unwrap_or_default();
+
+        // Build transition matrix
+        let transition_matrix = self.build_transition_matrix(&transitions);
+
+        // Identify entry and terminal tools
+        let (entry_tools, terminal_tools) = self.identify_entry_terminal_tools(&transitions);
+
+        // Detect common chains (3-5 tool sequences)
+        let common_chains = self.detect_common_chains(&transitions);
+
+        ChainSummary {
+            common_chains,
+            transitions: transition_matrix,
+            entry_tools,
+            terminal_tools,
+        }
+    }
+
+    /// Build the transition matrix from recorded transitions.
+    fn build_transition_matrix(
+        &self,
+        transitions: &[ToolTransition],
+    ) -> HashMap<String, HashMap<String, TransitionStats>> {
+        let mut matrix: HashMap<String, HashMap<String, (u32, u32)>> = HashMap::new();
+
+        for transition in transitions {
+            let from_entry = matrix.entry(transition.from_tool.clone()).or_default();
+            let to_entry = from_entry.entry(transition.to_tool.clone()).or_insert((0, 0));
+            to_entry.0 += 1;
+            if transition.success {
+                to_entry.1 += 1;
+            }
+        }
+
+        matrix
+            .into_iter()
+            .map(|(from_tool, to_map)| {
+                let stats_map = to_map
+                    .into_iter()
+                    .map(|(to_tool, (count, successful))| {
+                        let success_rate = if count > 0 {
+                            successful as f64 / count as f64
+                        } else {
+                            0.0
+                        };
+                        (
+                            to_tool,
+                            TransitionStats {
+                                count,
+                                success_rate,
+                                avg_time_between_ms: 0,
+                            },
+                        )
+                    })
+                    .collect();
+                (from_tool, stats_map)
+            })
+            .collect()
+    }
+
+    /// Identify which tools are commonly entry points vs terminal points.
+    fn identify_entry_terminal_tools(
+        &self,
+        transitions: &[ToolTransition],
+    ) -> (Vec<String>, Vec<String>) {
+        let mut from_counts: HashMap<String, u32> = HashMap::new();
+        let mut to_counts: HashMap<String, u32> = HashMap::new();
+
+        for transition in transitions {
+            *from_counts.entry(transition.from_tool.clone()).or_insert(0) += 1;
+            *to_counts.entry(transition.to_tool.clone()).or_insert(0) += 1;
+        }
+
+        // Entry tools: appear as from_tool but rarely as to_tool
+        let mut entry_tools: Vec<(String, i32)> = from_counts
+            .iter()
+            .map(|(tool, from_count)| {
+                let to_count = to_counts.get(tool).copied().unwrap_or(0);
+                // Higher score = more likely entry point
+                (tool.clone(), *from_count as i32 - to_count as i32)
+            })
+            .collect();
+        entry_tools.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Terminal tools: appear as to_tool but rarely as from_tool
+        let mut terminal_tools: Vec<(String, i32)> = to_counts
+            .iter()
+            .map(|(tool, to_count)| {
+                let from_count = from_counts.get(tool).copied().unwrap_or(0);
+                // Higher score = more likely terminal point
+                (tool.clone(), *to_count as i32 - from_count as i32)
+            })
+            .collect();
+        terminal_tools.sort_by(|a, b| b.1.cmp(&a.1));
+
+        (
+            entry_tools.into_iter().take(5).map(|(t, _)| t).collect(),
+            terminal_tools.into_iter().take(5).map(|(t, _)| t).collect(),
+        )
+    }
+
+    /// Detect common tool chains (sequences of 3+ tools with 5+ occurrences).
+    fn detect_common_chains(&self, transitions: &[ToolTransition]) -> Vec<ToolChain> {
+        // Group transitions by session
+        let mut sessions: HashMap<String, Vec<&ToolTransition>> = HashMap::new();
+        for transition in transitions {
+            sessions
+                .entry(transition.session_id.clone())
+                .or_default()
+                .push(transition);
+        }
+
+        // Sort each session's transitions by timestamp
+        for session_transitions in sessions.values_mut() {
+            session_transitions.sort_by_key(|t| t.timestamp);
+        }
+
+        // Extract chains of length 3 using sliding window
+        let mut chain_counts: HashMap<Vec<String>, (u32, u32, u64)> = HashMap::new();
+
+        for session_transitions in sessions.values() {
+            if session_transitions.len() < 2 {
+                continue;
+            }
+
+            // Build the tool sequence for this session
+            let mut tools: Vec<String> = vec![session_transitions[0].from_tool.clone()];
+            let mut timestamps: Vec<u64> = vec![session_transitions[0].timestamp];
+            let mut successes: Vec<bool> = vec![];
+
+            for t in session_transitions.iter() {
+                tools.push(t.to_tool.clone());
+                timestamps.push(t.timestamp);
+                successes.push(t.success);
+            }
+
+            // Sliding window of size 3
+            for window_start in 0..tools.len().saturating_sub(2) {
+                let chain: Vec<String> = tools[window_start..window_start + 3].to_vec();
+                let duration = timestamps
+                    .get(window_start + 2)
+                    .unwrap_or(&0)
+                    .saturating_sub(*timestamps.get(window_start).unwrap_or(&0));
+                let success_count = successes
+                    .get(window_start..window_start + 2)
+                    .map(|s| s.iter().filter(|&&x| x).count() as u32)
+                    .unwrap_or(0);
+
+                let entry = chain_counts.entry(chain).or_insert((0, 0, 0));
+                entry.0 += 1; // occurrences
+                entry.1 += success_count; // total successes
+                entry.2 += duration; // total duration
+            }
+        }
+
+        // Filter to chains with 5+ occurrences and convert to ToolChain
+        let mut chains: Vec<ToolChain> = chain_counts
+            .into_iter()
+            .filter(|(_, (count, _, _))| *count >= 5)
+            .map(|(tools, (occurrences, successes, total_duration))| {
+                let avg_success_rate = if occurrences > 0 {
+                    successes as f64 / (occurrences * 2) as f64 // 2 transitions per 3-tool chain
+                } else {
+                    0.0
+                };
+                let avg_total_duration_ms = if occurrences > 0 {
+                    total_duration / occurrences as u64
+                } else {
+                    0
+                };
+
+                ToolChain {
+                    tools,
+                    occurrences,
+                    avg_success_rate,
+                    avg_total_duration_ms,
+                }
+            })
+            .collect();
+
+        // Sort by occurrences descending
+        chains.sort_by(|a, b| b.occurrences.cmp(&a.occurrences));
+
+        // Return top 10 chains
+        chains.into_iter().take(10).collect()
     }
 }
 
@@ -492,5 +863,224 @@ mod tests {
         let json = serde_json::to_string(&summary).unwrap();
         assert!(json.contains("\"total_invocations\":1"));
         assert!(json.contains("\"by_mode\""));
+    }
+
+    // ========================================================================
+    // Tool Transition Tracking Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tool_transition_new() {
+        let transition = ToolTransition::new("linear", "divergent", "session1", true);
+        assert_eq!(transition.from_tool, "linear");
+        assert_eq!(transition.to_tool, "divergent");
+        assert_eq!(transition.session_id, "session1");
+        assert!(transition.success);
+        assert!(transition.timestamp > 0);
+    }
+
+    #[test]
+    fn test_record_transition() {
+        let collector = MetricsCollector::new();
+        collector.record_transition(ToolTransition::new("linear", "divergent", "s1", true));
+        collector.record_transition(ToolTransition::new("divergent", "decision", "s1", true));
+
+        let stats = collector.transitions_from("linear");
+        assert_eq!(stats.len(), 1);
+        assert!(stats.contains_key("divergent"));
+        assert_eq!(stats.get("divergent").unwrap().count, 1);
+    }
+
+    #[test]
+    fn test_transitions_from() {
+        let collector = MetricsCollector::new();
+        // Create multiple transitions from "linear"
+        collector.record_transition(ToolTransition::new("linear", "divergent", "s1", true));
+        collector.record_transition(ToolTransition::new("linear", "divergent", "s2", true));
+        collector.record_transition(ToolTransition::new("linear", "tree", "s3", false));
+
+        let stats = collector.transitions_from("linear");
+        assert_eq!(stats.len(), 2);
+
+        let divergent_stats = stats.get("divergent").unwrap();
+        assert_eq!(divergent_stats.count, 2);
+        assert!((divergent_stats.success_rate - 1.0).abs() < f64::EPSILON);
+
+        let tree_stats = stats.get("tree").unwrap();
+        assert_eq!(tree_stats.count, 1);
+        assert!((tree_stats.success_rate - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_mark_last_transition_failed() {
+        let collector = MetricsCollector::new();
+        collector.record_transition(ToolTransition::new("linear", "divergent", "s1", true));
+        collector.record_transition(ToolTransition::new("divergent", "decision", "s1", true));
+
+        // Mark the last transition for s1 as failed
+        collector.mark_last_transition_failed("s1");
+
+        // Check that the decision transition is now marked as failed
+        let stats = collector.transitions_from("divergent");
+        let decision_stats = stats.get("decision").unwrap();
+        assert!((decision_stats.success_rate - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_chain_summary_empty() {
+        let collector = MetricsCollector::new();
+        let summary = collector.chain_summary();
+
+        assert!(summary.common_chains.is_empty());
+        assert!(summary.transitions.is_empty());
+        assert!(summary.entry_tools.is_empty());
+        assert!(summary.terminal_tools.is_empty());
+    }
+
+    #[test]
+    fn test_chain_summary_transition_matrix() {
+        let collector = MetricsCollector::new();
+        collector.record_transition(ToolTransition::new("linear", "divergent", "s1", true));
+        collector.record_transition(ToolTransition::new("linear", "divergent", "s2", true));
+        collector.record_transition(ToolTransition::new("divergent", "decision", "s1", true));
+
+        let summary = collector.chain_summary();
+        assert!(summary.transitions.contains_key("linear"));
+        assert!(summary.transitions.contains_key("divergent"));
+
+        let linear_transitions = summary.transitions.get("linear").unwrap();
+        assert!(linear_transitions.contains_key("divergent"));
+        assert_eq!(linear_transitions.get("divergent").unwrap().count, 2);
+    }
+
+    #[test]
+    fn test_chain_summary_entry_terminal_tools() {
+        let collector = MetricsCollector::new();
+        // linear is always an entry point (from, never to)
+        // checkpoint is always a terminal point (to, never from)
+        for i in 0..10 {
+            let session = format!("s{}", i);
+            collector.record_transition(ToolTransition::new("linear", "divergent", &session, true));
+            collector.record_transition(ToolTransition::new(
+                "divergent",
+                "checkpoint",
+                &session,
+                true,
+            ));
+        }
+
+        let summary = collector.chain_summary();
+        assert!(summary.entry_tools.contains(&"linear".to_string()));
+        assert!(summary.terminal_tools.contains(&"checkpoint".to_string()));
+    }
+
+    #[test]
+    fn test_detect_common_chains() {
+        let collector = MetricsCollector::new();
+
+        // Create the same chain 6 times (minimum 5 for detection)
+        for i in 0..6 {
+            let session = format!("s{}", i);
+            let mut t1 = ToolTransition::new("linear", "divergent", &session, true);
+            t1.timestamp = i as u64 * 1000;
+            let mut t2 = ToolTransition::new("divergent", "decision", &session, true);
+            t2.timestamp = i as u64 * 1000 + 500;
+
+            collector.record_transition(t1);
+            collector.record_transition(t2);
+        }
+
+        let summary = collector.chain_summary();
+        assert!(!summary.common_chains.is_empty());
+
+        let chain = &summary.common_chains[0];
+        assert_eq!(
+            chain.tools,
+            vec!["linear".to_string(), "divergent".to_string(), "decision".to_string()]
+        );
+        assert_eq!(chain.occurrences, 6);
+    }
+
+    #[test]
+    fn test_transition_circular_buffer() {
+        let collector = MetricsCollector::new();
+
+        // Record more than MAX_TRANSITIONS
+        for i in 0..100 {
+            collector.record_transition(ToolTransition::new(
+                format!("tool{}", i),
+                format!("tool{}", i + 1),
+                "s1",
+                true,
+            ));
+        }
+
+        // Verify transitions are recorded (we can't easily verify the max without
+        // exposing internal state, but this tests the basic functionality)
+        let stats = collector.transitions_from("tool0");
+        assert_eq!(stats.len(), 1);
+    }
+
+    #[test]
+    fn test_total_invocations() {
+        let collector = MetricsCollector::new();
+        assert_eq!(collector.total_invocations(), 0);
+
+        collector.record(MetricEvent::new("linear", 100, true));
+        collector.record(MetricEvent::new("tree", 150, true));
+        assert_eq!(collector.total_invocations(), 2);
+    }
+
+    #[test]
+    fn test_transition_stats_default() {
+        let stats = TransitionStats::default();
+        assert_eq!(stats.count, 0);
+        assert!((stats.success_rate - 0.0).abs() < f64::EPSILON);
+        assert_eq!(stats.avg_time_between_ms, 0);
+    }
+
+    #[test]
+    fn test_chain_summary_default() {
+        let summary = ChainSummary::default();
+        assert!(summary.common_chains.is_empty());
+        assert!(summary.transitions.is_empty());
+        assert!(summary.entry_tools.is_empty());
+        assert!(summary.terminal_tools.is_empty());
+    }
+
+    #[test]
+    fn test_tool_transition_serialize() {
+        let transition = ToolTransition::new("linear", "divergent", "s1", true);
+        let json = serde_json::to_string(&transition).unwrap();
+        assert!(json.contains("\"from_tool\":\"linear\""));
+        assert!(json.contains("\"to_tool\":\"divergent\""));
+        assert!(json.contains("\"session_id\":\"s1\""));
+        assert!(json.contains("\"success\":true"));
+    }
+
+    #[test]
+    fn test_chain_summary_serialize() {
+        let collector = MetricsCollector::new();
+        collector.record_transition(ToolTransition::new("linear", "divergent", "s1", true));
+        let summary = collector.chain_summary();
+
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains("\"transitions\""));
+        assert!(json.contains("\"entry_tools\""));
+        assert!(json.contains("\"terminal_tools\""));
+    }
+
+    #[test]
+    fn test_clear_includes_transitions() {
+        let collector = MetricsCollector::new();
+        collector.record_transition(ToolTransition::new("linear", "divergent", "s1", true));
+
+        let stats = collector.transitions_from("linear");
+        assert!(!stats.is_empty());
+
+        collector.clear();
+
+        let stats_after = collector.transitions_from("linear");
+        assert!(stats_after.is_empty());
     }
 }

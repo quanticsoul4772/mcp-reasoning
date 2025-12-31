@@ -8,7 +8,13 @@
 //! - [`ModeError`]: Reasoning mode execution errors
 //! - [`ConfigError`]: Configuration errors
 //!
+//! Enhanced error handling:
+//! - [`enhanced::ErrorEnhancer`]: Enhances errors with contextual alternatives
+//! - [`enhanced::ComplexityMetrics`]: Request complexity for error context
+//!
 //! All errors implement `Send + Sync` for async compatibility.
+
+pub mod enhanced;
 
 use thiserror::Error;
 
