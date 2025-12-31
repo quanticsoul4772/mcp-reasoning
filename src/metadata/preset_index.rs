@@ -38,15 +38,14 @@ impl PresetIndex {
             "decision_analysis".into(),
             PresetMetadata {
                 id: "decision_analysis".into(),
-                name: "Complete Decision Analysis".into(),
+                name: "Decision Analysis".into(),
                 description: "Multi-perspective analysis → criteria weighting → final recommendation"
                     .into(),
                 tools: vec![
                     "reasoning_divergent".into(),
                     "reasoning_decision".into(),
-                    "reasoning_reflection".into(),
                 ],
-                estimated_duration_ms: 85_000, // 45k + 20k + 25k
+                estimated_duration_ms: 65_000, // 45k + 20k
                 use_cases: vec![
                     "Complex decisions with trade-offs".into(),
                     "Stakeholder alignment".into(),
@@ -209,24 +208,25 @@ impl PresetIndex {
 
         let mut score = 0.0;
 
-        // Check if we're following the preset pattern
-        for (i, tool) in tool_history.iter().rev().take(3).enumerate() {
-            if let Some(preset_tool) = preset.tools.get(i) {
-                if tool.contains(preset_tool) {
-                    score += 0.4;
-                }
-            }
-        }
-
-        // Bonus for completing most of the preset
-        let completed_count = preset
+        // Count how many preset tools are in history
+        let matching_count = preset
             .tools
             .iter()
-            .filter(|t| tool_history.iter().any(|h| h.contains(t.as_str())))
+            .filter(|t| tool_history.iter().any(|h| h == *t))
             .count();
 
-        if completed_count >= preset.tools.len() - 1 {
-            score += 0.3;
+        if matching_count == 0 {
+            return 0.0;
+        }
+
+        // Base score from tool overlap
+        score = (matching_count as f64) / (preset.tools.len() as f64);
+
+        // Bonus for exact match - prioritize smaller presets that match exactly
+        if matching_count == preset.tools.len() && matching_count == tool_history.len() {
+            score = 1.0;
+        } else if matching_count == preset.tools.len() {
+            score = 0.95;
         }
 
         score

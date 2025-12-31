@@ -105,10 +105,10 @@ fn calculate_complexity_factor(complexity: &ComplexityMetrics) -> f64 {
     }
 
     // Very long content increases processing time
-    if complexity.content_length > 5000 {
-        factor *= 1.2;
-    } else if complexity.content_length > 10_000 {
-        factor *= 1.4;
+    if complexity.content_length > 10_000 {
+        factor *= 1.5;
+    } else if complexity.content_length > 5000 {
+        factor *= 1.3;
     }
 
     factor

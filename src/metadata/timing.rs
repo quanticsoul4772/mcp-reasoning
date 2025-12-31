@@ -245,16 +245,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_timing_database_record_execution() {
-        let storage = SqliteStorage::new_in_memory().await.expect("storage");
-        let timing_db = TimingDatabase::new(Arc::new(storage));
+        let storage = Arc::new(SqliteStorage::new_in_memory().await.expect("storage"));
+        
+        // Create the tool_timing_history table for test
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS tool_timing_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tool_name TEXT NOT NULL,
+                mode_name TEXT,
+                duration_ms INTEGER NOT NULL,
+                complexity_score REAL NOT NULL,
+                timestamp INTEGER NOT NULL
+            )"
+        )
+        .execute(storage.get_pool())
+        .await
+        .expect("create table");
+        
+        let timing_db = TimingDatabase::new(storage);
 
-        let complexity = ComplexityMetrics {
-            content_length: 1000,
-            ..Default::default()
-        };
+        let complexity = 1.5;
 
         timing_db
-            .record_execution("reasoning_linear", Some("linear"), 12_000, complexity)
+            .record_execution("reasoning_linear", Some("standard"), 12_000, complexity)
             .await
             .expect("record");
 
