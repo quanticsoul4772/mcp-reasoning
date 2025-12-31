@@ -302,7 +302,7 @@ impl ReasoningServer {
             if let Ok(metadata) = metadata_builders::build_metadata_for_tree(
                 &self.state.metadata_builder,
                 req.content.as_deref().unwrap_or("").len(),
-                &operation,
+                operation,
                 num_branches,
                 Some(response.session_id.clone()),
                 elapsed_ms,
@@ -897,8 +897,8 @@ impl ReasoningServer {
 
         // Add metadata on success
         if success {
-            let num_nodes = response.nodes.as_ref().map(|n| n.len())
-                .or_else(|| response.conclusions.as_ref().map(|c| c.len()))
+            let num_nodes = response.nodes.as_ref().map(std::vec::Vec::len)
+                .or_else(|| response.conclusions.as_ref().map(std::vec::Vec::len))
                 .unwrap_or(1);
 
             if let Ok(metadata) = metadata_builders::build_metadata_for_graph(
@@ -1052,7 +1052,7 @@ impl ReasoningServer {
             .unwrap_or("");
         let decision_type = req.decision_type.as_deref().unwrap_or("weighted");
 
-        let (mut response, success) = match decision_type {
+        let (response, success) = match decision_type {
             "weighted" => match mode.weighted(content, req.session_id).await {
                 Ok(resp) => (
                     DecisionResponse {
