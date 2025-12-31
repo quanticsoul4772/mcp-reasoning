@@ -4,7 +4,7 @@ An MCP server providing structured reasoning capabilities for Claude Code and Cl
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/Tests-1985%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/Tests-2039%20passing-brightgreen.svg)](#development)
 [![Coverage](https://img.shields.io/badge/Coverage-95%25-brightgreen.svg)](#development)
 
 ```mermaid
@@ -13,7 +13,7 @@ pie showData title Codebase Distribution (38K+ lines)
     "Reasoning Modes" : 35
     "Storage Layer" : 15
     "Server/Transport" : 15
-    "Tests (1,985)" : 30
+    "Tests (2,039)" : 30
     "Config/Utils" : 5
 ```
 
@@ -589,7 +589,7 @@ cargo build
 # Release build (optimized)
 cargo build --release
 
-# Run all tests (1,818 tests)
+# Run all tests (2,039 tests)
 cargo test
 
 # Run specific test module
@@ -669,7 +669,7 @@ src/
 
 - **Zero unsafe code** - `#![forbid(unsafe_code)]` enforced
 - **No panics** - No `.unwrap()` or `.expect()` in production paths
-- **1,818 tests** - Unit, integration, and handler tests (95%+ coverage)
+- **2,039 tests** - Unit, integration, and handler tests (95%+ coverage)
 - **Max 500 lines per file** - Enforced for maintainability
 - **Structured logging** - Via `tracing` crate, logs to stderr
 - **Clippy pedantic** - All pedantic lints enabled as warnings
