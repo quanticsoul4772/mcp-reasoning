@@ -56,6 +56,7 @@
 pub mod anthropic;
 pub mod config;
 pub mod error;
+pub mod metadata;
 pub mod metrics;
 pub mod modes;
 pub mod presets;
