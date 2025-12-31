@@ -38,6 +38,7 @@ pie showData title Codebase Distribution (38K+ lines)
 ## Architecture
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryTextColor': '#000', 'secondaryTextColor': '#000', 'lineColor': '#333', 'textColor': '#000', 'clusterBkg': '#f5f5f5'}}}%%
 flowchart TB
     subgraph Clients
         CC["Claude Code"]
@@ -150,6 +151,7 @@ Add to `claude_desktop_config.json`:
 ### Session Lifecycle
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'actorTextColor': '#000', 'signalTextColor': '#000', 'noteFontColor': '#000', 'actorLineColor': '#333', 'signalColor': '#333', 'labelTextColor': '#000'}}}%%
 sequenceDiagram
     participant C as Claude
     participant S as Server
@@ -230,6 +232,7 @@ sequenceDiagram
 ### Tool Relationships
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryTextColor': '#000', 'secondaryTextColor': '#000', 'lineColor': '#333', 'textColor': '#000', 'clusterBkg': '#f5f5f5'}}}%%
 flowchart TB
     subgraph Routing["Automatic Routing"]
         Auto["reasoning_auto"]
@@ -520,6 +523,7 @@ The server includes a 4-phase optimization loop with safety mechanisms:
 ### Optimization Loop
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryTextColor': '#000', 'secondaryTextColor': '#000', 'lineColor': '#333', 'textColor': '#000'}}}%%
 flowchart LR
     subgraph Loop["Optimization Loop"]
         M["MONITOR<br/>Metrics, Anomaly<br/>Errors, Latency"]
@@ -533,15 +537,16 @@ flowchart LR
     E -->|"results"| L
     L -->|"updates baselines"| M
 
-    style M fill:#e3f2fd
-    style A fill:#fff8e1
-    style E fill:#e8f5e9
-    style L fill:#fce4ec
+    style M fill:#e3f2fd,color:#000
+    style A fill:#fff8e1,color:#000
+    style E fill:#e8f5e9,color:#000
+    style L fill:#fce4ec,color:#000
 ```
 
 ### Safety Mechanisms
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryTextColor': '#000', 'secondaryTextColor': '#000', 'lineColor': '#333', 'textColor': '#000'}}}%%
 flowchart TB
     Action["Proposed Action"] --> CB{"Circuit Breaker"}
     CB -->|"OPEN"| HALT["Halt Operations"]
@@ -554,10 +559,10 @@ flowchart TB
     APPROVE -->|"Low-risk"| EXEC["Execute"]
     HUMAN -->|"Approved"| EXEC
 
-    style CB fill:#ffcdd2
-    style AL fill:#fff9c4
-    style RL fill:#c8e6c9
-    style APPROVE fill:#bbdefb
+    style CB fill:#ffcdd2,color:#000
+    style AL fill:#fff9c4,color:#000
+    style RL fill:#c8e6c9,color:#000
+    style APPROVE fill:#bbdefb,color:#000
 ```
 
 **Phase Details:**
