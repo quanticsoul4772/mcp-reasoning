@@ -16,6 +16,7 @@ use rmcp::handler::server::ServerHandler;
 use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router};
 
+use super::metadata_builders;
 use super::requests::{
     AutoRequest, CheckpointRequest, CounterfactualRequest, DecisionRequest, DetectRequest,
     DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, MctsRequest, MetricsRequest,
@@ -137,7 +138,7 @@ impl ReasoningServer {
         let operation = req.operation.as_deref().unwrap_or("create");
         let session_id = req.session_id.clone().unwrap_or_default();
 
-        let (response, success) = match operation {
+        let (mut response, success) = match operation {
             "create" => {
                 let content = req.content.as_deref().unwrap_or("");
                 match mode.create(content, req.session_id, req.num_branches).await {
@@ -286,9 +287,31 @@ impl ReasoningServer {
             ),
         };
 
+        let elapsed_ms = timer.elapsed_ms();
         self.state.metrics.record(
-            MetricEvent::new("tree", timer.elapsed_ms(), success).with_operation(operation),
+            MetricEvent::new("tree", elapsed_ms, success).with_operation(operation),
         );
+
+        // Add metadata on success
+        if success {
+            let num_branches = match &response.branches {
+                Some(branches) => branches.len(),
+                None => 0,
+            };
+
+            if let Ok(metadata) = metadata_builders::build_metadata_for_tree(
+                &self.state.metadata_builder,
+                req.content.as_deref().unwrap_or("").len(),
+                &operation,
+                num_branches,
+                Some(response.session_id.clone()),
+                elapsed_ms,
+            )
+            .await
+            {
+                response.metadata = Some(metadata);
+            }
+        }
 
         response
     }
@@ -319,28 +342,45 @@ impl ReasoningServer {
             )
             .await;
 
+        let elapsed_ms = timer.elapsed_ms();
         let success = result.is_ok();
         self.state
             .metrics
-            .record(MetricEvent::new("divergent", timer.elapsed_ms(), success));
+            .record(MetricEvent::new("divergent", elapsed_ms, success));
 
         match result {
-            Ok(resp) => DivergentResponse {
-                thought_id: resp.thought_id,
-                session_id: resp.session_id,
-                perspectives: resp
-                    .perspectives
-                    .into_iter()
-                    .map(|p| Perspective {
-                        viewpoint: p.viewpoint,
-                        content: p.content,
-                        novelty_score: p.novelty_score,
-                    })
-                    .collect(),
-                challenged_assumptions: resp.challenged_assumptions,
-                synthesis: resp.synthesis,
-                metadata: None,
-            },
+            Ok(resp) => {
+                let num_perspectives = resp.perspectives.len();
+                let session_id_clone = resp.session_id.clone();
+                
+                let metadata = metadata_builders::build_metadata_for_divergent(
+                    &self.state.metadata_builder,
+                    req.content.len(),
+                    num_perspectives,
+                    rebellion,
+                    Some(session_id_clone),
+                    elapsed_ms,
+                )
+                .await
+                .ok();
+
+                DivergentResponse {
+                    thought_id: resp.thought_id,
+                    session_id: resp.session_id,
+                    perspectives: resp
+                        .perspectives
+                        .into_iter()
+                        .map(|p| Perspective {
+                            viewpoint: p.viewpoint,
+                            content: p.content,
+                            novelty_score: p.novelty_score,
+                        })
+                        .collect(),
+                    challenged_assumptions: resp.challenged_assumptions,
+                    synthesis: resp.synthesis,
+                    metadata,
+                }
+            }
             Err(e) => DivergentResponse {
                 thought_id: String::new(),
                 session_id: input_session_id,
@@ -366,7 +406,7 @@ impl ReasoningServer {
 
         let operation = req.operation.as_deref().unwrap_or("process");
 
-        let (response, success) = match operation {
+        let (mut response, success) = match operation {
             "process" => {
                 let content = req.content.as_deref().unwrap_or("");
                 match mode.process(content, req.session_id).await {
@@ -457,9 +497,30 @@ impl ReasoningServer {
             ),
         };
 
+        let elapsed_ms = timer.elapsed_ms();
         self.state.metrics.record(
-            MetricEvent::new("reflection", timer.elapsed_ms(), success).with_operation(operation),
+            MetricEvent::new("reflection", elapsed_ms, success).with_operation(operation),
         );
+
+        // Add metadata on success
+        if success {
+            let iterations = response.iterations_used.unwrap_or(1) as usize;
+            let quality = response.quality_score;
+
+            if let Ok(metadata) = metadata_builders::build_metadata_for_reflection(
+                &self.state.metadata_builder,
+                req.content.as_deref().unwrap_or("").len(),
+                operation,
+                iterations,
+                quality,
+                response.session_id.clone(),
+                elapsed_ms,
+            )
+            .await
+            {
+                response.metadata = Some(metadata);
+            }
+        }
 
         response
     }
@@ -477,7 +538,7 @@ impl ReasoningServer {
         );
 
         let operation = req.operation.as_str();
-        let (response, success) = match operation {
+        let (mut response, success) = match operation {
             "create" => {
                 let name = req.name.as_deref().unwrap_or("checkpoint");
                 let description = req.description.as_deref();
@@ -818,20 +879,43 @@ impl ReasoningServer {
             }
         };
 
+        let elapsed_ms = timer.elapsed_ms();
         let success = result.is_ok();
         self.state.metrics.record(
-            MetricEvent::new("graph", timer.elapsed_ms(), success).with_operation(&operation),
+            MetricEvent::new("graph", elapsed_ms, success).with_operation(&operation),
         );
 
-        result.unwrap_or_else(|e| GraphResponse {
-            session_id,
+        let mut response = result.unwrap_or_else(|e| GraphResponse {
+            session_id: session_id.clone(),
             node_id: None,
             nodes: None,
             aggregated_insight: Some(format!("ERROR: {e}")),
             conclusions: None,
             state: None,
             metadata: None,
-        })
+        });
+
+        // Add metadata on success
+        if success {
+            let num_nodes = response.nodes.as_ref().map(|n| n.len())
+                .or_else(|| response.conclusions.as_ref().map(|c| c.len()))
+                .unwrap_or(1);
+
+            if let Ok(metadata) = metadata_builders::build_metadata_for_graph(
+                &self.state.metadata_builder,
+                content.len(),
+                &operation,
+                num_nodes,
+                Some(session_id),
+                elapsed_ms,
+            )
+            .await
+            {
+                response.metadata = Some(metadata);
+            }
+        }
+
+        response
     }
 
     #[tool(
@@ -1467,7 +1551,7 @@ impl ReasoningServer {
         let content = req.content.as_deref().unwrap_or("");
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
-        let (response, success) = match operation {
+        let (mut response, success) = match operation {
             "explore" => match mode.explore(content, req.session_id).await {
                 Ok(resp) => (
                     MctsResponse {

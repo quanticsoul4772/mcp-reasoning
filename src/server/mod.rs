@@ -48,6 +48,7 @@
 //! ```
 
 mod mcp;
+mod metadata_builders;
 mod params;
 mod requests;
 mod responses;
