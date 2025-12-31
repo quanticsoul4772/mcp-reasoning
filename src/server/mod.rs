@@ -42,7 +42,12 @@
 //! };
 //! let metrics = Arc::new(MetricsCollector::new());
 //! let si_handle = ManagerHandle::for_testing(); // In production, use SelfImprovementManager::new()
-//! let state = AppState::new(storage, client, config, metrics, si_handle);
+//! let metadata_builder = mcp_reasoning::metadata::MetadataBuilder::new(
+//!     Arc::new(mcp_reasoning::metadata::TimingDatabase::new(Arc::new(storage.clone()))),
+//!     Arc::new(mcp_reasoning::metadata::PresetIndex::build()),
+//!     30000,
+//! );
+//! let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
 //! # Ok(())
 //! # }
 //! ```
