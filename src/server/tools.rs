@@ -2483,6 +2483,7 @@ mod tests {
                 status: "active".to_string(),
             }]),
             recommendation: Some("explore branch b1".to_string()),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -2500,6 +2501,7 @@ mod tests {
             }],
             challenged_assumptions: Some(vec!["assumption1".to_string()]),
             synthesis: Some("unified insight".to_string()),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -2517,7 +2519,7 @@ mod tests {
             recommendations: Some(vec!["add examples".to_string()]),
             refined_content: Some("improved reasoning".to_string()),
             coherence_score: Some(0.9),
-        metadata: None,metadata: None,};
+        metadata: None,};
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
     }
@@ -2547,6 +2549,7 @@ mod tests {
             confidence: 0.9,
             rationale: "simple query".to_string(),
             result: serde_json::json!({"status": "ok"}),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -2591,6 +2594,7 @@ mod tests {
             }],
             summary: Some("1 bias detected".to_string()),
             overall_quality: Some(0.7),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -2683,6 +2687,7 @@ mod tests {
                 quality_drop: None,
             }),
             executed: Some(false),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -2705,6 +2710,7 @@ mod tests {
             key_differences: vec!["difference 1".to_string()],
             confidence: 0.85,
             assumptions: vec!["assumption 1".to_string()],
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -4983,6 +4989,7 @@ mod tests {
                     status: "active".to_string(),
                 }]),
                 recommendation: Some("Rec".to_string()),
+                metadata: None,
             };
             let _ = tree_resp.into_contents();
 
@@ -4996,6 +5003,7 @@ mod tests {
                 }],
                 challenged_assumptions: Some(vec!["Assumption".to_string()]),
                 synthesis: Some("Synthesis".to_string()),
+                metadata: None,
             };
             let _ = divergent_resp.into_contents();
 
@@ -5009,7 +5017,7 @@ mod tests {
                 recommendations: Some(vec!["Improve".to_string()]),
                 refined_content: Some("Refined".to_string()),
                 coherence_score: Some(0.85),
-            metadata: None,metadata: None,};
+            metadata: None,};
             let _ = reflection_resp.into_contents();
 
             let checkpoint_resp = CheckpointResponse {
@@ -5031,6 +5039,7 @@ mod tests {
                 confidence: 0.9,
                 rationale: "Rationale".to_string(),
                 result: serde_json::json!({}),
+                metadata: None,
             };
             let _ = auto_resp.into_contents();
 
@@ -5041,7 +5050,7 @@ mod tests {
                 aggregated_insight: None,
                 conclusions: None,
                 state: None,
-            metadata: None,metadata: None,};
+            metadata: None,};
             let _ = graph_resp.into_contents();
 
             let detect_resp = DetectResponse {
@@ -5058,7 +5067,7 @@ mod tests {
                 conflicts: None,
                 alignments: None,
                 rationale: None,
-            metadata: None,metadata: None,};
+            metadata: None,};
             let _ = decision_resp.into_contents();
 
             let evidence_resp = EvidenceResponse {
@@ -5070,7 +5079,7 @@ mod tests {
                 entropy: None,
                 confidence_interval: None,
                 synthesis: None,
-            metadata: None,metadata: None,};
+            metadata: None,};
             let _ = evidence_resp.into_contents();
 
             let timeline_resp = TimelineResponse {
@@ -5079,7 +5088,7 @@ mod tests {
                 branches: None,
                 comparison: None,
                 merged_content: None,
-            metadata: None,metadata: None,};
+            metadata: None,};
             let _ = timeline_resp.into_contents();
 
             let mcts_resp = MctsResponse {
@@ -5108,7 +5117,7 @@ mod tests {
                 presets: None,
                 execution_result: None,
                 session_id: None,
-            metadata: None,metadata: None,};
+            metadata: None,};
             let _ = preset_resp.into_contents();
 
             let metrics_resp = MetricsResponse {

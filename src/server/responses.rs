@@ -789,6 +789,7 @@ mod tests {
                 status: "active".to_string(),
             }]),
             recommendation: Some("Explore branch 1".to_string()),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -808,6 +809,7 @@ mod tests {
             }],
             challenged_assumptions: Some(vec!["Assumption 1".to_string()]),
             synthesis: Some("Unified view".to_string()),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -847,6 +849,7 @@ mod tests {
                 thought_count: 5,
             }]),
             restored_state: None,
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -861,6 +864,7 @@ mod tests {
             confidence: 0.9,
             rationale: "Simple analysis".to_string(),
             result: serde_json::json!({"key": "value"}),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -888,6 +892,7 @@ mod tests {
                 max_depth: 3,
                 pruned_count: 2,
             }),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -909,6 +914,7 @@ mod tests {
             }],
             summary: Some("1 bias found".to_string()),
             overall_quality: Some(0.6),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -929,6 +935,7 @@ mod tests {
             conflicts: None,
             alignments: None,
             rationale: Some("Best fit".to_string()),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -955,6 +962,7 @@ mod tests {
                 upper: 0.9,
             }),
             synthesis: Some("Strong evidence".to_string()),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -975,6 +983,7 @@ mod tests {
             }]),
             comparison: None,
             merged_content: None,
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -1000,6 +1009,7 @@ mod tests {
                 quality_drop: None,
             }),
             executed: Some(false),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -1024,6 +1034,7 @@ mod tests {
             key_differences: vec!["Diff 1".to_string()],
             confidence: 0.75,
             assumptions: vec!["Assumption 1".to_string()],
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -1043,6 +1054,7 @@ mod tests {
             }]),
             execution_result: None,
             session_id: Some("s-1".to_string()),
+            metadata: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
