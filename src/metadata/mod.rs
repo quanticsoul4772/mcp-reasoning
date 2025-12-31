@@ -39,7 +39,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Response metadata for tool discoverability.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub struct ResponseMetadata {
     /// Timing predictions and timeout analysis.
     pub timing: TimingMetadata,
@@ -63,7 +63,7 @@ pub struct TimingMetadata {
 }
 
 /// Tool and preset suggestions.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, JsonSchema)]
 pub struct SuggestionMetadata {
     /// Suggested next tools to call.
     pub next_tools: Vec<ToolSuggestion>,
@@ -119,7 +119,6 @@ pub enum ConfidenceLevel {
     #[default]
     Low,
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,9 @@
 //! Metadata builder helper functions for tool responses.
 
 use crate::error::AppError;
-use crate::metadata::{ComplexityMetrics, MetadataBuilder, MetadataRequest, ResponseMetadata, ResultContext};
+use crate::metadata::{
+    ComplexityMetrics, MetadataBuilder, MetadataRequest, ResponseMetadata, ResultContext,
+};
 
 /// Build metadata for divergent reasoning response.
 pub async fn build_metadata_for_divergent(
@@ -24,7 +26,11 @@ pub async fn build_metadata_for_divergent(
         .timing_db()
         .record_execution(
             "reasoning_divergent",
-            if force_rebellion { Some("rebellion") } else { Some("standard") },
+            if force_rebellion {
+                Some("rebellion")
+            } else {
+                Some("standard")
+            },
             elapsed_ms,
             complexity.clone(),
         )
@@ -33,7 +39,11 @@ pub async fn build_metadata_for_divergent(
     // Build metadata request
     let metadata_req = MetadataRequest {
         tool_name: "reasoning_divergent".into(),
-        mode_name: Some(if force_rebellion { "rebellion".into() } else { "standard".into() }),
+        mode_name: Some(if force_rebellion {
+            "rebellion".into()
+        } else {
+            "standard".into()
+        }),
         complexity,
         result_context: ResultContext {
             num_outputs: num_perspectives,

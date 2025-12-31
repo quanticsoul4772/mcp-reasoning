@@ -5,6 +5,7 @@
 //! - Latency measurements
 //! - Success/failure rates
 //! - Query interfaces for metrics data
+//! - Tool transition tracking for chain analysis
 //!
 //! # Example
 //!
@@ -24,6 +25,9 @@
 //! assert!(summary.by_mode.contains_key("linear"));
 //! assert!(summary.by_mode.contains_key("tree"));
 //! ```
+
+// Allow intentional numeric casts for metrics calculations
+#![allow(clippy::cast_lossless, clippy::cast_possible_wrap)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -395,9 +399,10 @@ impl MetricsCollector {
 
         for transition in &transitions {
             if transition.from_tool == tool {
-                let entry = stats_map
-                    .entry(transition.to_tool.clone())
-                    .or_insert((0, 0, Vec::new()));
+                let entry =
+                    stats_map
+                        .entry(transition.to_tool.clone())
+                        .or_insert((0, 0, Vec::new()));
                 entry.0 += 1; // count
                 if transition.success {
                     entry.1 += 1; // successful count
@@ -476,7 +481,9 @@ impl MetricsCollector {
 
         for transition in transitions {
             let from_entry = matrix.entry(transition.from_tool.clone()).or_default();
-            let to_entry = from_entry.entry(transition.to_tool.clone()).or_insert((0, 0));
+            let to_entry = from_entry
+                .entry(transition.to_tool.clone())
+                .or_insert((0, 0));
             to_entry.0 += 1;
             if transition.success {
                 to_entry.1 += 1;
@@ -579,7 +586,7 @@ impl MetricsCollector {
             let mut timestamps: Vec<u64> = vec![session_transitions[0].timestamp];
             let mut successes: Vec<bool> = vec![];
 
-            for t in session_transitions.iter() {
+            for t in session_transitions {
                 tools.push(t.to_tool.clone());
                 timestamps.push(t.timestamp);
                 successes.push(t.success);
@@ -594,8 +601,7 @@ impl MetricsCollector {
                     .saturating_sub(*timestamps.get(window_start).unwrap_or(&0));
                 let success_count = successes
                     .get(window_start..window_start + 2)
-                    .map(|s| s.iter().filter(|&&x| x).count() as u32)
-                    .unwrap_or(0);
+                    .map_or(0, |s| s.iter().filter(|&&x| x).count() as u32);
 
                 let entry = chain_counts.entry(chain).or_insert((0, 0, 0));
                 entry.0 += 1; // occurrences
@@ -996,7 +1002,11 @@ mod tests {
         let chain = &summary.common_chains[0];
         assert_eq!(
             chain.tools,
-            vec!["linear".to_string(), "divergent".to_string(), "decision".to_string()]
+            vec![
+                "linear".to_string(),
+                "divergent".to_string(),
+                "decision".to_string()
+            ]
         );
         assert_eq!(chain.occurrences, 6);
     }

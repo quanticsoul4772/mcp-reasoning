@@ -340,9 +340,7 @@ mod tests {
 
         let suggestions = engine.suggest_next_tools("reasoning_divergent", &ctx);
 
-        assert!(suggestions
-            .iter()
-            .any(|s| s.tool == "reasoning_checkpoint"));
+        assert!(suggestions.iter().any(|s| s.tool == "reasoning_checkpoint"));
         assert!(!suggestions.iter().any(|s| s.tool == "reasoning_decision")); // <3 outputs
     }
 
@@ -359,9 +357,7 @@ mod tests {
 
         assert!(suggestions.iter().any(|s| s.tool == "reasoning_checkpoint"));
         assert!(suggestions.iter().any(|s| s.tool == "reasoning_decision"));
-        assert!(suggestions
-            .iter()
-            .any(|s| s.tool == "reasoning_reflection"));
+        assert!(suggestions.iter().any(|s| s.tool == "reasoning_reflection"));
     }
 
     #[test]
@@ -413,12 +409,8 @@ mod tests {
 
         let suggestions = engine.suggest_next_tools("reasoning_auto", &ctx);
 
-        assert!(suggestions
-            .iter()
-            .any(|s| s.tool == "reasoning_checkpoint"));
-        assert!(suggestions
-            .iter()
-            .any(|s| s.tool == "reasoning_reflection"));
+        assert!(suggestions.iter().any(|s| s.tool == "reasoning_checkpoint"));
+        assert!(suggestions.iter().any(|s| s.tool == "reasoning_reflection"));
     }
 
     #[test]
@@ -431,9 +423,7 @@ mod tests {
 
         let suggestions = engine.suggest_next_tools("reasoning_detect", &ctx);
 
-        assert!(suggestions
-            .iter()
-            .any(|s| s.tool == "reasoning_reflection"));
+        assert!(suggestions.iter().any(|s| s.tool == "reasoning_reflection"));
         assert!(suggestions.iter().any(|s| s.tool == "reasoning_linear"));
     }
 
@@ -447,9 +437,7 @@ mod tests {
 
         let suggestions = engine.suggest_next_tools("reasoning_detect", &ctx);
 
-        assert!(!suggestions
-            .iter()
-            .any(|s| s.tool == "reasoning_reflection"));
+        assert!(!suggestions.iter().any(|s| s.tool == "reasoning_reflection"));
         assert!(suggestions.iter().any(|s| s.tool == "reasoning_linear"));
     }
 
@@ -461,9 +449,7 @@ mod tests {
         let suggestions = engine.suggest_next_tools("reasoning_timeline", &ctx);
 
         assert!(suggestions.iter().any(|s| s.tool == "reasoning_decision"));
-        assert!(suggestions
-            .iter()
-            .any(|s| s.tool == "reasoning_checkpoint"));
+        assert!(suggestions.iter().any(|s| s.tool == "reasoning_checkpoint"));
     }
 
     #[test]
@@ -498,9 +484,7 @@ mod tests {
 
         let suggestions = engine.suggest_next_tools("reasoning_preset", &ctx);
 
-        assert!(suggestions
-            .iter()
-            .any(|s| s.tool == "reasoning_reflection"));
+        assert!(suggestions.iter().any(|s| s.tool == "reasoning_reflection"));
     }
 
     #[test]
@@ -513,9 +497,7 @@ mod tests {
 
         let suggestions = engine.suggest_next_tools("reasoning_preset", &ctx);
 
-        assert!(suggestions
-            .iter()
-            .any(|s| s.tool == "reasoning_checkpoint"));
+        assert!(suggestions.iter().any(|s| s.tool == "reasoning_checkpoint"));
     }
 
     #[test]

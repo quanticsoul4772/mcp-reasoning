@@ -1,5 +1,8 @@
 //! Default timing estimates for tools when no historical data is available.
 
+// Allow intentional numeric casts for timing calculations
+#![allow(clippy::cast_sign_loss)]
+
 use super::timing::ComplexityMetrics;
 
 /// Get default timing estimate for a tool.
@@ -35,8 +38,12 @@ pub fn get_default_timing(tool: &str, complexity: &ComplexityMetrics) -> u64 {
 fn get_base_time(tool: &str) -> u64 {
     match tool {
         // Instant tools (<1s)
-        "reasoning_checkpoint" | "reasoning_si_status" | "reasoning_si_diagnoses"
-        | "reasoning_si_approve" | "reasoning_si_reject" | "reasoning_si_rollback"
+        "reasoning_checkpoint"
+        | "reasoning_si_status"
+        | "reasoning_si_diagnoses"
+        | "reasoning_si_approve"
+        | "reasoning_si_reject"
+        | "reasoning_si_rollback"
         | "reasoning_si_trigger" => 100,
 
         // Fast tools (1-5s)
@@ -137,10 +144,7 @@ mod tests {
     #[test]
     fn test_standard_tools() {
         let complexity = simple_complexity();
-        assert_eq!(
-            get_default_timing("reasoning_linear", &complexity),
-            12_000
-        );
+        assert_eq!(get_default_timing("reasoning_linear", &complexity), 12_000);
         assert_eq!(get_default_timing("reasoning_auto", &complexity), 10_000);
     }
 

@@ -288,16 +288,13 @@ impl ReasoningServer {
         };
 
         let elapsed_ms = timer.elapsed_ms();
-        self.state.metrics.record(
-            MetricEvent::new("tree", elapsed_ms, success).with_operation(operation),
-        );
+        self.state
+            .metrics
+            .record(MetricEvent::new("tree", elapsed_ms, success).with_operation(operation));
 
         // Add metadata on success
         if success {
-            let num_branches = match &response.branches {
-                Some(branches) => branches.len(),
-                None => 0,
-            };
+            let num_branches = response.branches.as_ref().map_or(0, Vec::len);
 
             if let Ok(metadata) = metadata_builders::build_metadata_for_tree(
                 &self.state.metadata_builder,
@@ -352,7 +349,7 @@ impl ReasoningServer {
             Ok(resp) => {
                 let num_perspectives = resp.perspectives.len();
                 let session_id_clone = resp.session_id.clone();
-                
+
                 let metadata = metadata_builders::build_metadata_for_divergent(
                     &self.state.metadata_builder,
                     req.content.len(),
@@ -426,7 +423,8 @@ impl ReasoningServer {
                             ),
                             refined_content: Some(resp.refined_reasoning),
                             coherence_score: None,
-                            metadata: None,},
+                            metadata: None,
+                        },
                         true,
                     ),
                     Err(e) => (
@@ -440,7 +438,8 @@ impl ReasoningServer {
                             recommendations: None,
                             refined_content: None,
                             coherence_score: None,
-                        metadata: None,},
+                            metadata: None,
+                        },
                         false,
                     ),
                 }
@@ -460,7 +459,8 @@ impl ReasoningServer {
                             recommendations: Some(resp.recommendations),
                             refined_content: None,
                             coherence_score: Some(resp.session_assessment.coherence),
-                            metadata: None,},
+                            metadata: None,
+                        },
                         true,
                     ),
                     Err(e) => (
@@ -474,7 +474,8 @@ impl ReasoningServer {
                             recommendations: None,
                             refined_content: None,
                             coherence_score: None,
-                        metadata: None,},
+                            metadata: None,
+                        },
                         false,
                     ),
                 }
@@ -492,15 +493,16 @@ impl ReasoningServer {
                     recommendations: None,
                     refined_content: None,
                     coherence_score: None,
-                metadata: None,},
+                    metadata: None,
+                },
                 false,
             ),
         };
 
         let elapsed_ms = timer.elapsed_ms();
-        self.state.metrics.record(
-            MetricEvent::new("reflection", elapsed_ms, success).with_operation(operation),
-        );
+        self.state
+            .metrics
+            .record(MetricEvent::new("reflection", elapsed_ms, success).with_operation(operation));
 
         // Add metadata on success
         if success {
@@ -563,7 +565,8 @@ impl ReasoningServer {
                             checkpoint_id: Some(resp.checkpoint_id),
                             checkpoints: None,
                             restored_state: None,
-                            metadata: None,},
+                            metadata: None,
+                        },
                         true,
                     ),
                     Err(e) => (
@@ -572,7 +575,8 @@ impl ReasoningServer {
                             checkpoint_id: None,
                             checkpoints: None,
                             restored_state: Some(serde_json::json!({"error": e.to_string()})),
-                            metadata: None,},
+                            metadata: None,
+                        },
                         false,
                     ),
                 }
@@ -595,7 +599,8 @@ impl ReasoningServer {
                                 .collect(),
                         ),
                         restored_state: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -604,7 +609,8 @@ impl ReasoningServer {
                         checkpoint_id: None,
                         checkpoints: None,
                         restored_state: Some(serde_json::json!({"error": e.to_string()})),
-                    metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -636,7 +642,8 @@ impl ReasoningServer {
                             checkpoint_id: None,
                             checkpoints: None,
                             restored_state: Some(serde_json::json!({"error": e.to_string()})),
-                            metadata: None,},
+                            metadata: None,
+                        },
                         false,
                     ),
                 }
@@ -649,7 +656,8 @@ impl ReasoningServer {
                     restored_state: Some(serde_json::json!({
                         "error": format!("Unknown operation: {}. Use 'create', 'list', or 'restore'.", req.operation)
                     })),
-                    metadata: None,},
+                    metadata: None,
+                },
                 false,
             ),
         };
@@ -875,15 +883,16 @@ impl ReasoningServer {
                     aggregated_insight: Some(format!("ERROR: unknown operation: {}", operation)),
                     conclusions: None,
                     state: None,
-                    metadata: None,};
+                    metadata: None,
+                };
             }
         };
 
         let elapsed_ms = timer.elapsed_ms();
         let success = result.is_ok();
-        self.state.metrics.record(
-            MetricEvent::new("graph", elapsed_ms, success).with_operation(&operation),
-        );
+        self.state
+            .metrics
+            .record(MetricEvent::new("graph", elapsed_ms, success).with_operation(&operation));
 
         let mut response = result.unwrap_or_else(|e| GraphResponse {
             session_id: session_id.clone(),
@@ -897,7 +906,10 @@ impl ReasoningServer {
 
         // Add metadata on success
         if success {
-            let num_nodes = response.nodes.as_ref().map(std::vec::Vec::len)
+            let num_nodes = response
+                .nodes
+                .as_ref()
+                .map(std::vec::Vec::len)
                 .or_else(|| response.conclusions.as_ref().map(std::vec::Vec::len))
                 .unwrap_or(1);
 
@@ -955,7 +967,8 @@ impl ReasoningServer {
                             resp.overall_assessment.bias_count, resp.overall_assessment.most_severe
                         )),
                         overall_quality: Some(resp.overall_assessment.reasoning_quality),
-                        metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -1075,7 +1088,8 @@ impl ReasoningServer {
                         conflicts: None,
                         alignments: None,
                         rationale: Some(resp.sensitivity_notes),
-                    metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -1086,7 +1100,8 @@ impl ReasoningServer {
                         conflicts: None,
                         alignments: None,
                         rationale: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -1112,7 +1127,8 @@ impl ReasoningServer {
                         conflicts: None,
                         alignments: None,
                         rationale: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -1123,7 +1139,8 @@ impl ReasoningServer {
                         conflicts: None,
                         alignments: None,
                         rationale: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -1149,7 +1166,8 @@ impl ReasoningServer {
                         conflicts: None,
                         alignments: None,
                         rationale: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -1160,7 +1178,8 @@ impl ReasoningServer {
                         conflicts: None,
                         alignments: None,
                         rationale: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -1200,7 +1219,8 @@ impl ReasoningServer {
                                 .collect(),
                         ),
                         rationale: Some(resp.balanced_recommendation.rationale),
-                    metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -1211,7 +1231,8 @@ impl ReasoningServer {
                         conflicts: None,
                         alignments: None,
                         rationale: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -1223,7 +1244,8 @@ impl ReasoningServer {
                     conflicts: None,
                     alignments: None,
                     rationale: None,
-                metadata: None,},
+                    metadata: None,
+                },
                 false,
             ),
         };
@@ -1282,7 +1304,8 @@ impl ReasoningServer {
                             resp.overall_assessment.key_weaknesses.join(", "),
                             resp.overall_assessment.gaps.join(", ")
                         )),
-                    metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -1295,7 +1318,8 @@ impl ReasoningServer {
                         entropy: None,
                         confidence_interval: None,
                         synthesis: Some(format!("ERROR: {e}")),
-                        metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -1328,7 +1352,8 @@ impl ReasoningServer {
                                 resp.belief_update.magnitude,
                                 resp.sensitivity
                             )),
-                        metadata: None,},
+                            metadata: None,
+                        },
                         true,
                     )
                 }
@@ -1342,7 +1367,8 @@ impl ReasoningServer {
                         entropy: None,
                         confidence_interval: None,
                         synthesis: Some(format!("ERROR: {e}")),
-                        metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -1356,7 +1382,8 @@ impl ReasoningServer {
                     entropy: None,
                     confidence_interval: None,
                     synthesis: Some(format!("Unknown evidence type: {evidence_type}")),
-                    metadata: None,},
+                    metadata: None,
+                },
                 false,
             ),
         };
@@ -1392,7 +1419,8 @@ impl ReasoningServer {
                         branches: None,
                         comparison: None,
                         merged_content: None,
-                        metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -1402,7 +1430,8 @@ impl ReasoningServer {
                         branches: None,
                         comparison: None,
                         merged_content: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -1436,7 +1465,8 @@ impl ReasoningServer {
                             convergence_opportunities: resp.comparison.key_differences,
                         }),
                         merged_content: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -1446,7 +1476,8 @@ impl ReasoningServer {
                         branches: None,
                         comparison: None,
                         merged_content: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -1476,7 +1507,8 @@ impl ReasoningServer {
                             convergence_opportunities: resp.branches_compared,
                         }),
                         merged_content: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -1486,7 +1518,8 @@ impl ReasoningServer {
                         branches: None,
                         comparison: None,
                         merged_content: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -1502,7 +1535,8 @@ impl ReasoningServer {
                             resp.synthesis,
                             resp.recommendations.join("; ")
                         )),
-                    metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 ),
                 Err(e) => (
@@ -1512,7 +1546,8 @@ impl ReasoningServer {
                         branches: None,
                         comparison: None,
                         merged_content: None,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     false,
                 ),
             },
@@ -1523,7 +1558,8 @@ impl ReasoningServer {
                     branches: None,
                     comparison: None,
                     merged_content: None,
-                metadata: None,},
+                    metadata: None,
+                },
                 false,
             ),
         };
@@ -1761,7 +1797,8 @@ impl ReasoningServer {
                         presets: Some(presets),
                         execution_result: None,
                         session_id: None,
-                        metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 )
             }
@@ -1784,7 +1821,8 @@ impl ReasoningServer {
                             }),
                         }),
                         session_id: req.session_id,
-                    metadata: None,};
+                        metadata: None,
+                    };
                 };
 
                 let Some(preset) = self.state.presets.get(&preset_id) else {
@@ -1802,7 +1840,8 @@ impl ReasoningServer {
                             final_output: serde_json::json!({"error": "preset not found"}),
                         }),
                         session_id: req.session_id,
-                    metadata: None,};
+                        metadata: None,
+                    };
                 };
 
                 // Return preset info - actual execution would require running each step
@@ -1838,7 +1877,8 @@ impl ReasoningServer {
                             }),
                         }),
                         session_id: req.session_id,
-                    metadata: None,},
+                        metadata: None,
+                    },
                     true,
                 )
             }
@@ -1858,7 +1898,8 @@ impl ReasoningServer {
                         }),
                     }),
                     session_id: req.session_id,
-                metadata: None,},
+                    metadata: None,
+                },
                 false,
             ),
         };
@@ -2328,7 +2369,12 @@ impl ReasoningServer {
         self.state
             .metadata_builder
             .timing_db()
-            .record_execution("reasoning_linear", Some("linear"), elapsed_ms, complexity.clone())
+            .record_execution(
+                "reasoning_linear",
+                Some("linear"),
+                elapsed_ms,
+                complexity.clone(),
+            )
             .await?;
 
         // Build metadata request
@@ -2394,7 +2440,8 @@ mod tests {
             content: "reasoning content".to_string(),
             confidence: 0.85,
             next_step: Some("continue".to_string()),
-        metadata: None,};
+            metadata: None,
+        };
         let json = serde_json::to_string(&response).expect("serialize");
         assert!(json.contains("thought_id"));
     }
@@ -2462,7 +2509,8 @@ mod tests {
             content: "reasoning content".to_string(),
             confidence: 0.85,
             next_step: Some("continue".to_string()),
-        metadata: None,};
+            metadata: None,
+        };
         let contents = response.clone().into_contents();
         assert_eq!(contents.len(), 1);
         // Verify it produces valid JSON content
@@ -2519,7 +2567,8 @@ mod tests {
             recommendations: Some(vec!["add examples".to_string()]),
             refined_content: Some("improved reasoning".to_string()),
             coherence_score: Some(0.9),
-        metadata: None,};
+            metadata: None,
+        };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
     }
@@ -2537,7 +2586,8 @@ mod tests {
                 thought_count: 5,
             }]),
             restored_state: None,
-        metadata: None,};
+            metadata: None,
+        };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
     }
@@ -2575,7 +2625,8 @@ mod tests {
                 max_depth: 3,
                 pruned_count: 2,
             }),
-        metadata: None,};
+            metadata: None,
+        };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
     }
@@ -2618,7 +2669,8 @@ mod tests {
             conflicts: Some(vec!["resource allocation".to_string()]),
             alignments: Some(vec!["shared goals".to_string()]),
             rationale: Some("highest weighted score".to_string()),
-        metadata: None,};
+            metadata: None,
+        };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
     }
@@ -2642,7 +2694,8 @@ mod tests {
                 upper: 0.9,
             }),
             synthesis: Some("strong evidence".to_string()),
-        metadata: None,};
+            metadata: None,
+        };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
     }
@@ -2664,7 +2717,8 @@ mod tests {
                 convergence_opportunities: vec!["merge here".to_string()],
             }),
             merged_content: None,
-        metadata: None,};
+            metadata: None,
+        };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
     }
@@ -2728,7 +2782,8 @@ mod tests {
             }]),
             execution_result: None,
             session_id: Some("s1".to_string()),
-        metadata: None,};
+            metadata: None,
+        };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
     }
@@ -2906,7 +2961,21 @@ mod tests {
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_si_handle(&storage, metrics.clone());
         let client = AnthropicClient::new("test-key", ClientConfig::default()).unwrap();
-        let metadata_builder = crate::metadata::MetadataBuilder::new(Arc::new(crate::metadata::TimingDatabase::new(Arc::new(storage.clone()))), Arc::new(crate::metadata::PresetIndex::build()), 30000); let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
+        let metadata_builder = crate::metadata::MetadataBuilder::new(
+            Arc::new(crate::metadata::TimingDatabase::new(Arc::new(
+                storage.clone(),
+            ))),
+            Arc::new(crate::metadata::PresetIndex::build()),
+            30000,
+        );
+        let state = AppState::new(
+            storage,
+            client,
+            config,
+            metrics,
+            si_handle,
+            metadata_builder,
+        );
         ReasoningServer::new(Arc::new(state))
     }
 
@@ -2932,7 +3001,21 @@ mod tests {
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_si_handle(&storage, metrics.clone());
         let client = AnthropicClient::new("test-key", ClientConfig::default()).unwrap();
-        let metadata_builder = crate::metadata::MetadataBuilder::new(Arc::new(crate::metadata::TimingDatabase::new(Arc::new(storage.clone()))), Arc::new(crate::metadata::PresetIndex::build()), 30000); let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
+        let metadata_builder = crate::metadata::MetadataBuilder::new(
+            Arc::new(crate::metadata::TimingDatabase::new(Arc::new(
+                storage.clone(),
+            ))),
+            Arc::new(crate::metadata::PresetIndex::build()),
+            30000,
+        );
+        let state = AppState::new(
+            storage,
+            client,
+            config,
+            metrics,
+            si_handle,
+            metadata_builder,
+        );
         ReasoningServer::new(Arc::new(state))
     }
 
@@ -3233,7 +3316,21 @@ mod tests {
                 .with_max_retries(0)
                 .with_timeout_ms(5000);
             let client = AnthropicClient::new("test-key", client_config).unwrap();
-            let metadata_builder = crate::metadata::MetadataBuilder::new(Arc::new(crate::metadata::TimingDatabase::new(Arc::new(storage.clone()))), Arc::new(crate::metadata::PresetIndex::build()), 30000); let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
+            let metadata_builder = crate::metadata::MetadataBuilder::new(
+                Arc::new(crate::metadata::TimingDatabase::new(Arc::new(
+                    storage.clone(),
+                ))),
+                Arc::new(crate::metadata::PresetIndex::build()),
+                30000,
+            );
+            let state = AppState::new(
+                storage,
+                client,
+                config,
+                metrics,
+                si_handle,
+                metadata_builder,
+            );
             ReasoningServer::new(Arc::new(state))
         }
 
@@ -4976,7 +5073,8 @@ mod tests {
                 content: "Analysis".to_string(),
                 confidence: 0.8,
                 next_step: Some("Continue".to_string()),
-            metadata: None,};
+                metadata: None,
+            };
             let _ = linear_resp.into_contents();
 
             let tree_resp = TreeResponse {
@@ -5017,7 +5115,8 @@ mod tests {
                 recommendations: Some(vec!["Improve".to_string()]),
                 refined_content: Some("Refined".to_string()),
                 coherence_score: Some(0.85),
-            metadata: None,};
+                metadata: None,
+            };
             let _ = reflection_resp.into_contents();
 
             let checkpoint_resp = CheckpointResponse {
@@ -5031,7 +5130,8 @@ mod tests {
                     thought_count: 5,
                 }]),
                 restored_state: None,
-            metadata: None,};
+                metadata: None,
+            };
             let _ = checkpoint_resp.into_contents();
 
             let auto_resp = AutoResponse {
@@ -5050,14 +5150,16 @@ mod tests {
                 aggregated_insight: None,
                 conclusions: None,
                 state: None,
-            metadata: None,};
+                metadata: None,
+            };
             let _ = graph_resp.into_contents();
 
             let detect_resp = DetectResponse {
                 detections: vec![],
                 summary: Some("Summary".to_string()),
                 overall_quality: Some(0.8),
-            metadata: None,};
+                metadata: None,
+            };
             let _ = detect_resp.into_contents();
 
             let decision_resp = DecisionResponse {
@@ -5067,7 +5169,8 @@ mod tests {
                 conflicts: None,
                 alignments: None,
                 rationale: None,
-            metadata: None,};
+                metadata: None,
+            };
             let _ = decision_resp.into_contents();
 
             let evidence_resp = EvidenceResponse {
@@ -5079,7 +5182,8 @@ mod tests {
                 entropy: None,
                 confidence_interval: None,
                 synthesis: None,
-            metadata: None,};
+                metadata: None,
+            };
             let _ = evidence_resp.into_contents();
 
             let timeline_resp = TimelineResponse {
@@ -5088,7 +5192,8 @@ mod tests {
                 branches: None,
                 comparison: None,
                 merged_content: None,
-            metadata: None,};
+                metadata: None,
+            };
             let _ = timeline_resp.into_contents();
 
             let mcts_resp = MctsResponse {
@@ -5097,7 +5202,8 @@ mod tests {
                 iterations_completed: Some(10),
                 backtrack_suggestion: None,
                 executed: None,
-            metadata: None,};
+                metadata: None,
+            };
             let _ = mcts_resp.into_contents();
 
             let cf_resp = CounterfactualResponse {
@@ -5110,14 +5216,16 @@ mod tests {
                 assumptions: vec![],
                 session_id: Some("s1".to_string()),
                 analysis_depth: "counterfactual".to_string(),
-            metadata: None,};
+                metadata: None,
+            };
             let _ = cf_resp.into_contents();
 
             let preset_resp = PresetResponse {
                 presets: None,
                 execution_result: None,
                 session_id: None,
-            metadata: None,};
+                metadata: None,
+            };
             let _ = preset_resp.into_contents();
 
             let metrics_resp = MetricsResponse {

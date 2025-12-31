@@ -769,7 +769,8 @@ mod tests {
             content: "Analysis result".to_string(),
             confidence: 0.85,
             next_step: Some("Continue".to_string()),
-        metadata: None,};
+            metadata: None,
+        };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
         let text = contents[0].as_text().unwrap();
@@ -829,7 +830,8 @@ mod tests {
             recommendations: Some(vec!["Be concise".to_string()]),
             refined_content: Some("Better content".to_string()),
             coherence_score: Some(0.8),
-        metadata: None,};
+            metadata: None,
+        };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
         let text = contents[0].as_text().unwrap();

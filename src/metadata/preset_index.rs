@@ -39,12 +39,9 @@ impl PresetIndex {
             PresetMetadata {
                 id: "decision_analysis".into(),
                 name: "Decision Analysis".into(),
-                description: "Multi-perspective analysis → criteria weighting → final recommendation"
-                    .into(),
-                tools: vec![
-                    "reasoning_divergent".into(),
-                    "reasoning_decision".into(),
-                ],
+                description:
+                    "Multi-perspective analysis → criteria weighting → final recommendation".into(),
+                tools: vec!["reasoning_divergent".into(), "reasoning_decision".into()],
                 estimated_duration_ms: 65_000, // 45k + 20k
                 use_cases: vec![
                     "Complex decisions with trade-offs".into(),
@@ -121,10 +118,7 @@ impl PresetIndex {
                 id: "bias_detection".into(),
                 name: "Bias and Fallacy Detection".into(),
                 description: "Analyze for biases → detect fallacies → provide corrections".into(),
-                tools: vec![
-                    "reasoning_detect".into(),
-                    "reasoning_reflection".into(),
-                ],
+                tools: vec!["reasoning_detect".into(), "reasoning_reflection".into()],
                 estimated_duration_ms: 41_000, // 16k + 25k
                 use_cases: vec![
                     "Argument analysis".into(),
@@ -263,10 +257,7 @@ mod tests {
     fn test_find_matching_presets_decision_pattern() {
         let index = PresetIndex::build();
 
-        let history = vec![
-            "reasoning_divergent".into(),
-            "reasoning_decision".into(),
-        ];
+        let history = vec!["reasoning_divergent".into(), "reasoning_decision".into()];
 
         let matches = index.find_matching_presets(&history);
 

@@ -1,5 +1,12 @@
 //! Historical timing data for duration predictions.
 
+// Allow intentional numeric casts for SQLite i64 storage and timing calculations
+#![allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_lossless
+)]
+
 use crate::error::AppError;
 use crate::storage::SqliteStorage;
 use std::sync::Arc;
@@ -70,10 +77,12 @@ impl TimingDatabase {
         .bind(chrono::Utc::now().timestamp())
         .execute(&self.storage.pool)
         .await
-        .map_err(|e| AppError::Storage(crate::error::StorageError::QueryFailed {
-            query: "insert_timing".into(),
-            message: e.to_string(),
-        }))?;
+        .map_err(|e| {
+            AppError::Storage(crate::error::StorageError::QueryFailed {
+                query: "insert_timing".into(),
+                message: e.to_string(),
+            })
+        })?;
 
         Ok(())
     }
@@ -96,10 +105,12 @@ impl TimingDatabase {
         .bind(chrono::Utc::now().timestamp() - 7 * 24 * 3600) // Last 7 days
         .fetch_optional(&self.storage.pool)
         .await
-        .map_err(|e| AppError::Storage(crate::error::StorageError::QueryFailed {
-            query: "get_timing_average".into(),
-            message: e.to_string(),
-        }))?;
+        .map_err(|e| {
+            AppError::Storage(crate::error::StorageError::QueryFailed {
+                query: "get_timing_average".into(),
+                message: e.to_string(),
+            })
+        })?;
 
         Ok(result.map(|(avg, count)| (avg as u64, count as usize)))
     }
@@ -246,7 +257,7 @@ mod tests {
     #[tokio::test]
     async fn test_timing_database_record_execution() {
         let storage = SqliteStorage::new_in_memory().await.expect("storage");
-        
+
         // Manually create the table since migrations don't run for in-memory DB
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS tool_timing_history (
@@ -256,12 +267,12 @@ mod tests {
                 duration_ms INTEGER NOT NULL,
                 complexity_score INTEGER NOT NULL,
                 timestamp INTEGER NOT NULL
-            )"
+            )",
         )
         .execute(&storage.pool)
         .await
         .expect("create table");
-        
+
         let timing_db = TimingDatabase::new(Arc::new(storage));
 
         let complexity = ComplexityMetrics {

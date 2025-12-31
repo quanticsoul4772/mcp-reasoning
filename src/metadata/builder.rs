@@ -1,8 +1,8 @@
 //! Builder for constructing response metadata.
 
 use super::{
-    timing::ComplexityMetrics, ContextMetadata, PresetIndex, ResponseMetadata,
-    SuggestionEngine, SuggestionMetadata, TimingDatabase, TimingMetadata,
+    timing::ComplexityMetrics, ContextMetadata, PresetIndex, ResponseMetadata, SuggestionEngine,
+    SuggestionMetadata, TimingDatabase, TimingMetadata,
 };
 use crate::error::AppError;
 use std::sync::Arc;
@@ -75,10 +75,9 @@ impl MetadataBuilder {
     }
 
     fn build_suggestion_metadata(&self, request: &MetadataRequest) -> SuggestionMetadata {
-        let next_tools = self.suggestion_engine.suggest_next_tools(
-            &request.tool_name,
-            &request.result_context,
-        );
+        let next_tools = self
+            .suggestion_engine
+            .suggest_next_tools(&request.tool_name, &request.result_context);
 
         let relevant_presets = self
             .suggestion_engine
@@ -92,10 +91,7 @@ impl MetadataBuilder {
 
     fn build_context_metadata(&self, request: &MetadataRequest) -> ContextMetadata {
         ContextMetadata {
-            mode_used: request
-                .mode_name
-                .clone()
-                .unwrap_or_else(|| "none".into()),
+            mode_used: request.mode_name.clone().unwrap_or_else(|| "none".into()),
             thinking_budget: request.thinking_budget.clone(),
             session_state: request.session_state.clone(),
         }
@@ -109,8 +105,7 @@ impl MetadataBuilder {
 }
 
 /// Request context for metadata generation.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct MetadataRequest {
     /// Name of the tool being executed.
     pub tool_name: String,
@@ -129,7 +124,6 @@ pub struct MetadataRequest {
     /// Session state information.
     pub session_state: Option<String>,
 }
-
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
