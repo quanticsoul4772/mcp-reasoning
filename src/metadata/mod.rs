@@ -50,7 +50,7 @@ pub struct ResponseMetadata {
 }
 
 /// Timing predictions and timeout analysis.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub struct TimingMetadata {
     /// Estimated duration in milliseconds.
     pub estimated_duration_ms: u64,
@@ -72,7 +72,7 @@ pub struct SuggestionMetadata {
 }
 
 /// Execution context information.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, JsonSchema)]
 pub struct ContextMetadata {
     /// Mode used for this execution.
     pub mode_used: String,
@@ -85,7 +85,7 @@ pub struct ContextMetadata {
 }
 
 /// Suggested tool to call next.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub struct ToolSuggestion {
     /// Tool name.
     pub tool: String,
@@ -96,7 +96,7 @@ pub struct ToolSuggestion {
 }
 
 /// Suggested preset workflow.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub struct PresetSuggestion {
     /// Preset identifier.
     pub preset_id: String,
@@ -109,20 +109,17 @@ pub struct PresetSuggestion {
 /// Confidence level for timing estimates.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ConfidenceLevel {
     /// High confidence (>100 samples).
     High,
     /// Medium confidence (10-100 samples).
     Medium,
     /// Low confidence (<10 samples or estimation).
+    #[default]
     Low,
 }
 
-impl Default for ConfidenceLevel {
-    fn default() -> Self {
-        Self::Low
-    }
-}
 
 #[cfg(test)]
 mod tests {

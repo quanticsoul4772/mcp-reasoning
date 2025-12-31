@@ -110,6 +110,7 @@ impl MetadataBuilder {
 
 /// Request context for metadata generation.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct MetadataRequest {
     /// Name of the tool being executed.
     pub tool_name: String,
@@ -129,20 +130,6 @@ pub struct MetadataRequest {
     pub session_state: Option<String>,
 }
 
-impl Default for MetadataRequest {
-    fn default() -> Self {
-        Self {
-            tool_name: String::new(),
-            mode_name: None,
-            complexity: ComplexityMetrics::default(),
-            result_context: super::suggestions::ResultContext::default(),
-            tool_history: Vec::new(),
-            goal: None,
-            thinking_budget: None,
-            session_state: None,
-        }
-    }
-}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]

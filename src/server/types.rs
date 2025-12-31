@@ -149,7 +149,7 @@ mod tests {
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_handle(metrics.clone(), &storage).await;
         let metadata_builder = crate::metadata::MetadataBuilder::new(
-            Arc::new(crate::metadata::TimingDatabase::new(storage.clone())),
+            Arc::new(crate::metadata::TimingDatabase::new(Arc::new(storage.clone()))),
             Arc::new(crate::metadata::PresetIndex::build()),
             30000,
         );
@@ -174,7 +174,7 @@ mod tests {
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_handle(metrics.clone(), &storage).await;
         let metadata_builder = crate::metadata::MetadataBuilder::new(
-            Arc::new(crate::metadata::TimingDatabase::new(storage.clone())),
+            Arc::new(crate::metadata::TimingDatabase::new(Arc::new(storage.clone()))),
             Arc::new(crate::metadata::PresetIndex::build()),
             30000,
         );
@@ -195,7 +195,7 @@ mod tests {
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_handle(metrics.clone(), &storage).await;
         let metadata_builder = crate::metadata::MetadataBuilder::new(
-            Arc::new(crate::metadata::TimingDatabase::new(storage.clone())),
+            Arc::new(crate::metadata::TimingDatabase::new(Arc::new(storage.clone()))),
             Arc::new(crate::metadata::PresetIndex::build()),
             30000,
         );

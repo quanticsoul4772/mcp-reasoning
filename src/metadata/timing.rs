@@ -33,17 +33,14 @@ impl TimingDatabase {
         complexity: ComplexityMetrics,
     ) -> Result<(u64, ConfidenceLevel), AppError> {
         // Try to get historical data
-        match self.get_historical_average(tool, mode).await {
-            Ok(Some((avg_ms, sample_count))) => {
-                let confidence = calculate_confidence(sample_count);
-                let adjusted = adjust_for_complexity(avg_ms, &complexity);
-                Ok((adjusted, confidence))
-            }
-            _ => {
-                // Fall back to defaults
-                let default_ms = get_default_timing(tool, &complexity);
-                Ok((default_ms, ConfidenceLevel::Low))
-            }
+        if let Ok(Some((avg_ms, sample_count))) = self.get_historical_average(tool, mode).await {
+            let confidence = calculate_confidence(sample_count);
+            let adjusted = adjust_for_complexity(avg_ms, &complexity);
+            Ok((adjusted, confidence))
+        } else {
+            // Fall back to defaults
+            let default_ms = get_default_timing(tool, &complexity);
+            Ok((default_ms, ConfidenceLevel::Low))
         }
     }
 
@@ -136,12 +133,12 @@ fn adjust_for_complexity(avg_ms: u64, complexity: &ComplexityMetrics) -> u64 {
 
     // Adjust for perspectives
     if let Some(perspectives) = complexity.num_perspectives {
-        factor *= 1.0 + (perspectives as f64 - 2.0) * 0.15;
+        factor *= 1.0 + (f64::from(perspectives) - 2.0) * 0.15;
     }
 
     // Adjust for branches
     if let Some(branches) = complexity.num_branches {
-        factor *= 1.0 + (branches as f64 - 2.0) * 0.12;
+        factor *= 1.0 + (f64::from(branches) - 2.0) * 0.12;
     }
 
     // Adjust for thinking budget

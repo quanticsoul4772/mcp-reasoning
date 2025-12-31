@@ -2394,7 +2394,7 @@ mod tests {
             content: "reasoning content".to_string(),
             confidence: 0.85,
             next_step: Some("continue".to_string()),
-        };
+        metadata: None,};
         let json = serde_json::to_string(&response).expect("serialize");
         assert!(json.contains("thought_id"));
     }
@@ -2462,7 +2462,7 @@ mod tests {
             content: "reasoning content".to_string(),
             confidence: 0.85,
             next_step: Some("continue".to_string()),
-        };
+        metadata: None,};
         let contents = response.clone().into_contents();
         assert_eq!(contents.len(), 1);
         // Verify it produces valid JSON content
@@ -2517,7 +2517,7 @@ mod tests {
             recommendations: Some(vec!["add examples".to_string()]),
             refined_content: Some("improved reasoning".to_string()),
             coherence_score: Some(0.9),
-        metadata: None,};
+        metadata: None,metadata: None,};
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
     }
@@ -2900,7 +2900,7 @@ mod tests {
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_si_handle(&storage, metrics.clone());
         let client = AnthropicClient::new("test-key", ClientConfig::default()).unwrap();
-        let state = AppState::new(storage, client, config, metrics, si_handle);
+        let metadata_builder = crate::metadata::MetadataBuilder::new(Arc::new(crate::metadata::TimingDatabase::new(Arc::new(storage.clone()))), Arc::new(crate::metadata::PresetIndex::build()), 30000); let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
         ReasoningServer::new(Arc::new(state))
     }
 
@@ -2926,7 +2926,7 @@ mod tests {
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_si_handle(&storage, metrics.clone());
         let client = AnthropicClient::new("test-key", ClientConfig::default()).unwrap();
-        let state = AppState::new(storage, client, config, metrics, si_handle);
+        let metadata_builder = crate::metadata::MetadataBuilder::new(Arc::new(crate::metadata::TimingDatabase::new(Arc::new(storage.clone()))), Arc::new(crate::metadata::PresetIndex::build()), 30000); let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
         ReasoningServer::new(Arc::new(state))
     }
 
@@ -3227,7 +3227,7 @@ mod tests {
                 .with_max_retries(0)
                 .with_timeout_ms(5000);
             let client = AnthropicClient::new("test-key", client_config).unwrap();
-            let state = AppState::new(storage, client, config, metrics, si_handle);
+            let metadata_builder = crate::metadata::MetadataBuilder::new(Arc::new(crate::metadata::TimingDatabase::new(Arc::new(storage.clone()))), Arc::new(crate::metadata::PresetIndex::build()), 30000); let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
             ReasoningServer::new(Arc::new(state))
         }
 
@@ -4970,7 +4970,7 @@ mod tests {
                 content: "Analysis".to_string(),
                 confidence: 0.8,
                 next_step: Some("Continue".to_string()),
-            };
+            metadata: None,};
             let _ = linear_resp.into_contents();
 
             let tree_resp = TreeResponse {
@@ -5009,7 +5009,7 @@ mod tests {
                 recommendations: Some(vec!["Improve".to_string()]),
                 refined_content: Some("Refined".to_string()),
                 coherence_score: Some(0.85),
-            metadata: None,};
+            metadata: None,metadata: None,};
             let _ = reflection_resp.into_contents();
 
             let checkpoint_resp = CheckpointResponse {
@@ -5041,14 +5041,14 @@ mod tests {
                 aggregated_insight: None,
                 conclusions: None,
                 state: None,
-            metadata: None,};
+            metadata: None,metadata: None,};
             let _ = graph_resp.into_contents();
 
             let detect_resp = DetectResponse {
                 detections: vec![],
                 summary: Some("Summary".to_string()),
                 overall_quality: Some(0.8),
-            };
+            metadata: None,};
             let _ = detect_resp.into_contents();
 
             let decision_resp = DecisionResponse {
@@ -5058,7 +5058,7 @@ mod tests {
                 conflicts: None,
                 alignments: None,
                 rationale: None,
-            metadata: None,};
+            metadata: None,metadata: None,};
             let _ = decision_resp.into_contents();
 
             let evidence_resp = EvidenceResponse {
@@ -5070,7 +5070,7 @@ mod tests {
                 entropy: None,
                 confidence_interval: None,
                 synthesis: None,
-            metadata: None,};
+            metadata: None,metadata: None,};
             let _ = evidence_resp.into_contents();
 
             let timeline_resp = TimelineResponse {
@@ -5079,7 +5079,7 @@ mod tests {
                 branches: None,
                 comparison: None,
                 merged_content: None,
-            metadata: None,};
+            metadata: None,metadata: None,};
             let _ = timeline_resp.into_contents();
 
             let mcts_resp = MctsResponse {
@@ -5088,7 +5088,7 @@ mod tests {
                 iterations_completed: Some(10),
                 backtrack_suggestion: None,
                 executed: None,
-            };
+            metadata: None,};
             let _ = mcts_resp.into_contents();
 
             let cf_resp = CounterfactualResponse {
@@ -5101,14 +5101,14 @@ mod tests {
                 assumptions: vec![],
                 session_id: Some("s1".to_string()),
                 analysis_depth: "counterfactual".to_string(),
-            };
+            metadata: None,};
             let _ = cf_resp.into_contents();
 
             let preset_resp = PresetResponse {
                 presets: None,
                 execution_result: None,
                 session_id: None,
-            metadata: None,};
+            metadata: None,metadata: None,};
             let _ = preset_resp.into_contents();
 
             let metrics_resp = MetricsResponse {

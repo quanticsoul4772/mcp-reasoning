@@ -56,7 +56,12 @@ async fn create_test_state(server: &MockServer) -> AppState {
         model: "claude-sonnet-4-20250514".to_string(),
     };
 
-    AppState::new(storage, client, config, metrics, si_handle)
+    let metadata_builder = mcp_reasoning::metadata::MetadataBuilder::new(
+        Arc::new(mcp_reasoning::metadata::TimingDatabase::new(Arc::new(storage.clone()))),
+        Arc::new(mcp_reasoning::metadata::PresetIndex::build()),
+        30000,
+    );
+    AppState::new(storage, client, config, metrics, si_handle, metadata_builder)
 }
 
 // ============================================================================
