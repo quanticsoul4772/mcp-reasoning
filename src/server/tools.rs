@@ -156,6 +156,7 @@ impl ReasoningServer {
                                     .collect()
                             }),
                             recommendation: resp.recommendation,
+                            metadata: None,
                         },
                         true,
                     ),
@@ -165,6 +166,7 @@ impl ReasoningServer {
                             branch_id: None,
                             branches: None,
                             recommendation: Some(format!("ERROR: {e}")),
+                            metadata: None,
                         },
                         false,
                     ),
@@ -188,6 +190,7 @@ impl ReasoningServer {
                                     .collect()
                             }),
                             recommendation: resp.recommendation,
+                            metadata: None,
                         },
                         true,
                     ),
@@ -197,6 +200,7 @@ impl ReasoningServer {
                             branch_id: None,
                             branches: None,
                             recommendation: Some(format!("ERROR: {e}")),
+                            metadata: None,
                         },
                         false,
                     ),
@@ -218,6 +222,7 @@ impl ReasoningServer {
                                 .collect()
                         }),
                         recommendation: resp.recommendation,
+                        metadata: None,
                     },
                     true,
                 ),
@@ -227,6 +232,7 @@ impl ReasoningServer {
                         branch_id: None,
                         branches: None,
                         recommendation: Some(format!("ERROR: {e}")),
+                        metadata: None,
                     },
                     false,
                 ),
@@ -250,6 +256,7 @@ impl ReasoningServer {
                                     .collect()
                             }),
                             recommendation: resp.recommendation,
+                            metadata: None,
                         },
                         true,
                     ),
@@ -259,6 +266,7 @@ impl ReasoningServer {
                             branch_id: None,
                             branches: None,
                             recommendation: Some(format!("ERROR: {e}")),
+                            metadata: None,
                         },
                         false,
                     ),
@@ -272,6 +280,7 @@ impl ReasoningServer {
                     recommendation: Some(format!(
                         "Unknown operation: {operation}. Use create/focus/list/complete."
                     )),
+                    metadata: None,
                 },
                 false,
             ),
@@ -330,6 +339,7 @@ impl ReasoningServer {
                     .collect(),
                 challenged_assumptions: resp.challenged_assumptions,
                 synthesis: resp.synthesis,
+                metadata: None,
             },
             Err(e) => DivergentResponse {
                 thought_id: String::new(),
@@ -337,6 +347,7 @@ impl ReasoningServer {
                 perspectives: vec![],
                 challenged_assumptions: None,
                 synthesis: Some(format!("ERROR: {e}")),
+                metadata: None,
             },
         }
     }

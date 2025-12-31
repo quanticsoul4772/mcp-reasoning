@@ -68,6 +68,9 @@ pub struct TreeResponse {
     pub branches: Option<Vec<Branch>>,
     /// Suggested next branch to explore.
     pub recommendation: Option<String>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 /// A perspective in divergent reasoning.
@@ -94,6 +97,9 @@ pub struct DivergentResponse {
     pub challenged_assumptions: Option<Vec<String>>,
     /// Unified insight from all perspectives.
     pub synthesis: Option<String>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 /// Response from reflection.
@@ -117,6 +123,9 @@ pub struct ReflectionResponse {
     pub refined_content: Option<String>,
     /// Session coherence score.
     pub coherence_score: Option<f64>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 /// A checkpoint entry.
@@ -145,6 +154,9 @@ pub struct CheckpointResponse {
     pub checkpoints: Option<Vec<Checkpoint>>,
     /// Restored session state.
     pub restored_state: Option<serde_json::Value>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 /// Response from auto mode selection.
@@ -158,6 +170,9 @@ pub struct AutoResponse {
     pub rationale: String,
     /// Result from executing selected mode.
     pub result: serde_json::Value,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 // ============================================================================
@@ -207,6 +222,9 @@ pub struct GraphResponse {
     pub conclusions: Option<Vec<String>>,
     /// Graph state.
     pub state: Option<GraphState>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 // ============================================================================
@@ -242,6 +260,9 @@ pub struct DetectResponse {
     pub summary: Option<String>,
     /// Overall reasoning quality.
     pub overall_quality: Option<f64>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 /// A ranked option in decision analysis.
@@ -283,6 +304,9 @@ pub struct DecisionResponse {
     pub alignments: Option<Vec<String>>,
     /// Decision rationale.
     pub rationale: Option<String>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 /// Evidence assessment result.
@@ -326,6 +350,9 @@ pub struct EvidenceResponse {
     pub confidence_interval: Option<ConfidenceInterval>,
     /// Synthesis of evidence.
     pub synthesis: Option<String>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 // ============================================================================
@@ -369,6 +396,9 @@ pub struct TimelineResponse {
     pub comparison: Option<BranchComparison>,
     /// Merged content.
     pub merged_content: Option<String>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 /// A node in MCTS path.
@@ -410,6 +440,9 @@ pub struct MctsResponse {
     pub backtrack_suggestion: Option<BacktrackSuggestion>,
     /// Whether backtrack was executed.
     pub executed: Option<bool>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 /// A step in causal chain.
@@ -446,6 +479,9 @@ pub struct CounterfactualResponse {
     pub confidence: f64,
     /// Assumptions made.
     pub assumptions: Vec<String>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 // ============================================================================
