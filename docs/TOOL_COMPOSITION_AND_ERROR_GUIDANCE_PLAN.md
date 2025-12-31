@@ -1,7 +1,8 @@
 # Tool Composition Guidance & Enhanced Error Messages - Implementation Plan
 
-**Status**: Draft  
-**Created**: 2025-12-31  
+**Status**: Ready for Implementation
+**Created**: 2025-12-31
+**Updated**: 2025-12-31 (Addressed review gaps)
 **Priority**: Medium (Post-metadata enrichment improvements)
 
 ---
@@ -122,9 +123,134 @@ impl MetricsCollector {
 }
 ```
 
-#### 2.2: Dynamic Tool Suggestions
+#### 2.2: Complete Static Tool Suggestions
 
-**Enhance SuggestionEngine:**
+**Gap Identified**: Current `SuggestionEngine` only covers 8 of 15 tools. Add handlers for missing tools:
+
+```rust
+// Add to src/metadata/suggestions.rs
+
+impl SuggestionEngine {
+    pub fn suggest_next_tools(
+        &self,
+        current_tool: &str,
+        result_context: &ResultContext,
+    ) -> Vec<ToolSuggestion> {
+        match current_tool {
+            // Existing handlers (8 tools)
+            "reasoning_divergent" => self.suggest_after_divergent(result_context),
+            "reasoning_tree" => self.suggest_after_tree(result_context),
+            "reasoning_linear" => self.suggest_after_linear(result_context),
+            "reasoning_decision" => self.suggest_after_decision(result_context),
+            "reasoning_graph" => self.suggest_after_graph(result_context),
+            "reasoning_reflection" => self.suggest_after_reflection(result_context),
+            "reasoning_mcts" => self.suggest_after_mcts(result_context),
+            "reasoning_evidence" => self.suggest_after_evidence(result_context),
+
+            // NEW: Missing handlers (7 tools)
+            "reasoning_auto" => self.suggest_after_auto(result_context),
+            "reasoning_detect" => self.suggest_after_detect(result_context),
+            "reasoning_timeline" => self.suggest_after_timeline(result_context),
+            "reasoning_counterfactual" => self.suggest_after_counterfactual(result_context),
+            "reasoning_checkpoint" => self.suggest_after_checkpoint(result_context),
+            "reasoning_preset" => self.suggest_after_preset(result_context),
+            "reasoning_metrics" => vec![], // Terminal tool, no suggestions
+            _ => vec![],
+        }
+    }
+
+    // NEW: Add these handler methods
+
+    fn suggest_after_auto(&self, _ctx: &ResultContext) -> Vec<ToolSuggestion> {
+        vec![
+            ToolSuggestion {
+                tool: "reasoning_checkpoint".into(),
+                reason: "Save auto-selected analysis results".into(),
+                estimated_duration_ms: 100,
+            },
+        ]
+    }
+
+    fn suggest_after_detect(&self, ctx: &ResultContext) -> Vec<ToolSuggestion> {
+        let mut suggestions = vec![];
+        if ctx.num_outputs > 0 {
+            suggestions.push(ToolSuggestion {
+                tool: "reasoning_reflection".into(),
+                reason: "Reflect on detected biases/fallacies".into(),
+                estimated_duration_ms: 25_000,
+            });
+        }
+        suggestions.push(ToolSuggestion {
+            tool: "reasoning_linear".into(),
+            reason: "Re-analyze with detected issues in mind".into(),
+            estimated_duration_ms: 12_000,
+        });
+        suggestions
+    }
+
+    fn suggest_after_timeline(&self, _ctx: &ResultContext) -> Vec<ToolSuggestion> {
+        vec![
+            ToolSuggestion {
+                tool: "reasoning_decision".into(),
+                reason: "Compare timeline branches for decision".into(),
+                estimated_duration_ms: 18_000,
+            },
+            ToolSuggestion {
+                tool: "reasoning_checkpoint".into(),
+                reason: "Save timeline state".into(),
+                estimated_duration_ms: 100,
+            },
+        ]
+    }
+
+    fn suggest_after_counterfactual(&self, _ctx: &ResultContext) -> Vec<ToolSuggestion> {
+        vec![
+            ToolSuggestion {
+                tool: "reasoning_decision".into(),
+                reason: "Use causal insights for decision-making".into(),
+                estimated_duration_ms: 18_000,
+            },
+            ToolSuggestion {
+                tool: "reasoning_evidence".into(),
+                reason: "Evaluate evidence for causal claims".into(),
+                estimated_duration_ms: 20_000,
+            },
+        ]
+    }
+
+    fn suggest_after_checkpoint(&self, _ctx: &ResultContext) -> Vec<ToolSuggestion> {
+        // Checkpoint is typically terminal, but can continue
+        vec![
+            ToolSuggestion {
+                tool: "reasoning_linear".into(),
+                reason: "Continue analysis from saved state".into(),
+                estimated_duration_ms: 12_000,
+            },
+        ]
+    }
+
+    fn suggest_after_preset(&self, ctx: &ResultContext) -> Vec<ToolSuggestion> {
+        // Preset execution may suggest continuation
+        if ctx.complexity == "complex" {
+            vec![ToolSuggestion {
+                tool: "reasoning_reflection".into(),
+                reason: "Review preset workflow results".into(),
+                estimated_duration_ms: 25_000,
+            }]
+        } else {
+            vec![ToolSuggestion {
+                tool: "reasoning_checkpoint".into(),
+                reason: "Save preset execution results".into(),
+                estimated_duration_ms: 100,
+            }]
+        }
+    }
+}
+```
+
+#### 2.3: Dynamic Tool Suggestions
+
+**Enhance SuggestionEngine with historical metrics:**
 ```rust
 impl SuggestionEngine {
     // NEW: Constructor with metrics
@@ -234,14 +360,14 @@ async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsRes
 
 ### Implementation Roadmap
 
-#### Phase 1: Chain Tracking (4-6 hours)
+#### Phase 1: Chain Tracking
 1. Add `ToolTransition` struct to metrics/mod.rs
 2. Add `transitions` field to `MetricsCollector`
 3. Implement `record_transition()` method
-4. Track transitions in server request handler (before tool call)
+4. Track transitions in server request handler (see Section 2.5 below)
 5. Add unit tests for transition recording
 
-#### Phase 2: Chain Analysis (4-6 hours)
+#### Phase 2: Chain Analysis
 1. Implement `ChainSummary` analysis logic
 2. Create `chain_summary()` method with:
    - Sliding window pattern detection (3-5 tool sequences)
@@ -249,17 +375,79 @@ async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsRes
    - Entry/terminal tool identification
 3. Add unit tests for chain detection
 
-#### Phase 3: Dynamic Suggestions (2-4 hours)
+#### Phase 3: Dynamic Suggestions
 1. Update `SuggestionEngine` constructor to accept metrics
 2. Enhance `suggest_next_tools()` with historical data
 3. Update `MetadataBuilder` to pass metrics to engine
 4. Add integration tests
 
-#### Phase 4: Metrics Query Enhancement (2-3 hours)
+#### Phase 4: Metrics Query Enhancement
 1. Add "chains" and "transitions" query types to MetricsRequest
 2. Update MetricsResponse with new fields
 3. Implement query handlers in reasoning_metrics
 4. Update TOOL_REFERENCE.md documentation
+
+#### 2.5: Transition Recording Hook Location
+
+**Where to record transitions**: In the MCP server's tool call dispatcher (typically `src/server/tools.rs` or `src/server/handlers.rs`).
+
+```rust
+// In src/server/tools.rs - tool call dispatcher
+
+/// Session context tracking for transition recording.
+struct SessionContext {
+    session_id: String,
+    last_tool: Option<String>,
+}
+
+impl McpServer {
+    async fn handle_tool_call(
+        &self,
+        tool_name: &str,
+        params: Value,
+        session_ctx: &mut SessionContext,
+    ) -> Result<Value, McpError> {
+        // BEFORE executing the tool: record transition from previous tool
+        if let Some(ref last_tool) = session_ctx.last_tool {
+            self.state.metrics.record_transition(ToolTransition {
+                from_tool: last_tool.clone(),
+                to_tool: tool_name.to_string(),
+                session_id: session_ctx.session_id.clone(),
+                success: true,  // Optimistic; updated on failure
+                timestamp: now_millis(),
+            });
+        }
+
+        // Execute the tool
+        let result = self.dispatch_tool(tool_name, params).await;
+
+        // Update transition success based on result
+        if result.is_err() {
+            // Update last transition to mark as failed
+            self.state.metrics.mark_last_transition_failed(&session_ctx.session_id);
+        }
+
+        // Track this tool as last_tool for next transition
+        session_ctx.last_tool = Some(tool_name.to_string());
+
+        result
+    }
+}
+
+// Helper function for timestamps
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+```
+
+**Key Integration Points**:
+1. **Session ID extraction**: Get from MCP request context or create per-connection
+2. **Last tool tracking**: Maintain per-session state (in-memory HashMap or session struct)
+3. **Transition recording**: Call `record_transition()` BEFORE executing each tool
+4. **Failure handling**: Update transition success status if tool execution fails
 
 ---
 
@@ -269,7 +457,21 @@ async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsRes
 
 #### 3.1: Error Context Structure
 
-**New Type:**
+**New Types (add to `src/error/enhanced.rs`):**
+
+```rust
+/// Metrics about request complexity for error context.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ComplexityMetrics {
+    /// Length of content in bytes.
+    pub content_length: usize,
+    /// Depth of operation (e.g., graph depth, iteration count).
+    pub operation_depth: Option<u32>,
+    /// Branching factor (e.g., num_perspectives, num_branches).
+    pub branching_factor: Option<u32>,
+}
+```
+
 ```rust
 /// Enhanced error with recovery suggestions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -318,14 +520,71 @@ pub struct ErrorContext {
 }
 ```
 
-#### 3.2: Error Enhancement Logic
+#### 3.2: ServerState Integration
 
-**Create error/enhanced.rs:**
+**Update `src/server/mod.rs` or `src/server/types.rs`:**
+
+The `ErrorEnhancer` must be integrated into the server's shared state so all tool handlers can access it.
+
+```rust
+use crate::error::enhanced::ErrorEnhancer;
+
+/// Shared server state accessible by all tool handlers.
+pub struct ServerState {
+    pub storage: Arc<SqliteStorage>,
+    pub client: Arc<AnthropicClient>,
+    pub config: Config,
+    pub metrics: Arc<MetricsCollector>,
+    pub error_enhancer: Arc<ErrorEnhancer>,  // NEW: Add this field
+}
+
+impl ServerState {
+    pub fn new(
+        storage: Arc<SqliteStorage>,
+        client: Arc<AnthropicClient>,
+        config: Config,
+    ) -> Self {
+        let metrics = Arc::new(MetricsCollector::new());
+        let metadata_builder = Arc::new(MetadataBuilder::new(/* ... */));
+
+        // Create ErrorEnhancer with dependencies
+        let error_enhancer = Arc::new(ErrorEnhancer::new(
+            Arc::clone(&metadata_builder),
+            Arc::clone(&metrics),
+        ));
+
+        Self {
+            storage,
+            client,
+            config,
+            metrics,
+            error_enhancer,
+        }
+    }
+}
+```
+
+#### 3.3: Error Enhancement Logic
+
+**Create `src/error/enhanced.rs`:**
 ```rust
 /// Enhance errors with contextual alternatives.
 pub struct ErrorEnhancer {
     metadata_builder: Arc<MetadataBuilder>,
     metrics: Arc<MetricsCollector>,
+}
+
+impl ErrorEnhancer {
+    /// Create a new error enhancer with dependencies.
+    pub fn new(
+        metadata_builder: Arc<MetadataBuilder>,
+        metrics: Arc<MetricsCollector>,
+    ) -> Self {
+        Self {
+            metadata_builder,
+            metrics,
+        }
+    }
 }
 
 impl ErrorEnhancer {
@@ -566,25 +825,25 @@ pub struct DivergentResponse {
 
 ### Implementation Roadmap
 
-#### Phase 1: Error Context & Enhancement (3-4 hours)
+#### Phase 1: Error Context & Enhancement
 1. Create error/enhanced.rs with types
 2. Implement ErrorEnhancer struct
 3. Add categorize_error() method
 4. Implement timeout_alternatives()
 5. Add unit tests for each alternative generator
 
-#### Phase 2: Response Type Updates (2-3 hours)
+#### Phase 2: Response Type Updates
 1. Add `error` and `alternatives` fields to all 15 response types
 2. Update response constructors to handle errors
 3. Ensure backward compatibility (fields are optional)
 
-#### Phase 3: Tool Handler Integration (4-6 hours)
+#### Phase 3: Tool Handler Integration
 1. Update each tool handler to build ErrorContext
 2. Integrate ErrorEnhancer calls on failures
 3. Return enhanced errors in responses
 4. Add integration tests for error scenarios
 
-#### Phase 4: Documentation (1-2 hours)
+#### Phase 4: Documentation
 1. Update TOOL_REFERENCE.md with error response examples
 2. Add error handling guide to README
 3. Document ErrorCategory enum values
@@ -816,19 +1075,19 @@ reasoning_metrics gains:
 
 ## Rollout Plan
 
-### Phase 1 (Week 1): Tool Composition
-1. Implement chain tracking (1-2 days)
-2. Add chain analysis (1-2 days)
-3. Update metrics queries (1 day)
-4. Testing + documentation (1 day)
+### Phase 1: Tool Composition
+1. Implement chain tracking
+2. Add chain analysis
+3. Update metrics queries
+4. Testing + documentation
 
-### Phase 2 (Week 2): Error Enhancement
-1. Implement ErrorEnhancer (1-2 days)
-2. Update response types (1 day)
-3. Integrate with tool handlers (1-2 days)
-4. Testing + documentation (1 day)
+### Phase 2: Error Enhancement
+1. Implement ErrorEnhancer
+2. Update response types
+3. Integrate with tool handlers
+4. Testing + documentation
 
-### Total Effort: 10-14 days (1 developer)
+**Sequencing**: Phase 1 should complete before Phase 2. Both features share `MetricsCollector` dependencies.
 
 ---
 
