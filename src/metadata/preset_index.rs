@@ -206,8 +206,6 @@ impl PresetIndex {
             return 0.0;
         }
 
-        let mut score = 0.0;
-
         // Count how many preset tools are in history
         let matching_count = preset
             .tools
@@ -220,16 +218,16 @@ impl PresetIndex {
         }
 
         // Base score from tool overlap
-        score = (matching_count as f64) / (preset.tools.len() as f64);
+        let score = (matching_count as f64) / (preset.tools.len() as f64);
 
         // Bonus for exact match - prioritize smaller presets that match exactly
         if matching_count == preset.tools.len() && matching_count == tool_history.len() {
-            score = 1.0;
+            1.0
         } else if matching_count == preset.tools.len() {
-            score = 0.95;
+            0.95
+        } else {
+            score
         }
-
-        score
     }
 
     /// Get preset by ID.
