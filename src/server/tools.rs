@@ -538,7 +538,7 @@ impl ReasoningServer {
         );
 
         let operation = req.operation.as_str();
-        let (mut response, success) = match operation {
+        let (response, success) = match operation {
             "create" => {
                 let name = req.name.as_deref().unwrap_or("checkpoint");
                 let description = req.description.as_deref();
@@ -1052,7 +1052,7 @@ impl ReasoningServer {
             .unwrap_or("");
         let decision_type = req.decision_type.as_deref().unwrap_or("weighted");
 
-        let (response, success) = match decision_type {
+        let (mut response, success) = match decision_type {
             "weighted" => match mode.weighted(content, req.session_id).await {
                 Ok(resp) => (
                     DecisionResponse {
@@ -1551,7 +1551,7 @@ impl ReasoningServer {
         let content = req.content.as_deref().unwrap_or("");
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
-        let (mut response, success) = match operation {
+        let (response, success) = match operation {
             "explore" => match mode.explore(content, req.session_id).await {
                 Ok(resp) => (
                     MctsResponse {

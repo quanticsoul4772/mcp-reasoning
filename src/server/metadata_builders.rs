@@ -57,6 +57,7 @@ pub async fn build_metadata_for_divergent(
 }
 
 /// Build metadata for decision analysis response.
+#[allow(dead_code)]
 pub async fn build_metadata_for_decision(
     builder: &MetadataBuilder,
     content_length: usize,
