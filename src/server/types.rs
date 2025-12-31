@@ -148,8 +148,13 @@ mod tests {
         let config = test_config();
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_handle(metrics.clone(), &storage).await;
+        let metadata_builder = crate::metadata::MetadataBuilder::new(
+            Arc::new(crate::metadata::TimingDatabase::new(storage.clone())),
+            Arc::new(crate::metadata::PresetIndex::build()),
+            30000,
+        );
 
-        let state = AppState::new(storage, client, config, metrics, si_handle);
+        let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
 
         // Verify all Arc wrappers are properly created
         assert!(Arc::strong_count(&state.storage) >= 1);
@@ -169,7 +174,7 @@ mod tests {
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_handle(metrics.clone(), &storage).await;
         let metadata_builder = crate::metadata::MetadataBuilder::new(
-            Arc::new(crate::metadata::TimingDatabase::new(storage.clone()).await.unwrap()),
+            Arc::new(crate::metadata::TimingDatabase::new(storage.clone())),
             Arc::new(crate::metadata::PresetIndex::build()),
             30000,
         );
@@ -190,7 +195,7 @@ mod tests {
         let metrics = Arc::new(MetricsCollector::new());
         let si_handle = create_test_handle(metrics.clone(), &storage).await;
         let metadata_builder = crate::metadata::MetadataBuilder::new(
-            Arc::new(crate::metadata::TimingDatabase::new(storage.clone()).await.unwrap()),
+            Arc::new(crate::metadata::TimingDatabase::new(storage.clone())),
             Arc::new(crate::metadata::PresetIndex::build()),
             30000,
         );

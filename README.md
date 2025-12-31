@@ -20,6 +20,11 @@ pie showData title Codebase Distribution (56K+ lines)
 ## Features
 
 - **15 Structured Reasoning Tools** - Linear, tree-based, graph-based, and advanced reasoning patterns
+- **AI Agent Metadata Enrichment** ✨ **NEW** - Rich metadata in responses including:
+  - **Timeout Prediction** - Estimated duration and confidence levels to avoid API timeouts
+  - **Tool Suggestions** - Next logical tools to call based on current results
+  - **Workflow Discovery** - Relevant preset recommendations for complex tasks
+  - **Historical Learning** - Improves predictions over time from actual execution data
 - **Decision Analysis** - Weighted scoring, pairwise comparison, TOPSIS, stakeholder mapping
 - **Bias & Fallacy Detection** - Identify cognitive biases and logical fallacies with remediation suggestions
 - **Counterfactual Analysis** - What-if scenarios using Pearl's causal framework (Ladder of Causation)
