@@ -87,8 +87,26 @@ impl McpServer {
             tracing::info!("Self-improvement system stopped");
         });
 
+        // Initialize metadata builder for tool response enrichment
+        let timing_db = Arc::new(crate::metadata::TimingDatabase::new(Arc::new(
+            storage.clone(),
+        )));
+        let preset_index = Arc::new(crate::metadata::PresetIndex::build());
+        let metadata_builder = crate::metadata::MetadataBuilder::new(
+            timing_db,
+            preset_index,
+            30_000, // Factory timeout (30s) - TODO: make configurable
+        );
+
         // Create app state with shared metrics and self-improvement handle
-        let state = AppState::new(storage, client, self.config.clone(), metrics, si_handle);
+        let state = AppState::new(
+            storage,
+            client,
+            self.config.clone(),
+            metrics,
+            si_handle,
+            metadata_builder,
+        );
 
         // Create reasoning server
         let server = ReasoningServer::new(Arc::new(state));

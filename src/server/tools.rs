@@ -80,15 +80,27 @@ impl ReasoningServer {
         );
 
         let input_session_id = req.session_id.clone().unwrap_or_default();
+        let content_length = req.content.len();
+        let session_id_for_metadata = req.session_id.clone();
 
         let result = mode
             .process(&req.content, req.session_id, req.confidence)
             .await;
 
+        let elapsed_ms = timer.elapsed_ms();
         let success = result.is_ok();
         self.state
             .metrics
-            .record(MetricEvent::new("linear", timer.elapsed_ms(), success));
+            .record(MetricEvent::new("linear", elapsed_ms, success));
+
+        // Build metadata for response enrichment
+        let metadata = if success {
+            self.build_metadata_for_linear(content_length, session_id_for_metadata, elapsed_ms)
+                .await
+                .ok()
+        } else {
+            None
+        };
 
         match result {
             Ok(resp) => LinearResponse {
@@ -97,6 +109,7 @@ impl ReasoningServer {
                 content: resp.content,
                 confidence: resp.confidence,
                 next_step: resp.next_step,
+                metadata,
             },
             Err(e) => LinearResponse {
                 thought_id: String::new(),
@@ -104,6 +117,7 @@ impl ReasoningServer {
                 content: format!("ERROR: {e}"),
                 confidence: 0.0,
                 next_step: None,
+                metadata: None,
             },
         }
     }
@@ -2170,6 +2184,59 @@ impl ReasoningServer {
             .record(MetricEvent::new("si_rollback", timer.elapsed_ms(), success));
 
         response
+    }
+
+    // ============================================================================
+    // Metadata Builder Helpers
+    // ============================================================================
+
+    /// Build metadata for linear reasoning response.
+    async fn build_metadata_for_linear(
+        &self,
+        content_length: usize,
+        session_id: Option<String>,
+        elapsed_ms: u64,
+    ) -> Result<crate::metadata::ResponseMetadata, crate::error::AppError> {
+        use crate::metadata::{ComplexityMetrics, MetadataRequest, ResultContext};
+
+        // Record actual execution time
+        let complexity = ComplexityMetrics {
+            content_length,
+            thinking_budget: None,
+            num_perspectives: None,
+            num_branches: None,
+        };
+
+        self.state
+            .metadata_builder
+            .timing_db()
+            .record_execution("reasoning_linear", Some("linear"), elapsed_ms, complexity.clone())
+            .await?;
+
+        // Build metadata request
+        let metadata_req = MetadataRequest {
+            tool_name: "reasoning_linear".into(),
+            mode_name: Some("linear".into()),
+            complexity,
+            result_context: ResultContext {
+                num_outputs: 1,
+                has_branches: false,
+                session_id,
+                complexity: if content_length > 5000 {
+                    "complex".into()
+                } else if content_length > 2000 {
+                    "moderate".into()
+                } else {
+                    "simple".into()
+                },
+            },
+            tool_history: vec![], // TODO: Implement session history tracking
+            goal: None,
+            thinking_budget: Some("none".into()),
+            session_state: None,
+        };
+
+        self.state.metadata_builder.build(&metadata_req).await
     }
 }
 

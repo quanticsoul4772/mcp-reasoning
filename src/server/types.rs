@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::anthropic::AnthropicClient;
 use crate::config::Config;
+use crate::metadata::MetadataBuilder;
 use crate::metrics::MetricsCollector;
 use crate::presets::PresetRegistry;
 use crate::self_improvement::ManagerHandle;
@@ -38,6 +39,8 @@ pub struct AppState {
     /// This handle allows MCP tools to interact with the self-improvement system.
     /// Self-improvement is ALWAYS enabled - it is a core feature.
     pub self_improvement: Arc<ManagerHandle>,
+    /// Metadata builder for enriching tool responses.
+    pub metadata_builder: Arc<MetadataBuilder>,
 }
 
 impl AppState {
@@ -50,6 +53,7 @@ impl AppState {
     /// * `config` - Server configuration
     /// * `metrics` - Shared metrics collector (used by both tools and self-improvement)
     /// * `self_improvement` - Self-improvement manager handle
+    /// * `metadata_builder` - Metadata builder for tool responses
     #[must_use]
     pub fn new(
         storage: SqliteStorage,
@@ -57,6 +61,7 @@ impl AppState {
         config: Config,
         metrics: Arc<MetricsCollector>,
         self_improvement: ManagerHandle,
+        metadata_builder: MetadataBuilder,
     ) -> Self {
         Self {
             storage: Arc::new(storage),
@@ -65,6 +70,7 @@ impl AppState {
             metrics,
             presets: Arc::new(PresetRegistry::new()),
             self_improvement: Arc::new(self_improvement),
+            metadata_builder: Arc::new(metadata_builder),
         }
     }
 }

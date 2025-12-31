@@ -39,6 +39,9 @@ pub struct LinearResponse {
     pub confidence: f64,
     /// Suggested next reasoning step.
     pub next_step: Option<String>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
 /// A branch in tree reasoning.

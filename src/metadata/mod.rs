@@ -35,10 +35,11 @@ pub use suggestions::{ResultContext, SuggestionEngine};
 pub use timing::{ComplexityMetrics, TimingDatabase};
 pub use timing_defaults::get_default_timing;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Response metadata for tool discoverability.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct ResponseMetadata {
     /// Timing predictions and timeout analysis.
     pub timing: TimingMetadata,
@@ -49,7 +50,7 @@ pub struct ResponseMetadata {
 }
 
 /// Timing predictions and timeout analysis.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct TimingMetadata {
     /// Estimated duration in milliseconds.
     pub estimated_duration_ms: u64,
@@ -62,7 +63,7 @@ pub struct TimingMetadata {
 }
 
 /// Tool and preset suggestions.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct SuggestionMetadata {
     /// Suggested next tools to call.
     pub next_tools: Vec<ToolSuggestion>,
@@ -71,7 +72,7 @@ pub struct SuggestionMetadata {
 }
 
 /// Execution context information.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 pub struct ContextMetadata {
     /// Mode used for this execution.
     pub mode_used: String,
@@ -84,7 +85,7 @@ pub struct ContextMetadata {
 }
 
 /// Suggested tool to call next.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct ToolSuggestion {
     /// Tool name.
     pub tool: String,
@@ -95,7 +96,7 @@ pub struct ToolSuggestion {
 }
 
 /// Suggested preset workflow.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub struct PresetSuggestion {
     /// Preset identifier.
     pub preset_id: String,
@@ -106,7 +107,7 @@ pub struct PresetSuggestion {
 }
 
 /// Confidence level for timing estimates.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfidenceLevel {
     /// High confidence (>100 samples).
