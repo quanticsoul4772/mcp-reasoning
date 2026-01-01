@@ -474,7 +474,10 @@ impl ReasoningServer {
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
         // Apply tool-level timeout (STANDARD_THINKING = 4096 tokens)
-        let timeout_ms = self.state.config.timeout_for_thinking_budget(STANDARD_THINKING);
+        let timeout_ms = self
+            .state
+            .config
+            .timeout_for_thinking_budget(STANDARD_THINKING);
         let timeout_duration = Duration::from_millis(timeout_ms);
 
         let result = match tokio::time::timeout(
@@ -908,24 +911,22 @@ impl ReasoningServer {
         let timeout_ms = self.state.config.timeout_for_thinking_budget(NO_THINKING);
         let timeout_duration = Duration::from_millis(timeout_ms);
 
-        let result = match tokio::time::timeout(
-            timeout_duration,
-            mode.select(&req.content, req.session_id),
-        )
-        .await
-        {
-            Ok(inner_result) => inner_result,
-            Err(_elapsed) => {
-                tracing::error!(
-                    tool = "reasoning_auto",
-                    timeout_ms = timeout_ms,
-                    "Tool execution timed out"
-                );
-                Err(ModeError::Timeout {
-                    elapsed_ms: timeout_ms,
-                })
-            }
-        };
+        let result =
+            match tokio::time::timeout(timeout_duration, mode.select(&req.content, req.session_id))
+                .await
+            {
+                Ok(inner_result) => inner_result,
+                Err(_elapsed) => {
+                    tracing::error!(
+                        tool = "reasoning_auto",
+                        timeout_ms = timeout_ms,
+                        "Tool execution timed out"
+                    );
+                    Err(ModeError::Timeout {
+                        elapsed_ms: timeout_ms,
+                    })
+                }
+            };
         let success = result.is_ok();
         self.state
             .metrics
@@ -980,149 +981,152 @@ impl ReasoningServer {
         let content = req.content.as_deref().unwrap_or("");
 
         // Apply tool-level timeout to prevent indefinite hangs
-        let timeout_ms = self.state.config.timeout_for_thinking_budget(STANDARD_THINKING);
+        let timeout_ms = self
+            .state
+            .config
+            .timeout_for_thinking_budget(STANDARD_THINKING);
         let timeout_duration = Duration::from_millis(timeout_ms);
         let op_for_timeout = operation.clone();
 
         let result = match tokio::time::timeout(timeout_duration, async {
             match op_for_timeout.as_str() {
-            "init" => {
-                let sid = session_id.clone();
-                mode.init(content, Some(session_id.clone()))
-                    .await
-                    .map(move |r| GraphResponse {
-                        session_id: sid,
-                        node_id: Some(r.root.id),
-                        nodes: None,
-                        aggregated_insight: None,
-                        conclusions: None,
-                        state: None,
-                        metadata: None,
-                    })
-            }
-            "generate" => {
-                let sid = session_id.clone();
-                let node_id = req.node_id.as_deref();
-                mode.generate(req.content.as_deref(), node_id, Some(session_id.clone()))
-                    .await
-                    .map(move |r| GraphResponse {
-                        session_id: sid,
-                        node_id: None,
-                        nodes: Some(
-                            r.children
-                                .into_iter()
-                                .map(|n| GraphNode {
-                                    id: n.id,
-                                    content: n.content,
-                                    score: Some(n.score),
-                                    depth: None,
-                                    parent_id: None,
-                                })
-                                .collect(),
-                        ),
-                        aggregated_insight: None,
-                        conclusions: None,
-                        state: None,
-                        metadata: None,
-                    })
-            }
-            "score" => {
-                let sid = session_id.clone();
-                let node_id = req.node_id.as_deref();
-                mode.score(req.content.as_deref(), node_id, Some(session_id.clone()))
-                    .await
-                    .map(move |r| GraphResponse {
-                        session_id: sid,
-                        node_id: Some(r.node_id),
-                        nodes: None,
-                        aggregated_insight: None,
-                        conclusions: None,
-                        state: None,
-                        metadata: None,
-                    })
-            }
-            "aggregate" => {
-                let sid = session_id.clone();
-                mode.aggregate(content, Some(session_id.clone()))
-                    .await
-                    .map(move |r| GraphResponse {
-                        session_id: sid,
-                        node_id: None,
-                        nodes: None,
-                        aggregated_insight: Some(r.synthesis.content),
-                        conclusions: None,
-                        state: None,
-                        metadata: None,
-                    })
-            }
-            "refine" => {
-                let sid = session_id.clone();
-                mode.refine(content, Some(session_id.clone()))
-                    .await
-                    .map(move |r| GraphResponse {
-                        session_id: sid,
-                        node_id: Some(r.refined_node.id),
-                        nodes: None,
-                        aggregated_insight: None,
-                        conclusions: None,
-                        state: None,
-                        metadata: None,
-                    })
-            }
-            "prune" => {
-                let sid = session_id.clone();
-                mode.prune(content, Some(session_id.clone()))
-                    .await
-                    .map(move |r| GraphResponse {
-                        session_id: sid,
-                        node_id: None,
-                        nodes: None,
-                        aggregated_insight: None,
-                        conclusions: None,
-                        state: Some(GraphState {
-                            total_nodes: 0,
-                            active_nodes: 0,
-                            max_depth: 0,
-                            pruned_count: r.prune_candidates.len() as u32,
-                        }),
-                        metadata: None,
-                    })
-            }
-            "finalize" => {
-                let sid = session_id.clone();
-                mode.finalize(content, Some(session_id.clone()))
-                    .await
-                    .map(move |r| GraphResponse {
-                        session_id: sid,
-                        node_id: None,
-                        nodes: None,
-                        aggregated_insight: None,
-                        conclusions: Some(
-                            r.conclusions.into_iter().map(|c| c.conclusion).collect(),
-                        ),
-                        state: None,
-                        metadata: None,
-                    })
-            }
-            "state" => {
-                let sid = session_id.clone();
-                mode.state(req.content.as_deref(), &session_id)
-                    .await
-                    .map(move |r| GraphResponse {
-                        session_id: sid,
-                        node_id: None,
-                        nodes: None,
-                        aggregated_insight: None,
-                        conclusions: None,
-                        state: Some(GraphState {
-                            total_nodes: r.structure.total_nodes,
-                            active_nodes: r.structure.total_nodes - r.structure.pruned_count,
-                            max_depth: r.structure.depth,
-                            pruned_count: r.structure.pruned_count,
-                        }),
-                        metadata: None,
-                    })
-            }
+                "init" => {
+                    let sid = session_id.clone();
+                    mode.init(content, Some(session_id.clone()))
+                        .await
+                        .map(move |r| GraphResponse {
+                            session_id: sid,
+                            node_id: Some(r.root.id),
+                            nodes: None,
+                            aggregated_insight: None,
+                            conclusions: None,
+                            state: None,
+                            metadata: None,
+                        })
+                }
+                "generate" => {
+                    let sid = session_id.clone();
+                    let node_id = req.node_id.as_deref();
+                    mode.generate(req.content.as_deref(), node_id, Some(session_id.clone()))
+                        .await
+                        .map(move |r| GraphResponse {
+                            session_id: sid,
+                            node_id: None,
+                            nodes: Some(
+                                r.children
+                                    .into_iter()
+                                    .map(|n| GraphNode {
+                                        id: n.id,
+                                        content: n.content,
+                                        score: Some(n.score),
+                                        depth: None,
+                                        parent_id: None,
+                                    })
+                                    .collect(),
+                            ),
+                            aggregated_insight: None,
+                            conclusions: None,
+                            state: None,
+                            metadata: None,
+                        })
+                }
+                "score" => {
+                    let sid = session_id.clone();
+                    let node_id = req.node_id.as_deref();
+                    mode.score(req.content.as_deref(), node_id, Some(session_id.clone()))
+                        .await
+                        .map(move |r| GraphResponse {
+                            session_id: sid,
+                            node_id: Some(r.node_id),
+                            nodes: None,
+                            aggregated_insight: None,
+                            conclusions: None,
+                            state: None,
+                            metadata: None,
+                        })
+                }
+                "aggregate" => {
+                    let sid = session_id.clone();
+                    mode.aggregate(content, Some(session_id.clone()))
+                        .await
+                        .map(move |r| GraphResponse {
+                            session_id: sid,
+                            node_id: None,
+                            nodes: None,
+                            aggregated_insight: Some(r.synthesis.content),
+                            conclusions: None,
+                            state: None,
+                            metadata: None,
+                        })
+                }
+                "refine" => {
+                    let sid = session_id.clone();
+                    mode.refine(content, Some(session_id.clone()))
+                        .await
+                        .map(move |r| GraphResponse {
+                            session_id: sid,
+                            node_id: Some(r.refined_node.id),
+                            nodes: None,
+                            aggregated_insight: None,
+                            conclusions: None,
+                            state: None,
+                            metadata: None,
+                        })
+                }
+                "prune" => {
+                    let sid = session_id.clone();
+                    mode.prune(content, Some(session_id.clone()))
+                        .await
+                        .map(move |r| GraphResponse {
+                            session_id: sid,
+                            node_id: None,
+                            nodes: None,
+                            aggregated_insight: None,
+                            conclusions: None,
+                            state: Some(GraphState {
+                                total_nodes: 0,
+                                active_nodes: 0,
+                                max_depth: 0,
+                                pruned_count: r.prune_candidates.len() as u32,
+                            }),
+                            metadata: None,
+                        })
+                }
+                "finalize" => {
+                    let sid = session_id.clone();
+                    mode.finalize(content, Some(session_id.clone()))
+                        .await
+                        .map(move |r| GraphResponse {
+                            session_id: sid,
+                            node_id: None,
+                            nodes: None,
+                            aggregated_insight: None,
+                            conclusions: Some(
+                                r.conclusions.into_iter().map(|c| c.conclusion).collect(),
+                            ),
+                            state: None,
+                            metadata: None,
+                        })
+                }
+                "state" => {
+                    let sid = session_id.clone();
+                    mode.state(req.content.as_deref(), &session_id)
+                        .await
+                        .map(move |r| GraphResponse {
+                            session_id: sid,
+                            node_id: None,
+                            nodes: None,
+                            aggregated_insight: None,
+                            conclusions: None,
+                            state: Some(GraphState {
+                                total_nodes: r.structure.total_nodes,
+                                active_nodes: r.structure.total_nodes - r.structure.pruned_count,
+                                max_depth: r.structure.depth,
+                                pruned_count: r.structure.pruned_count,
+                            }),
+                            metadata: None,
+                        })
+                }
                 _ => Err(ModeError::InvalidOperation {
                     mode: "graph".to_string(),
                     operation: op_for_timeout.clone(),
@@ -1209,96 +1213,97 @@ impl ReasoningServer {
 
         let (response, success) = match tokio::time::timeout(timeout_duration, async {
             match detect_type_for_timeout.as_str() {
-            "biases" => match mode.biases(content, req.session_id).await {
-                Ok(resp) => (
-                    DetectResponse {
-                        detections: resp
-                            .biases_detected
-                            .into_iter()
-                            .map(|b| Detection {
-                                detection_type: b.bias,
-                                category: None, // Biases don't have categories
-                                severity: format!("{:?}", b.severity).to_lowercase(),
-                                confidence: resp.overall_assessment.reasoning_quality,
-                                evidence: b.evidence,
-                                explanation: b.impact,
-                                remediation: Some(b.debiasing),
-                            })
-                            .collect(),
-                        summary: Some(format!(
-                            "{} biases detected. Most severe: {}. Debiased version available.",
-                            resp.overall_assessment.bias_count, resp.overall_assessment.most_severe
-                        )),
-                        overall_quality: Some(resp.overall_assessment.reasoning_quality),
-                        metadata: None,
-                    },
-                    true,
-                ),
-                Err(e) => (
-                    DetectResponse {
-                        detections: vec![],
-                        summary: Some(format!("Error detecting biases: {e}")),
-                        overall_quality: None,
-                        metadata: None,
-                    },
-                    false,
-                ),
-            },
-            "fallacies" => match mode.fallacies(content, req.session_id).await {
-                Ok(resp) => (
-                    DetectResponse {
-                        detections: resp
-                            .fallacies_detected
-                            .into_iter()
-                            .map(|f| Detection {
-                                detection_type: f.fallacy,
-                                category: Some(format!("{:?}", f.category).to_lowercase()),
-                                severity: if resp.overall_assessment.argument_strength < 0.4 {
-                                    "high".to_string()
-                                } else if resp.overall_assessment.argument_strength < 0.7 {
-                                    "medium".to_string()
-                                } else {
-                                    "low".to_string()
-                                },
-                                confidence: resp.overall_assessment.argument_strength,
-                                evidence: f.passage,
-                                explanation: f.explanation,
-                                remediation: Some(f.correction),
-                            })
-                            .collect(),
-                        summary: Some(format!(
-                            "{} fallacies detected. Most critical: {}. Argument validity: {:?}",
-                            resp.overall_assessment.fallacy_count,
-                            resp.overall_assessment.most_critical,
-                            resp.argument_structure.validity
-                        )),
-                        overall_quality: Some(resp.overall_assessment.argument_strength),
-                        metadata: None,
-                    },
-                    true,
-                ),
-                Err(e) => (
-                    DetectResponse {
-                        detections: vec![],
-                        summary: Some(format!("Error detecting fallacies: {e}")),
-                        overall_quality: None,
-                        metadata: None,
-                    },
-                    false,
-                ),
-            },
-            _ => (
-                DetectResponse {
-                    detections: vec![],
-                    summary: Some(format!(
-                        "Unknown detect type '{}'. Use 'biases' or 'fallacies'.",
-                        detect_type_for_timeout
-                    )),
-                    overall_quality: None,
-                    metadata: None,
+                "biases" => match mode.biases(content, req.session_id).await {
+                    Ok(resp) => (
+                        DetectResponse {
+                            detections: resp
+                                .biases_detected
+                                .into_iter()
+                                .map(|b| Detection {
+                                    detection_type: b.bias,
+                                    category: None, // Biases don't have categories
+                                    severity: format!("{:?}", b.severity).to_lowercase(),
+                                    confidence: resp.overall_assessment.reasoning_quality,
+                                    evidence: b.evidence,
+                                    explanation: b.impact,
+                                    remediation: Some(b.debiasing),
+                                })
+                                .collect(),
+                            summary: Some(format!(
+                                "{} biases detected. Most severe: {}. Debiased version available.",
+                                resp.overall_assessment.bias_count,
+                                resp.overall_assessment.most_severe
+                            )),
+                            overall_quality: Some(resp.overall_assessment.reasoning_quality),
+                            metadata: None,
+                        },
+                        true,
+                    ),
+                    Err(e) => (
+                        DetectResponse {
+                            detections: vec![],
+                            summary: Some(format!("Error detecting biases: {e}")),
+                            overall_quality: None,
+                            metadata: None,
+                        },
+                        false,
+                    ),
                 },
-                false,
-            ),
+                "fallacies" => match mode.fallacies(content, req.session_id).await {
+                    Ok(resp) => (
+                        DetectResponse {
+                            detections: resp
+                                .fallacies_detected
+                                .into_iter()
+                                .map(|f| Detection {
+                                    detection_type: f.fallacy,
+                                    category: Some(format!("{:?}", f.category).to_lowercase()),
+                                    severity: if resp.overall_assessment.argument_strength < 0.4 {
+                                        "high".to_string()
+                                    } else if resp.overall_assessment.argument_strength < 0.7 {
+                                        "medium".to_string()
+                                    } else {
+                                        "low".to_string()
+                                    },
+                                    confidence: resp.overall_assessment.argument_strength,
+                                    evidence: f.passage,
+                                    explanation: f.explanation,
+                                    remediation: Some(f.correction),
+                                })
+                                .collect(),
+                            summary: Some(format!(
+                                "{} fallacies detected. Most critical: {}. Argument validity: {:?}",
+                                resp.overall_assessment.fallacy_count,
+                                resp.overall_assessment.most_critical,
+                                resp.argument_structure.validity
+                            )),
+                            overall_quality: Some(resp.overall_assessment.argument_strength),
+                            metadata: None,
+                        },
+                        true,
+                    ),
+                    Err(e) => (
+                        DetectResponse {
+                            detections: vec![],
+                            summary: Some(format!("Error detecting fallacies: {e}")),
+                            overall_quality: None,
+                            metadata: None,
+                        },
+                        false,
+                    ),
+                },
+                _ => (
+                    DetectResponse {
+                        detections: vec![],
+                        summary: Some(format!(
+                            "Unknown detect type '{}'. Use 'biases' or 'fallacies'.",
+                            detect_type_for_timeout
+                        )),
+                        overall_quality: None,
+                        metadata: None,
+                    },
+                    false,
+                ),
             }
         })
         .await
@@ -1357,188 +1362,195 @@ impl ReasoningServer {
 
         let (response, success) = match tokio::time::timeout(timeout_duration, async {
             match decision_type_for_timeout.as_str() {
-            "weighted" => match mode.weighted(content, req.session_id).await {
-                Ok(resp) => (
-                    DecisionResponse {
-                        recommendation: resp
-                            .ranking
-                            .first()
-                            .map(|r| r.option.clone())
-                            .unwrap_or_default(),
-                        rankings: Some(
-                            resp.ranking
-                                .into_iter()
-                                .map(|r| RankedOption {
-                                    option: r.option,
-                                    score: r.score,
-                                    rank: r.rank,
-                                })
-                                .collect(),
-                        ),
-                        stakeholder_map: None,
-                        conflicts: None,
-                        alignments: None,
-                        rationale: Some(resp.sensitivity_notes),
-                        metadata: None,
-                    },
-                    true,
-                ),
-                Err(e) => (
-                    DecisionResponse {
-                        recommendation: format!("ERROR: {e}"),
-                        rankings: None,
-                        stakeholder_map: None,
-                        conflicts: None,
-                        alignments: None,
-                        rationale: None,
-                        metadata: None,
-                    },
-                    false,
-                ),
-            },
-            "pairwise" => match mode.pairwise(content, req.session_id).await {
-                Ok(resp) => (
-                    DecisionResponse {
-                        recommendation: resp
-                            .ranking
-                            .first()
-                            .map(|r| r.option.clone())
-                            .unwrap_or_default(),
-                        rankings: Some(
-                            resp.ranking
-                                .into_iter()
-                                .map(|r| RankedOption {
-                                    option: r.option,
-                                    score: f64::from(r.wins),
-                                    rank: r.rank,
-                                })
-                                .collect(),
-                        ),
-                        stakeholder_map: None,
-                        conflicts: None,
-                        alignments: None,
-                        rationale: None,
-                        metadata: None,
-                    },
-                    true,
-                ),
-                Err(e) => (
-                    DecisionResponse {
-                        recommendation: format!("ERROR: {e}"),
-                        rankings: None,
-                        stakeholder_map: None,
-                        conflicts: None,
-                        alignments: None,
-                        rationale: None,
-                        metadata: None,
-                    },
-                    false,
-                ),
-            },
-            "topsis" => match mode.topsis(content, req.session_id).await {
-                Ok(resp) => (
-                    DecisionResponse {
-                        recommendation: resp
-                            .ranking
-                            .first()
-                            .map(|r| r.option.clone())
-                            .unwrap_or_default(),
-                        rankings: Some(
-                            resp.ranking
-                                .into_iter()
-                                .map(|r| RankedOption {
-                                    option: r.option,
-                                    score: r.closeness,
-                                    rank: r.rank,
-                                })
-                                .collect(),
-                        ),
-                        stakeholder_map: None,
-                        conflicts: None,
-                        alignments: None,
-                        rationale: None,
-                        metadata: None,
-                    },
-                    true,
-                ),
-                Err(e) => (
-                    DecisionResponse {
-                        recommendation: format!("ERROR: {e}"),
-                        rankings: None,
-                        stakeholder_map: None,
-                        conflicts: None,
-                        alignments: None,
-                        rationale: None,
-                        metadata: None,
-                    },
-                    false,
-                ),
-            },
-            "perspectives" => match mode.perspectives(content, req.session_id).await {
-                Ok(resp) => (
-                    DecisionResponse {
-                        recommendation: resp.balanced_recommendation.option.clone(),
-                        rankings: None,
-                        stakeholder_map: Some(StakeholderMap {
-                            key_players: resp
-                                .stakeholders
-                                .iter()
-                                .filter(|s| s.influence_level == crate::modes::InfluenceLevel::High)
-                                .map(|s| s.name.clone())
-                                .collect(),
-                            keep_satisfied: vec![],
-                            keep_informed: resp
-                                .stakeholders
-                                .iter()
-                                .filter(|s| {
-                                    s.influence_level == crate::modes::InfluenceLevel::Medium
-                                })
-                                .map(|s| s.name.clone())
-                                .collect(),
-                            minimal_effort: resp
-                                .stakeholders
-                                .iter()
-                                .filter(|s| s.influence_level == crate::modes::InfluenceLevel::Low)
-                                .map(|s| s.name.clone())
-                                .collect(),
-                        }),
-                        conflicts: Some(resp.conflicts.into_iter().map(|c| c.issue).collect()),
-                        alignments: Some(
-                            resp.alignments
-                                .into_iter()
-                                .map(|a| a.common_ground)
-                                .collect(),
-                        ),
-                        rationale: Some(resp.balanced_recommendation.rationale),
-                        metadata: None,
-                    },
-                    true,
-                ),
-                Err(e) => (
-                    DecisionResponse {
-                        recommendation: format!("ERROR: {e}"),
-                        rankings: None,
-                        stakeholder_map: None,
-                        conflicts: None,
-                        alignments: None,
-                        rationale: None,
-                        metadata: None,
-                    },
-                    false,
-                ),
-            },
-            _ => (
-                DecisionResponse {
-                    recommendation: format!("ERROR: unknown type: {}", decision_type_for_timeout),
-                    rankings: None,
-                    stakeholder_map: None,
-                    conflicts: None,
-                    alignments: None,
-                    rationale: None,
-                    metadata: None,
+                "weighted" => match mode.weighted(content, req.session_id).await {
+                    Ok(resp) => (
+                        DecisionResponse {
+                            recommendation: resp
+                                .ranking
+                                .first()
+                                .map(|r| r.option.clone())
+                                .unwrap_or_default(),
+                            rankings: Some(
+                                resp.ranking
+                                    .into_iter()
+                                    .map(|r| RankedOption {
+                                        option: r.option,
+                                        score: r.score,
+                                        rank: r.rank,
+                                    })
+                                    .collect(),
+                            ),
+                            stakeholder_map: None,
+                            conflicts: None,
+                            alignments: None,
+                            rationale: Some(resp.sensitivity_notes),
+                            metadata: None,
+                        },
+                        true,
+                    ),
+                    Err(e) => (
+                        DecisionResponse {
+                            recommendation: format!("ERROR: {e}"),
+                            rankings: None,
+                            stakeholder_map: None,
+                            conflicts: None,
+                            alignments: None,
+                            rationale: None,
+                            metadata: None,
+                        },
+                        false,
+                    ),
                 },
-                false,
-            ),
+                "pairwise" => match mode.pairwise(content, req.session_id).await {
+                    Ok(resp) => (
+                        DecisionResponse {
+                            recommendation: resp
+                                .ranking
+                                .first()
+                                .map(|r| r.option.clone())
+                                .unwrap_or_default(),
+                            rankings: Some(
+                                resp.ranking
+                                    .into_iter()
+                                    .map(|r| RankedOption {
+                                        option: r.option,
+                                        score: f64::from(r.wins),
+                                        rank: r.rank,
+                                    })
+                                    .collect(),
+                            ),
+                            stakeholder_map: None,
+                            conflicts: None,
+                            alignments: None,
+                            rationale: None,
+                            metadata: None,
+                        },
+                        true,
+                    ),
+                    Err(e) => (
+                        DecisionResponse {
+                            recommendation: format!("ERROR: {e}"),
+                            rankings: None,
+                            stakeholder_map: None,
+                            conflicts: None,
+                            alignments: None,
+                            rationale: None,
+                            metadata: None,
+                        },
+                        false,
+                    ),
+                },
+                "topsis" => match mode.topsis(content, req.session_id).await {
+                    Ok(resp) => (
+                        DecisionResponse {
+                            recommendation: resp
+                                .ranking
+                                .first()
+                                .map(|r| r.option.clone())
+                                .unwrap_or_default(),
+                            rankings: Some(
+                                resp.ranking
+                                    .into_iter()
+                                    .map(|r| RankedOption {
+                                        option: r.option,
+                                        score: r.closeness,
+                                        rank: r.rank,
+                                    })
+                                    .collect(),
+                            ),
+                            stakeholder_map: None,
+                            conflicts: None,
+                            alignments: None,
+                            rationale: None,
+                            metadata: None,
+                        },
+                        true,
+                    ),
+                    Err(e) => (
+                        DecisionResponse {
+                            recommendation: format!("ERROR: {e}"),
+                            rankings: None,
+                            stakeholder_map: None,
+                            conflicts: None,
+                            alignments: None,
+                            rationale: None,
+                            metadata: None,
+                        },
+                        false,
+                    ),
+                },
+                "perspectives" => match mode.perspectives(content, req.session_id).await {
+                    Ok(resp) => (
+                        DecisionResponse {
+                            recommendation: resp.balanced_recommendation.option.clone(),
+                            rankings: None,
+                            stakeholder_map: Some(StakeholderMap {
+                                key_players: resp
+                                    .stakeholders
+                                    .iter()
+                                    .filter(|s| {
+                                        s.influence_level == crate::modes::InfluenceLevel::High
+                                    })
+                                    .map(|s| s.name.clone())
+                                    .collect(),
+                                keep_satisfied: vec![],
+                                keep_informed: resp
+                                    .stakeholders
+                                    .iter()
+                                    .filter(|s| {
+                                        s.influence_level == crate::modes::InfluenceLevel::Medium
+                                    })
+                                    .map(|s| s.name.clone())
+                                    .collect(),
+                                minimal_effort: resp
+                                    .stakeholders
+                                    .iter()
+                                    .filter(|s| {
+                                        s.influence_level == crate::modes::InfluenceLevel::Low
+                                    })
+                                    .map(|s| s.name.clone())
+                                    .collect(),
+                            }),
+                            conflicts: Some(resp.conflicts.into_iter().map(|c| c.issue).collect()),
+                            alignments: Some(
+                                resp.alignments
+                                    .into_iter()
+                                    .map(|a| a.common_ground)
+                                    .collect(),
+                            ),
+                            rationale: Some(resp.balanced_recommendation.rationale),
+                            metadata: None,
+                        },
+                        true,
+                    ),
+                    Err(e) => (
+                        DecisionResponse {
+                            recommendation: format!("ERROR: {e}"),
+                            rankings: None,
+                            stakeholder_map: None,
+                            conflicts: None,
+                            alignments: None,
+                            rationale: None,
+                            metadata: None,
+                        },
+                        false,
+                    ),
+                },
+                _ => (
+                    DecisionResponse {
+                        recommendation: format!(
+                            "ERROR: unknown type: {}",
+                            decision_type_for_timeout
+                        ),
+                        rankings: None,
+                        stakeholder_map: None,
+                        conflicts: None,
+                        alignments: None,
+                        rationale: None,
+                        metadata: None,
+                    },
+                    false,
+                ),
             }
         })
         .await
@@ -1553,7 +1565,10 @@ impl ReasoningServer {
                 );
                 (
                     DecisionResponse {
-                        recommendation: format!("ERROR: Tool execution timed out after {}ms", timeout_ms),
+                        recommendation: format!(
+                            "ERROR: Tool execution timed out after {}ms",
+                            timeout_ms
+                        ),
                         rankings: None,
                         stakeholder_map: None,
                         conflicts: None,
@@ -1600,114 +1615,118 @@ impl ReasoningServer {
 
         let (response, success) = match tokio::time::timeout(timeout_duration, async {
             match evidence_type_for_timeout.as_str() {
-            "assess" => match mode.assess(content, req.session_id).await {
-                Ok(resp) => (
+                "assess" => match mode.assess(content, req.session_id).await {
+                    Ok(resp) => (
+                        EvidenceResponse {
+                            overall_credibility: resp.confidence_in_conclusion,
+                            evidence_assessments: Some(
+                                resp.evidence_pieces
+                                    .into_iter()
+                                    .map(|p| EvidenceAssessment {
+                                        content: p.summary,
+                                        credibility_score: p.credibility.overall,
+                                        source_tier: format!("{:?}", p.source_type),
+                                        corroborated_by: None,
+                                    })
+                                    .collect(),
+                            ),
+                            posterior: None,
+                            prior: None,
+                            likelihood_ratio: None,
+                            entropy: None,
+                            confidence_interval: None,
+                            synthesis: Some(format!(
+                                "Strengths: {}. Weaknesses: {}. Gaps: {}",
+                                resp.overall_assessment.key_strengths.join(", "),
+                                resp.overall_assessment.key_weaknesses.join(", "),
+                                resp.overall_assessment.gaps.join(", ")
+                            )),
+                            metadata: None,
+                        },
+                        true,
+                    ),
+                    Err(e) => (
+                        EvidenceResponse {
+                            overall_credibility: 0.0,
+                            evidence_assessments: None,
+                            posterior: None,
+                            prior: None,
+                            likelihood_ratio: None,
+                            entropy: None,
+                            confidence_interval: None,
+                            synthesis: Some(format!("ERROR: {e}")),
+                            metadata: None,
+                        },
+                        false,
+                    ),
+                },
+                "probabilistic" => match mode.probabilistic(content, req.session_id).await {
+                    Ok(resp) => {
+                        let likelihood_ratio =
+                            resp.evidence_analysis.first().map(|a| a.bayes_factor);
+                        (
+                            EvidenceResponse {
+                                overall_credibility: resp.posterior.probability,
+                                evidence_assessments: Some(
+                                    resp.evidence_analysis
+                                        .into_iter()
+                                        .map(|a| EvidenceAssessment {
+                                            content: a.evidence,
+                                            credibility_score: a.bayes_factor.min(1.0),
+                                            source_tier: "computed".to_string(),
+                                            corroborated_by: None,
+                                        })
+                                        .collect(),
+                                ),
+                                posterior: Some(resp.posterior.probability),
+                                prior: Some(resp.prior.probability),
+                                likelihood_ratio,
+                                entropy: None,
+                                confidence_interval: None,
+                                synthesis: Some(format!(
+                                    "{} ({:?} {:?}). Sensitivity: {}",
+                                    resp.belief_update.interpretation,
+                                    resp.belief_update.direction,
+                                    resp.belief_update.magnitude,
+                                    resp.sensitivity
+                                )),
+                                metadata: None,
+                            },
+                            true,
+                        )
+                    }
+                    Err(e) => (
+                        EvidenceResponse {
+                            overall_credibility: 0.0,
+                            evidence_assessments: None,
+                            posterior: None,
+                            prior: None,
+                            likelihood_ratio: None,
+                            entropy: None,
+                            confidence_interval: None,
+                            synthesis: Some(format!("ERROR: {e}")),
+                            metadata: None,
+                        },
+                        false,
+                    ),
+                },
+                _ => (
                     EvidenceResponse {
-                        overall_credibility: resp.confidence_in_conclusion,
-                        evidence_assessments: Some(
-                            resp.evidence_pieces
-                                .into_iter()
-                                .map(|p| EvidenceAssessment {
-                                    content: p.summary,
-                                    credibility_score: p.credibility.overall,
-                                    source_tier: format!("{:?}", p.source_type),
-                                    corroborated_by: None,
-                                })
-                                .collect(),
-                        ),
+                        overall_credibility: 0.0,
+                        evidence_assessments: None,
                         posterior: None,
                         prior: None,
                         likelihood_ratio: None,
                         entropy: None,
                         confidence_interval: None,
                         synthesis: Some(format!(
-                            "Strengths: {}. Weaknesses: {}. Gaps: {}",
-                            resp.overall_assessment.key_strengths.join(", "),
-                            resp.overall_assessment.key_weaknesses.join(", "),
-                            resp.overall_assessment.gaps.join(", ")
+                            "Unknown evidence type: {}",
+                            evidence_type_for_timeout
                         )),
                         metadata: None,
                     },
-                    true,
-                ),
-                Err(e) => (
-                    EvidenceResponse {
-                        overall_credibility: 0.0,
-                        evidence_assessments: None,
-                        posterior: None,
-                        prior: None,
-                        likelihood_ratio: None,
-                        entropy: None,
-                        confidence_interval: None,
-                        synthesis: Some(format!("ERROR: {e}")),
-                        metadata: None,
-                    },
                     false,
                 ),
-            },
-            "probabilistic" => match mode.probabilistic(content, req.session_id).await {
-                Ok(resp) => {
-                    let likelihood_ratio = resp.evidence_analysis.first().map(|a| a.bayes_factor);
-                    (
-                        EvidenceResponse {
-                            overall_credibility: resp.posterior.probability,
-                            evidence_assessments: Some(
-                                resp.evidence_analysis
-                                    .into_iter()
-                                    .map(|a| EvidenceAssessment {
-                                        content: a.evidence,
-                                        credibility_score: a.bayes_factor.min(1.0),
-                                        source_tier: "computed".to_string(),
-                                        corroborated_by: None,
-                                    })
-                                    .collect(),
-                            ),
-                            posterior: Some(resp.posterior.probability),
-                            prior: Some(resp.prior.probability),
-                            likelihood_ratio,
-                            entropy: None,
-                            confidence_interval: None,
-                            synthesis: Some(format!(
-                                "{} ({:?} {:?}). Sensitivity: {}",
-                                resp.belief_update.interpretation,
-                                resp.belief_update.direction,
-                                resp.belief_update.magnitude,
-                                resp.sensitivity
-                            )),
-                            metadata: None,
-                        },
-                        true,
-                    )
-                }
-                Err(e) => (
-                    EvidenceResponse {
-                        overall_credibility: 0.0,
-                        evidence_assessments: None,
-                        posterior: None,
-                        prior: None,
-                        likelihood_ratio: None,
-                        entropy: None,
-                        confidence_interval: None,
-                        synthesis: Some(format!("ERROR: {e}")),
-                        metadata: None,
-                    },
-                    false,
-                ),
-            },
-            _ => (
-                EvidenceResponse {
-                    overall_credibility: 0.0,
-                    evidence_assessments: None,
-                    posterior: None,
-                    prior: None,
-                    likelihood_ratio: None,
-                    entropy: None,
-                    confidence_interval: None,
-                    synthesis: Some(format!("Unknown evidence type: {}", evidence_type_for_timeout)),
-                    metadata: None,
-                },
-                false,
-            ),
             }
         })
         .await
@@ -1967,7 +1986,10 @@ impl ReasoningServer {
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
         // Apply tool-level timeout (MAXIMUM_THINKING = 16384 tokens)
-        let timeout_ms = self.state.config.timeout_for_thinking_budget(MAXIMUM_THINKING);
+        let timeout_ms = self
+            .state
+            .config
+            .timeout_for_thinking_budget(MAXIMUM_THINKING);
         let timeout_duration = Duration::from_millis(timeout_ms);
 
         let (response, success) = match operation {
@@ -1992,38 +2014,38 @@ impl ReasoningServer {
                     }
                 };
                 match explore_result {
-                Ok(resp) => (
-                    MctsResponse {
-                        session_id: resp.session_id,
-                        best_path: Some(
-                            resp.frontier_evaluation
-                                .into_iter()
-                                .map(|n| MctsNode {
-                                    node_id: n.node_id,
-                                    content: format!("UCB1: {:.3}", n.ucb1_score),
-                                    ucb_score: n.ucb1_score,
-                                    visits: n.visits,
-                                })
-                                .collect(),
-                        ),
-                        iterations_completed: Some(resp.search_status.total_simulations),
-                        backtrack_suggestion: None,
-                        executed: None,
-                        metadata: None,
-                    },
-                    true,
-                ),
-                Err(_) => (
-                    MctsResponse {
-                        session_id: input_session_id.clone(),
-                        best_path: None,
-                        iterations_completed: None,
-                        backtrack_suggestion: None,
-                        executed: None,
-                        metadata: None,
-                    },
-                    false,
-                ),
+                    Ok(resp) => (
+                        MctsResponse {
+                            session_id: resp.session_id,
+                            best_path: Some(
+                                resp.frontier_evaluation
+                                    .into_iter()
+                                    .map(|n| MctsNode {
+                                        node_id: n.node_id,
+                                        content: format!("UCB1: {:.3}", n.ucb1_score),
+                                        ucb_score: n.ucb1_score,
+                                        visits: n.visits,
+                                    })
+                                    .collect(),
+                            ),
+                            iterations_completed: Some(resp.search_status.total_simulations),
+                            backtrack_suggestion: None,
+                            executed: None,
+                            metadata: None,
+                        },
+                        true,
+                    ),
+                    Err(_) => (
+                        MctsResponse {
+                            session_id: input_session_id.clone(),
+                            best_path: None,
+                            iterations_completed: None,
+                            backtrack_suggestion: None,
+                            executed: None,
+                            metadata: None,
+                        },
+                        false,
+                    ),
                 }
             }
             "auto_backtrack" => {
@@ -2123,7 +2145,10 @@ impl ReasoningServer {
         let depth = req.analysis_depth.as_deref().unwrap_or("counterfactual");
 
         // Apply tool-level timeout (MAXIMUM_THINKING = 16384 tokens)
-        let timeout_ms = self.state.config.timeout_for_thinking_budget(MAXIMUM_THINKING);
+        let timeout_ms = self
+            .state
+            .config
+            .timeout_for_thinking_budget(MAXIMUM_THINKING);
         let timeout_duration = Duration::from_millis(timeout_ms);
 
         let result = match tokio::time::timeout(
