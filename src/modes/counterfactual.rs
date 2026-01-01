@@ -16,9 +16,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::anthropic::StreamAccumulator;
 use crate::error::ModeError;
 use crate::modes::{extract_json, generate_thought_id, validate_content};
 use crate::prompts::counterfactual_prompt;
+use crate::server::{ProgressMilestone, ProgressReporter};
 use crate::traits::{
     AnthropicClientTrait, CompletionConfig, Message, Session, StorageTrait, Thought,
 };
@@ -288,6 +290,108 @@ where
             .map_err(|e| ModeError::ApiUnavailable {
                 message: format!("Failed to save thought: {e}"),
             })?;
+
+        Ok(CounterfactualResponse::new(
+            thought_id,
+            session.id,
+            causal_question,
+            causal_model,
+            analysis,
+            conclusions,
+        ))
+    }
+
+    /// Perform counterfactual causal analysis using streaming.
+    ///
+    /// Uses streaming API calls with progress reporting for reduced latency.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The causal question to analyze
+    /// * `session_id` - Optional session ID
+    /// * `progress` - Optional progress reporter for streaming updates
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if content is empty, API fails, or parsing fails.
+    pub async fn analyze_streaming(
+        &self,
+        content: &str,
+        session_id: Option<String>,
+        progress: Option<&ProgressReporter>,
+    ) -> Result<CounterfactualResponse, ModeError> {
+        validate_content(content)?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::RequestPrepared);
+        }
+
+        let session = self.get_or_create_session(session_id).await?;
+
+        let prompt = counterfactual_prompt();
+        let user_message = format!("{prompt}\n\nCausal question to analyze:\n{content}");
+
+        let messages = vec![Message::user(user_message)];
+        let config = CompletionConfig::new()
+            .with_max_tokens(32768)
+            .with_temperature(0.3)
+            .with_maximum_thinking();
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ApiCallStarted);
+        }
+
+        let mut rx = self.client.complete_streaming(messages, config).await?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::StreamingStarted);
+        }
+
+        let mut accumulator = StreamAccumulator::new();
+        while let Some(event_result) = rx.recv().await {
+            let event = event_result?;
+            accumulator.process(event);
+        }
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ProcessingResponse);
+        }
+
+        let response_text = accumulator.text();
+        let json = extract_json(&response_text)?;
+
+        let causal_question = Self::parse_causal_question(&json)?;
+        let causal_model = Self::parse_causal_model(&json)?;
+        let analysis = Self::parse_analysis(&json)?;
+        let conclusions = Self::parse_conclusions(&json)?;
+
+        let thought_id = generate_thought_id();
+        let thought = Thought::new(
+            &thought_id,
+            &session.id,
+            format!(
+                "Counterfactual analysis: {} ({})",
+                causal_question.statement,
+                match causal_question.ladder_rung {
+                    LadderRung::Association => "association",
+                    LadderRung::Intervention => "intervention",
+                    LadderRung::Counterfactual => "counterfactual",
+                }
+            ),
+            "counterfactual",
+            analysis.counterfactual_level.confidence,
+        );
+
+        self.storage
+            .save_thought(&thought)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: format!("Failed to save thought: {e}"),
+            })?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::Complete);
+        }
 
         Ok(CounterfactualResponse::new(
             thought_id,

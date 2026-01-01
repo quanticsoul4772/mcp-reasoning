@@ -29,9 +29,11 @@ pub use types::{
     Recommendation, RecommendedAction, SearchStatus, SelectedNode,
 };
 
+use crate::anthropic::StreamAccumulator;
 use crate::error::ModeError;
 use crate::modes::{extract_json, generate_thought_id, validate_content};
 use crate::prompts::{mcts_backtrack_prompt, mcts_explore_prompt};
+use crate::server::{ProgressMilestone, ProgressReporter};
 use crate::traits::{
     AnthropicClientTrait, CompletionConfig, Message, Session, StorageTrait, Thought,
 };
@@ -192,6 +194,208 @@ where
             .map_err(|e| ModeError::ApiUnavailable {
                 message: format!("Failed to save thought: {e}"),
             })?;
+
+        Ok(BacktrackResponse::new(
+            thought_id,
+            session.id,
+            quality_assessment,
+            backtrack_decision,
+            alternative_actions,
+            recommendation,
+        ))
+    }
+
+    /// Perform MCTS exploration step using streaming.
+    ///
+    /// Uses streaming API calls with progress reporting for reduced latency.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - Current search state to explore
+    /// * `session_id` - Optional session ID
+    /// * `progress` - Optional progress reporter for streaming updates
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if content is empty, API fails, or parsing fails.
+    pub async fn explore_streaming(
+        &self,
+        content: &str,
+        session_id: Option<String>,
+        progress: Option<&ProgressReporter>,
+    ) -> Result<ExploreResponse, ModeError> {
+        validate_content(content)?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::RequestPrepared);
+        }
+
+        let session = self.get_or_create_session(session_id).await?;
+
+        let prompt = mcts_explore_prompt();
+        let user_message = format!("{prompt}\n\nSearch state:\n{content}");
+
+        let messages = vec![Message::user(user_message)];
+        let config = CompletionConfig::new()
+            .with_max_tokens(32768)
+            .with_temperature(0.5)
+            .with_maximum_thinking();
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ApiCallStarted);
+        }
+
+        let mut rx = self.client.complete_streaming(messages, config).await?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::StreamingStarted);
+        }
+
+        let mut accumulator = StreamAccumulator::new();
+        while let Some(event_result) = rx.recv().await {
+            let event = event_result?;
+            accumulator.process(event);
+        }
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ProcessingResponse);
+        }
+
+        let response_text = accumulator.text();
+        let json = extract_json(&response_text)?;
+
+        let frontier_evaluation = parse_frontier(&json)?;
+        let selected_node = parse_selected(&json)?;
+        let expansion = parse_expansion(&json)?;
+        let backpropagation = parse_backpropagation(&json)?;
+        let search_status = parse_search_status(&json)?;
+
+        let thought_id = generate_thought_id();
+        let thought = Thought::new(
+            &thought_id,
+            &session.id,
+            format!(
+                "MCTS explore: {} new nodes, best value {:.2}",
+                expansion.new_nodes.len(),
+                search_status.best_path_value
+            ),
+            "mcts_explore",
+            search_status.best_path_value,
+        );
+
+        self.storage
+            .save_thought(&thought)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: format!("Failed to save thought: {e}"),
+            })?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::Complete);
+        }
+
+        Ok(ExploreResponse::new(
+            thought_id,
+            session.id,
+            frontier_evaluation,
+            selected_node,
+            expansion,
+            backpropagation,
+            search_status,
+        ))
+    }
+
+    /// Evaluate search quality and decide on backtracking using streaming.
+    ///
+    /// Uses streaming API calls with progress reporting for reduced latency.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - Search history to evaluate
+    /// * `session_id` - Optional session ID
+    /// * `progress` - Optional progress reporter for streaming updates
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if content is empty, API fails, or parsing fails.
+    pub async fn auto_backtrack_streaming(
+        &self,
+        content: &str,
+        session_id: Option<String>,
+        progress: Option<&ProgressReporter>,
+    ) -> Result<BacktrackResponse, ModeError> {
+        validate_content(content)?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::RequestPrepared);
+        }
+
+        let session = self.get_or_create_session(session_id).await?;
+
+        let prompt = mcts_backtrack_prompt();
+        let user_message = format!("{prompt}\n\nSearch history:\n{content}");
+
+        let messages = vec![Message::user(user_message)];
+        let config = CompletionConfig::new()
+            .with_max_tokens(32768)
+            .with_temperature(0.3)
+            .with_maximum_thinking();
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ApiCallStarted);
+        }
+
+        let mut rx = self.client.complete_streaming(messages, config).await?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::StreamingStarted);
+        }
+
+        let mut accumulator = StreamAccumulator::new();
+        while let Some(event_result) = rx.recv().await {
+            let event = event_result?;
+            accumulator.process(event);
+        }
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ProcessingResponse);
+        }
+
+        let response_text = accumulator.text();
+        let json = extract_json(&response_text)?;
+
+        let quality_assessment = parse_quality_assessment(&json)?;
+        let backtrack_decision = parse_backtrack_decision(&json)?;
+        let alternative_actions = parse_alternatives(&json)?;
+        let recommendation = parse_recommendation(&json)?;
+
+        let thought_id = generate_thought_id();
+        let thought = Thought::new(
+            &thought_id,
+            &session.id,
+            format!(
+                "MCTS backtrack: {} (confidence {:.2})",
+                match recommendation.action {
+                    RecommendedAction::Backtrack => "backtrack",
+                    RecommendedAction::Continue => "continue",
+                    RecommendedAction::Terminate => "terminate",
+                },
+                recommendation.confidence
+            ),
+            "mcts_backtrack",
+            recommendation.confidence,
+        );
+
+        self.storage
+            .save_thought(&thought)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: format!("Failed to save thought: {e}"),
+            })?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::Complete);
+        }
 
         Ok(BacktrackResponse::new(
             thought_id,

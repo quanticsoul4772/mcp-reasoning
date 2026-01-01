@@ -46,6 +46,8 @@ pub struct DivergentRequest {
     pub challenge_assumptions: Option<bool>,
     /// Force maximum divergence.
     pub force_rebellion: Option<bool>,
+    /// Progress token for streaming notifications (auto-generated if not provided).
+    pub progress_token: Option<String>,
 }
 
 /// Request for reflection.
@@ -63,6 +65,8 @@ pub struct ReflectionRequest {
     pub max_iterations: Option<u32>,
     /// Quality threshold (0.0-1.0).
     pub quality_threshold: Option<f64>,
+    /// Progress token for streaming notifications (auto-generated if not provided).
+    pub progress_token: Option<String>,
 }
 
 /// Request for checkpoint operations.
@@ -218,6 +222,8 @@ pub struct MctsRequest {
     pub auto_execute: Option<bool>,
     /// Lookback depth (1-10).
     pub lookback_depth: Option<u32>,
+    /// Progress token for streaming notifications (auto-generated if not provided).
+    pub progress_token: Option<String>,
 }
 
 /// Request for counterfactual analysis.
@@ -231,6 +237,8 @@ pub struct CounterfactualRequest {
     pub session_id: Option<String>,
     /// Analysis depth: association/intervention/counterfactual.
     pub analysis_depth: Option<String>,
+    /// Progress token for streaming notifications (auto-generated if not provided).
+    pub progress_token: Option<String>,
 }
 
 /// Request for preset operations.

@@ -1137,4 +1137,294 @@ mod tests {
         let debug = format!("{:?}", client);
         assert!(debug.contains("AnthropicClient"));
     }
+
+    // ============================================================================
+    // Streaming tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_complete_streaming_validation_failure() {
+        let server = MockServer::start().await;
+        let client = create_mock_client(&server).await;
+
+        // Too many messages should fail validation before network call
+        let messages: Vec<ApiMessage> = (0..=MAX_MESSAGES)
+            .map(|i| ApiMessage::user(format!("Message {i}")))
+            .collect();
+
+        let request = ApiRequest::new("claude-3", 1000, messages);
+        let result = client.complete_streaming(request).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, AnthropicError::InvalidRequest { .. }));
+        assert!(err.to_string().contains("Too many messages"));
+    }
+
+    #[tokio::test]
+    async fn test_complete_streaming_auth_failure() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("Unauthorized"))
+            .mount(&server)
+            .await;
+
+        let client = create_mock_client(&server).await;
+        let request = ApiRequest::new("claude-3", 1000, vec![ApiMessage::user("Hi")]);
+
+        let result = client.complete_streaming(request).await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            AnthropicError::AuthenticationFailed
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_complete_streaming_rate_limited() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .append_header("retry-after", "45")
+                    .set_body_string("Rate limited"),
+            )
+            .mount(&server)
+            .await;
+
+        let client = create_mock_client(&server).await;
+        let request = ApiRequest::new("claude-3", 1000, vec![ApiMessage::user("Hi")]);
+
+        let result = client.complete_streaming(request).await;
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            AnthropicError::RateLimited {
+                retry_after_seconds,
+            } => {
+                assert_eq!(retry_after_seconds, 45);
+            }
+            e => panic!("Wrong error type: {e:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_complete_streaming_model_overloaded() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(ResponseTemplate::new(529).set_body_string("Overloaded"))
+            .mount(&server)
+            .await;
+
+        let client = create_mock_client(&server).await;
+        let request = ApiRequest::new("claude-sonnet", 1000, vec![ApiMessage::user("Hi")]);
+
+        let result = client.complete_streaming(request).await;
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            AnthropicError::ModelOverloaded { model } => {
+                assert_eq!(model, "claude-sonnet");
+            }
+            e => panic!("Wrong error type: {e:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_complete_streaming_unexpected_error() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .mount(&server)
+            .await;
+
+        let client = create_mock_client(&server).await;
+        let request = ApiRequest::new("claude-3", 1000, vec![ApiMessage::user("Hi")]);
+
+        let result = client.complete_streaming(request).await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            AnthropicError::UnexpectedResponse { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_complete_streaming_success() {
+        let server = MockServer::start().await;
+
+        // Simulate SSE response
+        let sse_body = r#"data: {"type": "message_start", "message": {"id": "msg_stream_123"}}
+
+data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text"}}
+
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}
+
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": " World!"}}
+
+data: {"type": "content_block_stop", "index": 0}
+
+data: {"type": "message_stop", "usage": {"input_tokens": 10, "output_tokens": 5}}
+
+"#;
+
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .append_header("content-type", "text/event-stream")
+                    .set_body_string(sse_body),
+            )
+            .mount(&server)
+            .await;
+
+        let client = create_mock_client(&server).await;
+        let request = ApiRequest::new("claude-3", 1000, vec![ApiMessage::user("Hi")]);
+
+        let result = client.complete_streaming(request).await;
+        assert!(result.is_ok());
+
+        let mut rx = result.unwrap();
+        let mut events = Vec::new();
+
+        while let Some(event_result) = rx.recv().await {
+            match event_result {
+                Ok(event) => events.push(event),
+                Err(e) => panic!("Unexpected error: {e:?}"),
+            }
+        }
+
+        // Verify we got all expected events
+        assert!(events.len() >= 4, "Expected at least 4 events, got {}", events.len());
+
+        // Verify first event is MessageStart
+        match &events[0] {
+            StreamEvent::MessageStart { message_id } => {
+                assert_eq!(message_id, "msg_stream_123");
+            }
+            e => panic!("Expected MessageStart, got {e:?}"),
+        }
+
+        // Verify we got text deltas
+        let text_deltas: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::TextDelta { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text_deltas.join(""), "Hello World!");
+    }
+
+    #[tokio::test]
+    async fn test_complete_streaming_error_event_propagates() {
+        let server = MockServer::start().await;
+
+        // Simulate SSE stream with error event
+        let sse_body = r#"data: {"type": "message_start", "message": {"id": "msg_123"}}
+
+data: {"type": "error", "error": {"message": "Rate limit exceeded mid-stream"}}
+
+"#;
+
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .append_header("content-type", "text/event-stream")
+                    .set_body_string(sse_body),
+            )
+            .mount(&server)
+            .await;
+
+        let client = create_mock_client(&server).await;
+        let request = ApiRequest::new("claude-3", 1000, vec![ApiMessage::user("Hi")]);
+
+        let result = client.complete_streaming(request).await;
+        assert!(result.is_ok());
+
+        let mut rx = result.unwrap();
+        let mut got_message_start = false;
+        let mut got_error = false;
+
+        while let Some(event_result) = rx.recv().await {
+            match event_result {
+                Ok(StreamEvent::MessageStart { .. }) => got_message_start = true,
+                Err(e) => {
+                    // Error event should be converted to Err
+                    got_error = true;
+                    assert!(e.to_string().contains("Rate limit exceeded mid-stream"));
+                }
+                _ => {}
+            }
+        }
+
+        assert!(got_message_start, "Should have received MessageStart");
+        assert!(got_error, "Should have received error after error event");
+    }
+
+    #[tokio::test]
+    async fn test_complete_streaming_with_thinking() {
+        let server = MockServer::start().await;
+
+        // Simulate SSE response with thinking
+        let sse_body = r#"data: {"type": "message_start", "message": {"id": "msg_thinking_123"}}
+
+data: {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking"}}
+
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Let me think..."}}
+
+data: {"type": "content_block_stop", "index": 0}
+
+data: {"type": "content_block_start", "index": 1, "content_block": {"type": "text"}}
+
+data: {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "The answer is 42."}}
+
+data: {"type": "content_block_stop", "index": 1}
+
+data: {"type": "message_stop", "usage": {"input_tokens": 15, "output_tokens": 25}}
+
+"#;
+
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .append_header("content-type", "text/event-stream")
+                    .set_body_string(sse_body),
+            )
+            .mount(&server)
+            .await;
+
+        let client = create_mock_client(&server).await;
+        let request = ApiRequest::new("claude-3", 1000, vec![ApiMessage::user("Think hard")])
+            .with_thinking(ThinkingConfig::standard());
+
+        let result = client.complete_streaming(request).await;
+        assert!(result.is_ok());
+
+        let mut rx = result.unwrap();
+        let mut thinking_text = String::new();
+        let mut response_text = String::new();
+
+        while let Some(event_result) = rx.recv().await {
+            match event_result {
+                Ok(StreamEvent::ThinkingDelta { thinking }) => thinking_text.push_str(&thinking),
+                Ok(StreamEvent::TextDelta { text, .. }) => response_text.push_str(&text),
+                Ok(_) => {}
+                Err(e) => panic!("Unexpected error: {e:?}"),
+            }
+        }
+
+        assert_eq!(thinking_text, "Let me think...");
+        assert_eq!(response_text, "The answer is 42.");
+    }
 }

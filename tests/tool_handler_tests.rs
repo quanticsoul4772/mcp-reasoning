@@ -1033,6 +1033,7 @@ mod server_tests {
             num_perspectives: Some(4),
             challenge_assumptions: Some(true),
             force_rebellion: Some(false),
+            progress_token: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("Analyze this"));
@@ -1049,6 +1050,7 @@ mod server_tests {
             session_id: None,
             max_iterations: Some(3),
             quality_threshold: Some(0.8),
+            progress_token: None,
         };
         let json = serde_json::to_string(&process_req).unwrap();
         assert!(json.contains("process"));
@@ -1207,6 +1209,7 @@ mod server_tests {
             quality_threshold: None,
             lookback_depth: None,
             auto_execute: None,
+            progress_token: None,
         };
         let json = serde_json::to_string(&explore_req).unwrap();
         assert!(json.contains("explore"));
@@ -1223,6 +1226,7 @@ mod server_tests {
             quality_threshold: Some(0.5),
             lookback_depth: Some(3),
             auto_execute: Some(true),
+            progress_token: None,
         };
         let json = serde_json::to_string(&backtrack_req).unwrap();
         assert!(json.contains("auto_backtrack"));
@@ -1235,6 +1239,7 @@ mod server_tests {
             intervention: "What if X changed".to_string(),
             session_id: None,
             analysis_depth: Some("counterfactual".to_string()),
+            progress_token: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("scenario"));

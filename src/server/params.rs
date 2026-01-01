@@ -99,6 +99,10 @@ pub struct DivergentParams {
     /// Force maximum creative divergence.
     #[serde(default)]
     pub force_rebellion: bool,
+
+    /// Progress token for streaming notifications (auto-generated if not provided).
+    #[schemars(description = "Token for progress notifications (optional)")]
+    pub progress_token: Option<String>,
 }
 
 const fn default_num_perspectives() -> u32 {
@@ -145,6 +149,10 @@ pub struct ReflectionParams {
     #[schemars(range(min = 0.0, max = 1.0))]
     #[serde(default = "default_quality_threshold")]
     pub quality_threshold: f64,
+
+    /// Progress token for streaming notifications (auto-generated if not provided).
+    #[schemars(description = "Token for progress notifications (optional)")]
+    pub progress_token: Option<String>,
 }
 
 const fn default_max_iterations() -> u32 {
@@ -661,6 +669,10 @@ pub struct MctsParams {
     #[schemars(range(min = 1, max = 10))]
     #[serde(default = "default_lookback_depth")]
     pub lookback_depth: u32,
+
+    /// Progress token for streaming notifications (auto-generated if not provided).
+    #[schemars(description = "Token for progress notifications (optional)")]
+    pub progress_token: Option<String>,
 }
 
 const fn default_iterations() -> u32 {
@@ -740,6 +752,10 @@ pub struct CounterfactualParams {
 
     /// Optional causal model.
     pub causal_model: Option<CausalModelDef>,
+
+    /// Progress token for streaming notifications (auto-generated if not provided).
+    #[schemars(description = "Token for progress notifications (optional)")]
+    pub progress_token: Option<String>,
 }
 
 /// Preset operation type.

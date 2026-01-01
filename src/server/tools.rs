@@ -463,7 +463,8 @@ impl ReasoningServer {
             challenge_assumptions = challenge,
             force_rebellion = rebellion,
             session_id = ?req.session_id,
-            "Tool invocation started"
+            progress_token = ?req.progress_token,
+            "Tool invocation started (streaming)"
         );
 
         let mode = DivergentMode::new(
@@ -472,6 +473,12 @@ impl ReasoningServer {
         );
 
         let input_session_id = req.session_id.clone().unwrap_or_default();
+
+        // Create progress reporter (use progress_token or generate one)
+        let progress_token = req.progress_token.unwrap_or_else(|| {
+            format!("divergent-{}", uuid::Uuid::new_v4())
+        });
+        let progress = self.state.create_progress_reporter(&progress_token);
 
         // Apply tool-level timeout (DEEP_THINKING = 8192 tokens = 60s)
         let timeout_ms = self
@@ -482,12 +489,13 @@ impl ReasoningServer {
 
         let result = match tokio::time::timeout(
             timeout_duration,
-            mode.process(
+            mode.process_streaming(
                 &req.content,
                 req.session_id,
                 req.num_perspectives,
                 challenge,
                 rebellion,
+                Some(&progress),
             ),
         )
         .await
@@ -587,6 +595,19 @@ impl ReasoningServer {
 
         let operation = req.operation.as_deref().unwrap_or("process");
 
+        // Create progress reporter (use progress_token or generate one)
+        let progress_token = req.progress_token.unwrap_or_else(|| {
+            format!("reflection-{}", uuid::Uuid::new_v4())
+        });
+        let progress = self.state.create_progress_reporter(&progress_token);
+
+        tracing::info!(
+            tool = "reasoning_reflection",
+            operation = operation,
+            progress_token = %progress_token,
+            "Tool invocation started (streaming)"
+        );
+
         // Apply tool-level timeout (DEEP_THINKING = 8192 tokens)
         let timeout_ms = self.state.config.timeout_for_thinking_budget(DEEP_THINKING);
         let timeout_duration = Duration::from_millis(timeout_ms);
@@ -596,7 +617,7 @@ impl ReasoningServer {
                 let content = req.content.as_deref().unwrap_or("");
                 let process_result = match tokio::time::timeout(
                     timeout_duration,
-                    mode.process(content, req.session_id),
+                    mode.process_streaming(content, req.session_id, Some(&progress)),
                 )
                 .await
                 {
@@ -656,7 +677,7 @@ impl ReasoningServer {
                 let summary = req.content.as_deref();
                 let evaluate_result = match tokio::time::timeout(
                     timeout_duration,
-                    mode.evaluate(session_id, summary),
+                    mode.evaluate_streaming(session_id, summary, Some(&progress)),
                 )
                 .await
                 {
@@ -1999,6 +2020,19 @@ impl ReasoningServer {
         let content = req.content.as_deref().unwrap_or("");
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
+        // Create progress reporter (use progress_token or generate one)
+        let progress_token = req.progress_token.unwrap_or_else(|| {
+            format!("mcts-{}", uuid::Uuid::new_v4())
+        });
+        let progress = self.state.create_progress_reporter(&progress_token);
+
+        tracing::info!(
+            tool = "reasoning_mcts",
+            operation = operation,
+            progress_token = %progress_token,
+            "Tool invocation started (streaming)"
+        );
+
         // Apply tool-level timeout (MAXIMUM_THINKING = 16384 tokens)
         let timeout_ms = self
             .state
@@ -2010,7 +2044,7 @@ impl ReasoningServer {
             "explore" => {
                 let explore_result = match tokio::time::timeout(
                     timeout_duration,
-                    mode.explore(content, req.session_id),
+                    mode.explore_streaming(content, req.session_id, Some(&progress)),
                 )
                 .await
                 {
@@ -2065,7 +2099,7 @@ impl ReasoningServer {
             "auto_backtrack" => {
                 let backtrack_result = match tokio::time::timeout(
                     timeout_duration,
-                    mode.auto_backtrack(content, Some(input_session_id.clone())),
+                    mode.auto_backtrack_streaming(content, Some(input_session_id.clone()), Some(&progress)),
                 )
                 .await
                 {
@@ -2158,6 +2192,18 @@ impl ReasoningServer {
         // Map analysis_depth to ladder rung
         let depth = req.analysis_depth.as_deref().unwrap_or("counterfactual");
 
+        // Create progress reporter (use progress_token or generate one)
+        let progress_token = req.progress_token.unwrap_or_else(|| {
+            format!("counterfactual-{}", uuid::Uuid::new_v4())
+        });
+        let progress = self.state.create_progress_reporter(&progress_token);
+
+        tracing::info!(
+            tool = "reasoning_counterfactual",
+            progress_token = %progress_token,
+            "Tool invocation started (streaming)"
+        );
+
         // Apply tool-level timeout (MAXIMUM_THINKING = 16384 tokens)
         let timeout_ms = self
             .state
@@ -2167,7 +2213,7 @@ impl ReasoningServer {
 
         let result = match tokio::time::timeout(
             timeout_duration,
-            mode.analyze(&content, req.session_id.clone()),
+            mode.analyze_streaming(&content, req.session_id.clone(), Some(&progress)),
         )
         .await
         {
@@ -3583,6 +3629,7 @@ mod tests {
             num_perspectives: Some(3),
             challenge_assumptions: Some(true),
             force_rebellion: Some(false),
+            progress_token: None,
         };
         let resp = server.reasoning_divergent(Parameters(req)).await;
         assert_eq!(resp.session_id, "s1");
@@ -3598,6 +3645,7 @@ mod tests {
             session_id: Some("s1".to_string()),
             max_iterations: Some(3),
             quality_threshold: Some(0.8),
+            progress_token: None,
         };
         let resp = server.reasoning_reflection(Parameters(req)).await;
         assert!(resp.quality_score >= 0.0);
@@ -3728,6 +3776,7 @@ mod tests {
             quality_threshold: Some(0.7),
             lookback_depth: Some(3),
             auto_execute: Some(false),
+            progress_token: None,
         };
         let resp = server.reasoning_mcts(Parameters(req)).await;
         assert_eq!(resp.session_id, "s1");
@@ -3741,6 +3790,7 @@ mod tests {
             intervention: "change".to_string(),
             analysis_depth: Some("counterfactual".to_string()),
             session_id: Some("s1".to_string()),
+            progress_token: None,
         };
         let resp = server.reasoning_counterfactual(Parameters(req)).await;
         // Stub uses input values for output
@@ -3991,6 +4041,7 @@ mod tests {
                 num_perspectives: Some(2),
                 challenge_assumptions: Some(true),
                 force_rebellion: Some(true),
+                progress_token: None,
             };
 
             let resp = server.reasoning_divergent(Parameters(req)).await;
@@ -4033,6 +4084,7 @@ mod tests {
                 session_id: Some("s1".to_string()),
                 max_iterations: Some(3),
                 quality_threshold: Some(0.8),
+                progress_token: None,
             };
             let resp = server.reasoning_reflection(Parameters(process_req)).await;
             assert!(resp.quality_score >= 0.0);
@@ -4065,6 +4117,7 @@ mod tests {
                 session_id: Some("s1".to_string()),
                 max_iterations: None,
                 quality_threshold: None,
+                progress_token: None,
             };
             let resp = server.reasoning_reflection(Parameters(evaluate_req)).await;
             assert!(resp.quality_score >= 0.0);
@@ -4077,6 +4130,7 @@ mod tests {
                 session_id: Some("s1".to_string()),
                 max_iterations: None,
                 quality_threshold: None,
+                progress_token: None,
             };
             let resp = server.reasoning_reflection(Parameters(unknown_req)).await;
             assert!(resp
@@ -4681,6 +4735,7 @@ mod tests {
                 quality_threshold: Some(0.7),
                 lookback_depth: Some(3),
                 auto_execute: Some(false),
+                progress_token: None,
             };
             let resp = server.reasoning_mcts(Parameters(explore_req)).await;
             assert_eq!(resp.session_id, "s1");
@@ -4713,6 +4768,7 @@ mod tests {
                 quality_threshold: Some(0.7),
                 lookback_depth: Some(3),
                 auto_execute: Some(true),
+                progress_token: None,
             };
             let resp = server.reasoning_mcts(Parameters(backtrack_req)).await;
             assert_eq!(resp.session_id, "s1");
@@ -4729,6 +4785,7 @@ mod tests {
                 quality_threshold: None,
                 lookback_depth: None,
                 auto_execute: None,
+                progress_token: None,
             };
             let resp = server.reasoning_mcts(Parameters(default_req)).await;
             assert_eq!(resp.session_id, "s1");
@@ -4770,6 +4827,7 @@ mod tests {
                 intervention: "What if X changed?".to_string(),
                 analysis_depth: Some("counterfactual".to_string()),
                 session_id: Some("s1".to_string()),
+                progress_token: None,
             };
 
             let resp = server.reasoning_counterfactual(Parameters(req)).await;

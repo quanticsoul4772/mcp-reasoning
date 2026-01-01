@@ -13,9 +13,11 @@ pub use types::{
     EvaluateResponse, Improvement, Priority, ProcessResponse, ReasoningAnalysis, SessionAssessment,
 };
 
+use crate::anthropic::StreamAccumulator;
 use crate::error::ModeError;
 use crate::modes::{extract_json, generate_thought_id, validate_content};
 use crate::prompts::{get_prompt_for_mode, Operation, ReasoningMode};
+use crate::server::{ProgressMilestone, ProgressReporter};
 use crate::traits::{
     AnthropicClientTrait, CompletionConfig, Message, Session, StorageTrait, Thought,
 };
@@ -256,6 +258,282 @@ where
 
         if let Some(meta) = meta_observations {
             response = response.with_meta_observations(meta);
+        }
+
+        Ok(response)
+    }
+
+    /// Process reasoning for improvement using streaming.
+    ///
+    /// Uses streaming API calls with progress reporting for reduced latency.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The reasoning to analyze and improve
+    /// * `session_id` - Optional session ID for context continuity
+    /// * `progress` - Optional progress reporter for streaming updates
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if content is empty, API fails, or parsing fails.
+    pub async fn process_streaming(
+        &self,
+        content: &str,
+        session_id: Option<String>,
+        progress: Option<&ProgressReporter>,
+    ) -> Result<ProcessResponse, ModeError> {
+        validate_content(content)?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::RequestPrepared);
+        }
+
+        let session = self.get_or_create_session(session_id).await?;
+        let prompt = get_prompt_for_mode(ReasoningMode::Reflection, Some(&Operation::Process));
+
+        let user_message = format!("{prompt}\n\nAnalyze and improve this reasoning:\n{content}");
+        let messages = vec![Message::user(user_message)];
+        let config = CompletionConfig::new()
+            .with_max_tokens(16384)
+            .with_temperature(0.7)
+            .with_deep_thinking();
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ApiCallStarted);
+        }
+
+        let mut rx = self.client.complete_streaming(messages, config).await?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::StreamingStarted);
+        }
+
+        let mut accumulator = StreamAccumulator::new();
+        while let Some(event_result) = rx.recv().await {
+            let event = event_result?;
+            accumulator.process(event);
+        }
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ProcessingResponse);
+        }
+
+        let response_text = accumulator.text();
+        let json = extract_json(&response_text)?;
+
+        // Parse analysis
+        let analysis = parse_analysis(&json)?;
+
+        // Parse improvements
+        let improvements = parse_improvements(&json)?;
+
+        // Parse refined reasoning
+        let refined_reasoning = json
+            .get("refined_reasoning")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        if refined_reasoning.is_empty() {
+            return Err(ModeError::MissingField {
+                field: "refined_reasoning".to_string(),
+            });
+        }
+
+        // Parse confidence improvement
+        let confidence_improvement = json
+            .get("confidence_improvement")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+
+        // Generate thought ID and save
+        let thought_id = generate_thought_id();
+        let thought = Thought::new(&thought_id, &session.id, content, "reflection", 0.8);
+        self.storage
+            .save_thought(&thought)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: format!("Failed to save thought: {e}"),
+            })?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::Complete);
+        }
+
+        Ok(ProcessResponse::new(
+            thought_id,
+            session.id,
+            analysis,
+            improvements,
+            refined_reasoning,
+            confidence_improvement,
+        ))
+    }
+
+    /// Evaluate an entire session using streaming.
+    ///
+    /// Uses streaming API calls with progress reporting for reduced latency.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session ID to evaluate
+    /// * `summary` - Optional summary of session content
+    /// * `progress` - Optional progress reporter for streaming updates
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if API fails or parsing fails.
+    pub async fn evaluate_streaming(
+        &self,
+        session_id: &str,
+        summary: Option<&str>,
+        progress: Option<&ProgressReporter>,
+    ) -> Result<EvaluateResponse, ModeError> {
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::RequestPrepared);
+        }
+
+        let session = self
+            .storage
+            .get_session(session_id)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: format!("Failed to get session: {e}"),
+            })?
+            .ok_or_else(|| ModeError::MissingField {
+                field: "session_id".to_string(),
+            })?;
+
+        // Get thoughts for context
+        let thoughts = self.storage.get_thoughts(&session.id).await.map_err(|e| {
+            ModeError::ApiUnavailable {
+                message: format!("Failed to get thoughts: {e}"),
+            }
+        })?;
+
+        // Build context from thoughts or use provided summary
+        let context = if let Some(s) = summary {
+            s.to_string()
+        } else if thoughts.is_empty() {
+            // Return graceful response for empty sessions instead of error
+            return Ok(EvaluateResponse::new(
+                generate_thought_id(),
+                session_id,
+                SessionAssessment::new(0.0, 0.0, 0.0, 0.0),
+                vec![],
+                vec!["No reasoning content found in session to evaluate".to_string()],
+                vec![],
+                vec![
+                    "Provide content via the 'content' parameter".to_string(),
+                    "Or use reasoning tools (linear, tree, etc.) first to generate thoughts".to_string(),
+                ],
+            ));
+        } else {
+            thoughts
+                .iter()
+                .map(|t| format!("[{}] {}", t.mode, t.content))
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        };
+
+        let prompt = get_prompt_for_mode(ReasoningMode::Reflection, Some(&Operation::Evaluate));
+        let user_message = format!("{prompt}\n\nEvaluate this reasoning session:\n{context}");
+        let messages = vec![Message::user(user_message)];
+        let config = CompletionConfig::new()
+            .with_max_tokens(16384)
+            .with_temperature(0.7)
+            .with_deep_thinking();
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ApiCallStarted);
+        }
+
+        let mut rx = self.client.complete_streaming(messages, config).await?;
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::StreamingStarted);
+        }
+
+        let mut accumulator = StreamAccumulator::new();
+        while let Some(event_result) = rx.recv().await {
+            let event = event_result?;
+            accumulator.process(event);
+        }
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ProcessingResponse);
+        }
+
+        let response_text = accumulator.text();
+        let json = extract_json(&response_text)?;
+
+        // Parse session assessment
+        let session_assessment = parse_session_assessment(&json)?;
+
+        // Parse string arrays
+        let strongest_elements =
+            parse_string_array(&json, "strongest_elements").ok_or_else(|| {
+                ModeError::MissingField {
+                    field: "strongest_elements".to_string(),
+                }
+            })?;
+
+        let areas_for_improvement =
+            parse_string_array(&json, "areas_for_improvement").ok_or_else(|| {
+                ModeError::MissingField {
+                    field: "areas_for_improvement".to_string(),
+                }
+            })?;
+
+        let key_insights =
+            parse_string_array(&json, "key_insights").ok_or_else(|| ModeError::MissingField {
+                field: "key_insights".to_string(),
+            })?;
+
+        let recommendations = parse_string_array(&json, "recommendations").ok_or_else(|| {
+            ModeError::MissingField {
+                field: "recommendations".to_string(),
+            }
+        })?;
+
+        let meta_observations = json
+            .get("meta_observations")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        // Generate thought ID and save
+        let thought_id = generate_thought_id();
+        let thought = Thought::new(
+            &thought_id,
+            &session.id,
+            "Session evaluation",
+            "reflection_evaluate",
+            session_assessment.average(),
+        );
+        self.storage
+            .save_thought(&thought)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: format!("Failed to save thought: {e}"),
+            })?;
+
+        let mut response = EvaluateResponse::new(
+            thought_id,
+            session.id,
+            session_assessment,
+            strongest_elements,
+            areas_for_improvement,
+            key_insights,
+            recommendations,
+        );
+
+        if let Some(meta) = meta_observations {
+            response = response.with_meta_observations(meta);
+        }
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::Complete);
         }
 
         Ok(response)
