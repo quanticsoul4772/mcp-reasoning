@@ -69,9 +69,8 @@ fn parse_event_data(data: &str) -> Result<StreamEvent, AnthropicError> {
                         let thinking = delta.thinking.unwrap_or_default();
                         Ok(StreamEvent::ThinkingDelta { thinking })
                     }
-                    other => Err(AnthropicError::UnexpectedResponse {
-                        message: format!("Unknown delta type: {other}"),
-                    }),
+                    // Ignore unknown delta types (signature_delta, input_json_delta, etc.)
+                    _ => Ok(StreamEvent::Ignored),
                 }
             } else {
                 Err(AnthropicError::UnexpectedResponse {
@@ -228,6 +227,9 @@ impl StreamAccumulator {
             }
             StreamEvent::Ping => {
                 // Keep-alive event - no action needed
+            }
+            StreamEvent::Ignored => {
+                // Unknown delta type - no action needed
             }
         }
     }
@@ -410,6 +412,15 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_sse_unknown_delta_type_ignored() {
+        // signature_delta and other unknown delta types should be ignored, not error
+        let line = r#"data: {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "abc"}}"#;
+        let result = parse_sse_line(line);
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap().unwrap(), StreamEvent::Ignored));
+    }
+
+    #[test]
     fn test_parse_sse_invalid_json() {
         let line = "data: not valid json";
         let result = parse_sse_line(line);
@@ -427,10 +438,11 @@ mod tests {
 
     #[test]
     fn test_parse_sse_unknown_delta_type() {
+        // Unknown delta types are now ignored instead of erroring
         let line = r#"data: {"type": "content_block_delta", "index": 0, "delta": {"type": "unknown_delta"}}"#;
         let result = parse_sse_line(line);
         assert!(result.is_some());
-        assert!(result.unwrap().is_err());
+        assert!(matches!(result.unwrap().unwrap(), StreamEvent::Ignored));
     }
 
     #[test]

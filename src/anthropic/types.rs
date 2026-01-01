@@ -600,6 +600,8 @@ pub enum StreamEvent {
     },
     /// Keep-alive ping event.
     Ping,
+    /// Unknown/ignored event (e.g., signature_delta, input_json_delta).
+    Ignored,
 }
 
 /// API error response body.
