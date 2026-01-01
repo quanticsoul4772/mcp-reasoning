@@ -162,10 +162,19 @@ where
         let context = if let Some(s) = summary {
             s.to_string()
         } else if thoughts.is_empty() {
-            return Err(ModeError::InvalidValue {
-                field: "session".to_string(),
-                reason: "no thoughts to evaluate and no summary provided".to_string(),
-            });
+            // Return graceful response for empty sessions instead of error
+            return Ok(EvaluateResponse::new(
+                generate_thought_id(),
+                session_id,
+                SessionAssessment::new(0.0, 0.0, 0.0, 0.0),
+                vec![],
+                vec!["No reasoning content found in session to evaluate".to_string()],
+                vec![],
+                vec![
+                    "Provide content via the 'content' parameter".to_string(),
+                    "Or use reasoning tools (linear, tree, etc.) first to generate thoughts".to_string(),
+                ],
+            ));
         } else {
             thoughts
                 .iter()
@@ -536,7 +545,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_reflection_evaluate_no_thoughts_no_summary() {
+    async fn test_reflection_evaluate_no_thoughts_returns_graceful_response() {
         let mut mock_storage = MockStorageTrait::new();
         let mock_client = MockAnthropicClientTrait::new();
 
@@ -548,12 +557,15 @@ mod tests {
         let mode = ReflectionMode::new(mock_storage, mock_client);
         let result = mode.evaluate("test-session", None).await;
 
-        assert!(result.is_err());
-        assert!(matches!(
-            result,
-            Err(ModeError::InvalidValue { field, reason })
-            if field == "session" && reason.contains("no thoughts")
-        ));
+        // Should succeed with graceful response instead of error
+        assert!(result.is_ok());
+        let response = result.expect("Should succeed with graceful response");
+        assert_eq!(response.session_id, "test-session");
+        assert!(response.session_assessment.overall_quality.abs() < f64::EPSILON);
+        assert!(response.strongest_elements.is_empty());
+        assert!(!response.areas_for_improvement.is_empty());
+        assert!(response.areas_for_improvement[0].contains("No reasoning content"));
+        assert!(!response.recommendations.is_empty());
     }
 
     #[tokio::test]

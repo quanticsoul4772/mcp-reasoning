@@ -473,11 +473,11 @@ impl ReasoningServer {
 
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
-        // Apply tool-level timeout (STANDARD_THINKING = 4096 tokens)
+        // Apply tool-level timeout (DEEP_THINKING = 8192 tokens = 60s)
         let timeout_ms = self
             .state
             .config
-            .timeout_for_thinking_budget(STANDARD_THINKING);
+            .timeout_for_thinking_budget(DEEP_THINKING);
         let timeout_duration = Duration::from_millis(timeout_ms);
 
         let result = match tokio::time::timeout(
