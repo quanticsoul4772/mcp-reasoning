@@ -9,6 +9,7 @@
 #![allow(clippy::unused_async)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -36,11 +37,25 @@ use super::responses::{
     StakeholderMap, TimelineBranch, TimelineResponse, TreeResponse,
 };
 use super::types::AppState;
+use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::{
     AutoMode, CheckpointContext, CheckpointMode, DecisionMode, DetectMode, DivergentMode,
     EvidenceMode, GraphMode, LinearMode, MctsMode, ReflectionMode, TimelineMode, TreeMode,
 };
+
+// ============================================================================
+// Thinking Budget Constants for Timeout Selection
+// ============================================================================
+
+/// No extended thinking (fast modes) - 30s timeout
+const NO_THINKING: Option<u32> = None;
+/// Standard thinking budget (4096 tokens) - 30s timeout
+const STANDARD_THINKING: Option<u32> = Some(4096);
+/// Deep thinking budget (8192 tokens) - 60s timeout
+const DEEP_THINKING: Option<u32> = Some(8192);
+/// Maximum thinking budget (16384 tokens) - 120s timeout
+const MAXIMUM_THINKING: Option<u32> = Some(16384);
 
 // ============================================================================
 // ReasoningServer with Tool Router (rmcp 0.12 syntax)
@@ -93,9 +108,28 @@ impl ReasoningServer {
         let input_session_id = req.session_id.clone().unwrap_or_default();
         let session_id_for_metadata = req.session_id.clone();
 
-        let result = mode
-            .process(&req.content, req.session_id, req.confidence)
-            .await;
+        // Apply tool-level timeout to prevent indefinite hangs
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(NO_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+
+        let result = match tokio::time::timeout(
+            timeout_duration,
+            mode.process(&req.content, req.session_id, req.confidence),
+        )
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_linear",
+                    timeout_ms = timeout_ms,
+                    "Tool execution timed out"
+                );
+                Err(ModeError::Timeout {
+                    elapsed_ms: timeout_ms,
+                })
+            }
+        };
 
         let elapsed_ms = timer.elapsed_ms();
         let success = result.is_ok();
@@ -175,10 +209,33 @@ impl ReasoningServer {
 
         let session_id = req.session_id.clone().unwrap_or_default();
 
+        // Apply tool-level timeout for API-calling operations
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(NO_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+
         let (mut response, success) = match operation {
             "create" => {
                 let content = req.content.as_deref().unwrap_or("");
-                match mode.create(content, req.session_id, req.num_branches).await {
+                let create_result = match tokio::time::timeout(
+                    timeout_duration,
+                    mode.create(content, req.session_id, req.num_branches),
+                )
+                .await
+                {
+                    Ok(inner) => inner,
+                    Err(_elapsed) => {
+                        tracing::error!(
+                            tool = "reasoning_tree",
+                            operation = "create",
+                            timeout_ms = timeout_ms,
+                            "Tool execution timed out"
+                        );
+                        Err(ModeError::Timeout {
+                            elapsed_ms: timeout_ms,
+                        })
+                    }
+                };
+                match create_result {
                     Ok(resp) => (
                         TreeResponse {
                             session_id: resp.session_id,
@@ -212,7 +269,26 @@ impl ReasoningServer {
             }
             "focus" => {
                 let branch_id = req.branch_id.as_deref().unwrap_or("");
-                match mode.focus(&session_id, branch_id).await {
+                let focus_result = match tokio::time::timeout(
+                    timeout_duration,
+                    mode.focus(&session_id, branch_id),
+                )
+                .await
+                {
+                    Ok(inner) => inner,
+                    Err(_elapsed) => {
+                        tracing::error!(
+                            tool = "reasoning_tree",
+                            operation = "focus",
+                            timeout_ms = timeout_ms,
+                            "Tool execution timed out"
+                        );
+                        Err(ModeError::Timeout {
+                            elapsed_ms: timeout_ms,
+                        })
+                    }
+                };
+                match focus_result {
                     Ok(resp) => (
                         TreeResponse {
                             session_id: resp.session_id,
@@ -397,15 +473,34 @@ impl ReasoningServer {
 
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
-        let result = mode
-            .process(
+        // Apply tool-level timeout (STANDARD_THINKING = 4096 tokens)
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(STANDARD_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+
+        let result = match tokio::time::timeout(
+            timeout_duration,
+            mode.process(
                 &req.content,
                 req.session_id,
                 req.num_perspectives,
                 challenge,
                 rebellion,
-            )
-            .await;
+            ),
+        )
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_divergent",
+                    timeout_ms = timeout_ms,
+                    "Tool execution timed out"
+                );
+                Err(ModeError::Timeout {
+                    elapsed_ms: timeout_ms,
+                })
+            }
+        };
 
         let elapsed_ms = timer.elapsed_ms();
         let success = result.is_ok();
@@ -489,10 +584,33 @@ impl ReasoningServer {
 
         let operation = req.operation.as_deref().unwrap_or("process");
 
+        // Apply tool-level timeout (DEEP_THINKING = 8192 tokens)
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(DEEP_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+
         let (mut response, success) = match operation {
             "process" => {
                 let content = req.content.as_deref().unwrap_or("");
-                match mode.process(content, req.session_id).await {
+                let process_result = match tokio::time::timeout(
+                    timeout_duration,
+                    mode.process(content, req.session_id),
+                )
+                .await
+                {
+                    Ok(inner) => inner,
+                    Err(_elapsed) => {
+                        tracing::error!(
+                            tool = "reasoning_reflection",
+                            operation = "process",
+                            timeout_ms = timeout_ms,
+                            "Tool execution timed out"
+                        );
+                        Err(ModeError::Timeout {
+                            elapsed_ms: timeout_ms,
+                        })
+                    }
+                };
+                match process_result {
                     Ok(resp) => (
                         ReflectionResponse {
                             quality_score: resp.confidence_improvement,
@@ -533,7 +651,26 @@ impl ReasoningServer {
             "evaluate" => {
                 let session_id = req.session_id.as_deref().unwrap_or("");
                 let summary = req.content.as_deref();
-                match mode.evaluate(session_id, summary).await {
+                let evaluate_result = match tokio::time::timeout(
+                    timeout_duration,
+                    mode.evaluate(session_id, summary),
+                )
+                .await
+                {
+                    Ok(inner) => inner,
+                    Err(_elapsed) => {
+                        tracing::error!(
+                            tool = "reasoning_reflection",
+                            operation = "evaluate",
+                            timeout_ms = timeout_ms,
+                            "Tool execution timed out"
+                        );
+                        Err(ModeError::Timeout {
+                            elapsed_ms: timeout_ms,
+                        })
+                    }
+                };
+                match evaluate_result {
                     Ok(resp) => (
                         ReflectionResponse {
                             quality_score: resp.session_assessment.overall_quality,
@@ -767,7 +904,28 @@ impl ReasoningServer {
             Arc::clone(&self.state.client),
         );
 
-        let result = mode.select(&req.content, req.session_id).await;
+        // Apply tool-level timeout (NO_THINKING - fast mode)
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(NO_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+
+        let result = match tokio::time::timeout(
+            timeout_duration,
+            mode.select(&req.content, req.session_id),
+        )
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_auto",
+                    timeout_ms = timeout_ms,
+                    "Tool execution timed out"
+                );
+                Err(ModeError::Timeout {
+                    elapsed_ms: timeout_ms,
+                })
+            }
+        };
         let success = result.is_ok();
         self.state
             .metrics
@@ -820,7 +978,14 @@ impl ReasoningServer {
 
         let session_id = req.session_id;
         let content = req.content.as_deref().unwrap_or("");
-        let result = match operation.as_str() {
+
+        // Apply tool-level timeout to prevent indefinite hangs
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(STANDARD_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+        let op_for_timeout = operation.clone();
+
+        let result = match tokio::time::timeout(timeout_duration, async {
+            match op_for_timeout.as_str() {
             "init" => {
                 let sid = session_id.clone();
                 mode.init(content, Some(session_id.clone()))
@@ -958,19 +1123,25 @@ impl ReasoningServer {
                         metadata: None,
                     })
             }
-            _ => {
-                self.state.metrics.record(
-                    MetricEvent::new("graph", timer.elapsed_ms(), false).with_operation(&operation),
+                _ => Err(ModeError::InvalidOperation {
+                    mode: "graph".to_string(),
+                    operation: op_for_timeout.clone(),
+                }),
+            }
+        })
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_graph",
+                    timeout_ms = timeout_ms,
+                    operation = %operation,
+                    "Tool execution timed out"
                 );
-                return GraphResponse {
-                    session_id,
-                    node_id: None,
-                    nodes: None,
-                    aggregated_insight: Some(format!("ERROR: unknown operation: {}", operation)),
-                    conclusions: None,
-                    state: None,
-                    metadata: None,
-                };
+                Err(ModeError::Timeout {
+                    elapsed_ms: timeout_ms,
+                })
             }
         };
 
@@ -1031,7 +1202,13 @@ impl ReasoningServer {
         let content = req.content.as_deref().unwrap_or("");
         let detect_type = req.detect_type.as_str();
 
-        let (response, success) = match detect_type {
+        // Apply tool-level timeout to prevent indefinite hangs
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(DEEP_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+        let detect_type_for_timeout = detect_type.to_string();
+
+        let (response, success) = match tokio::time::timeout(timeout_duration, async {
+            match detect_type_for_timeout.as_str() {
             "biases" => match mode.biases(content, req.session_id).await {
                 Ok(resp) => (
                     DetectResponse {
@@ -1115,13 +1292,35 @@ impl ReasoningServer {
                     detections: vec![],
                     summary: Some(format!(
                         "Unknown detect type '{}'. Use 'biases' or 'fallacies'.",
-                        detect_type
+                        detect_type_for_timeout
                     )),
                     overall_quality: None,
                     metadata: None,
                 },
                 false,
             ),
+            }
+        })
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_detect",
+                    timeout_ms = timeout_ms,
+                    detect_type = %detect_type,
+                    "Tool execution timed out"
+                );
+                (
+                    DetectResponse {
+                        detections: vec![],
+                        summary: Some(format!("Tool execution timed out after {}ms", timeout_ms)),
+                        overall_quality: None,
+                        metadata: None,
+                    },
+                    false,
+                )
+            }
         };
 
         self.state.metrics.record(
@@ -1151,7 +1350,13 @@ impl ReasoningServer {
             .unwrap_or("");
         let decision_type = req.decision_type.as_deref().unwrap_or("weighted");
 
-        let (response, success) = match decision_type {
+        // Apply tool-level timeout to prevent indefinite hangs
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(DEEP_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+        let decision_type_for_timeout = decision_type.to_string();
+
+        let (response, success) = match tokio::time::timeout(timeout_duration, async {
+            match decision_type_for_timeout.as_str() {
             "weighted" => match mode.weighted(content, req.session_id).await {
                 Ok(resp) => (
                     DecisionResponse {
@@ -1324,7 +1529,7 @@ impl ReasoningServer {
             },
             _ => (
                 DecisionResponse {
-                    recommendation: format!("ERROR: unknown type: {decision_type}"),
+                    recommendation: format!("ERROR: unknown type: {}", decision_type_for_timeout),
                     rankings: None,
                     stakeholder_map: None,
                     conflicts: None,
@@ -1334,6 +1539,31 @@ impl ReasoningServer {
                 },
                 false,
             ),
+            }
+        })
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_decision",
+                    timeout_ms = timeout_ms,
+                    decision_type = %decision_type,
+                    "Tool execution timed out"
+                );
+                (
+                    DecisionResponse {
+                        recommendation: format!("ERROR: Tool execution timed out after {}ms", timeout_ms),
+                        rankings: None,
+                        stakeholder_map: None,
+                        conflicts: None,
+                        alignments: None,
+                        rationale: None,
+                        metadata: None,
+                    },
+                    false,
+                )
+            }
         };
 
         self.state.metrics.record(
@@ -1363,7 +1593,13 @@ impl ReasoningServer {
             .or(req.context.as_deref())
             .unwrap_or("");
 
-        let (response, success) = match evidence_type {
+        // Apply tool-level timeout to prevent indefinite hangs
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(DEEP_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+        let evidence_type_for_timeout = evidence_type.to_string();
+
+        let (response, success) = match tokio::time::timeout(timeout_duration, async {
+            match evidence_type_for_timeout.as_str() {
             "assess" => match mode.assess(content, req.session_id).await {
                 Ok(resp) => (
                     EvidenceResponse {
@@ -1467,11 +1703,38 @@ impl ReasoningServer {
                     likelihood_ratio: None,
                     entropy: None,
                     confidence_interval: None,
-                    synthesis: Some(format!("Unknown evidence type: {evidence_type}")),
+                    synthesis: Some(format!("Unknown evidence type: {}", evidence_type_for_timeout)),
                     metadata: None,
                 },
                 false,
             ),
+            }
+        })
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_evidence",
+                    timeout_ms = timeout_ms,
+                    evidence_type = %evidence_type,
+                    "Tool execution timed out"
+                );
+                (
+                    EvidenceResponse {
+                        overall_credibility: 0.0,
+                        evidence_assessments: None,
+                        posterior: None,
+                        prior: None,
+                        likelihood_ratio: None,
+                        entropy: None,
+                        confidence_interval: None,
+                        synthesis: Some(format!("Tool execution timed out after {}ms", timeout_ms)),
+                        metadata: None,
+                    },
+                    false,
+                )
+            }
         };
 
         self.state.metrics.record(
@@ -1496,7 +1759,13 @@ impl ReasoningServer {
 
         let content = req.content.as_deref().unwrap_or("");
 
-        let (response, success) = match operation.as_str() {
+        // Apply tool-level timeout to prevent indefinite hangs
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(DEEP_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+        let op_for_timeout = operation.clone();
+
+        let (response, success) = match tokio::time::timeout(timeout_duration, async {
+            match op_for_timeout.as_str() {
             "create" => match mode.create(content, req.session_id).await {
                 Ok(resp) => (
                     TimelineResponse {
@@ -1639,7 +1908,7 @@ impl ReasoningServer {
             },
             _ => (
                 TimelineResponse {
-                    timeline_id: format!("Unknown operation: {}", operation),
+                    timeline_id: format!("Unknown operation: {}", op_for_timeout),
                     branch_id: None,
                     branches: None,
                     comparison: None,
@@ -1648,6 +1917,30 @@ impl ReasoningServer {
                 },
                 false,
             ),
+            }
+        })
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_timeline",
+                    timeout_ms = timeout_ms,
+                    operation = %operation,
+                    "Tool execution timed out"
+                );
+                (
+                    TimelineResponse {
+                        timeline_id: format!("ERROR: Tool execution timed out after {}ms", timeout_ms),
+                        branch_id: None,
+                        branches: None,
+                        comparison: None,
+                        merged_content: None,
+                        metadata: None,
+                    },
+                    false,
+                )
+            }
         };
 
         self.state.metrics.record(
@@ -1673,8 +1966,32 @@ impl ReasoningServer {
         let content = req.content.as_deref().unwrap_or("");
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
+        // Apply tool-level timeout (MAXIMUM_THINKING = 16384 tokens)
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(MAXIMUM_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+
         let (response, success) = match operation {
-            "explore" => match mode.explore(content, req.session_id).await {
+            "explore" => {
+                let explore_result = match tokio::time::timeout(
+                    timeout_duration,
+                    mode.explore(content, req.session_id),
+                )
+                .await
+                {
+                    Ok(inner) => inner,
+                    Err(_elapsed) => {
+                        tracing::error!(
+                            tool = "reasoning_mcts",
+                            operation = "explore",
+                            timeout_ms = timeout_ms,
+                            "Tool execution timed out"
+                        );
+                        Err(ModeError::Timeout {
+                            elapsed_ms: timeout_ms,
+                        })
+                    }
+                };
+                match explore_result {
                 Ok(resp) => (
                     MctsResponse {
                         session_id: resp.session_id,
@@ -1707,12 +2024,29 @@ impl ReasoningServer {
                     },
                     false,
                 ),
-            },
+                }
+            }
             "auto_backtrack" => {
-                match mode
-                    .auto_backtrack(content, Some(input_session_id.clone()))
-                    .await
+                let backtrack_result = match tokio::time::timeout(
+                    timeout_duration,
+                    mode.auto_backtrack(content, Some(input_session_id.clone())),
+                )
+                .await
                 {
+                    Ok(inner) => inner,
+                    Err(_elapsed) => {
+                        tracing::error!(
+                            tool = "reasoning_mcts",
+                            operation = "auto_backtrack",
+                            timeout_ms = timeout_ms,
+                            "Tool execution timed out"
+                        );
+                        Err(ModeError::Timeout {
+                            elapsed_ms: timeout_ms,
+                        })
+                    }
+                };
+                match backtrack_result {
                     Ok(resp) => (
                         MctsResponse {
                             session_id: resp.session_id,
@@ -1788,7 +2122,28 @@ impl ReasoningServer {
         // Map analysis_depth to ladder rung
         let depth = req.analysis_depth.as_deref().unwrap_or("counterfactual");
 
-        let result = mode.analyze(&content, req.session_id.clone()).await;
+        // Apply tool-level timeout (MAXIMUM_THINKING = 16384 tokens)
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(MAXIMUM_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+
+        let result = match tokio::time::timeout(
+            timeout_duration,
+            mode.analyze(&content, req.session_id.clone()),
+        )
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_counterfactual",
+                    timeout_ms = timeout_ms,
+                    "Tool execution timed out"
+                );
+                Err(ModeError::Timeout {
+                    elapsed_ms: timeout_ms,
+                })
+            }
+        };
         let success = result.is_ok();
 
         let response = match result {
@@ -3832,7 +4187,7 @@ mod tests {
             assert!(resp
                 .aggregated_insight
                 .unwrap()
-                .contains("unknown operation"));
+                .contains("Invalid operation"));
         }
 
         #[tokio::test]
