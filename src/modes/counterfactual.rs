@@ -445,13 +445,9 @@ where
                 field: "counterfactual_level".to_string(),
             })?;
 
-        let confidence = Self::get_f64(cf, "confidence")?;
-        if !(0.0..=1.0).contains(&confidence) {
-            return Err(ModeError::InvalidValue {
-                field: "confidence".to_string(),
-                reason: format!("must be between 0.0 and 1.0, got {confidence}"),
-            });
-        }
+        // Use default confidence of 0.5 if not provided by the model
+        let confidence = Self::get_f64(cf, "confidence").unwrap_or(0.5);
+        let confidence = confidence.clamp(0.0, 1.0); // Ensure valid range
 
         let counterfactual_level = CounterfactualLevel {
             scenario: Self::get_str(cf, "scenario")?,
@@ -732,13 +728,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_analyze_invalid_confidence() {
+    async fn test_analyze_confidence_clamped_above() {
+        // Test that confidence values above 1.0 are clamped to 1.0
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
 
         mock_storage
             .expect_get_or_create_session()
             .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         mock_client.expect_complete().returning(|_, _| {
             Ok(CompletionResponse::new(
@@ -755,9 +753,10 @@ mod tests {
         let mode = CounterfactualMode::new(mock_storage, mock_client);
         let result = mode.analyze("Test", None).await;
 
-        assert!(
-            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "confidence")
-        );
+        // Should succeed with confidence clamped to 1.0
+        assert!(result.is_ok());
+        let response = result.expect("Should succeed");
+        assert!((response.analysis.counterfactual_level.confidence - 1.0).abs() < f64::EPSILON);
     }
 
     #[tokio::test]
@@ -1334,13 +1333,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_analyze_confidence_below_zero() {
+    async fn test_analyze_confidence_clamped_below() {
+        // Test that confidence values below 0.0 are clamped to 0.0
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
 
         mock_storage
             .expect_get_or_create_session()
             .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         mock_client.expect_complete().returning(|_, _| {
             Ok(CompletionResponse::new(
@@ -1357,9 +1358,10 @@ mod tests {
         let mode = CounterfactualMode::new(mock_storage, mock_client);
         let result = mode.analyze("Test", None).await;
 
-        assert!(
-            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "confidence")
-        );
+        // Should succeed with confidence clamped to 0.0
+        assert!(result.is_ok());
+        let response = result.expect("Should succeed");
+        assert!(response.analysis.counterfactual_level.confidence.abs() < f64::EPSILON);
     }
 
     #[tokio::test]

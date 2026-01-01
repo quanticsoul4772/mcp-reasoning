@@ -1347,12 +1347,26 @@ impl ReasoningServer {
             Arc::clone(&self.state.client),
         );
 
-        let content = req
+        let base_content = req
             .question
             .as_deref()
             .or(req.topic.as_deref())
             .or(req.context.as_deref())
             .unwrap_or("");
+
+        // Include user-provided options in the content sent to Claude
+        let content = match &req.options {
+            Some(opts) if !opts.is_empty() => {
+                format!(
+                    "Options to evaluate:\n- {}\n\nContext: {}",
+                    opts.join("\n- "),
+                    base_content
+                )
+            }
+            _ => base_content.to_string(),
+        };
+        let content = content.as_str();
+
         let decision_type = req.decision_type.as_deref().unwrap_or("weighted");
 
         // Apply tool-level timeout to prevent indefinite hangs
@@ -2411,47 +2425,72 @@ impl ReasoningServer {
             }
             "by_mode" => {
                 let mode_name = req.mode_name.clone().unwrap_or_default();
-                let events = self.state.metrics.invocations_by_mode(&mode_name);
-                let total = events.len() as u64;
-                let success_count = events.iter().filter(|e| e.success).count() as u64;
-                let failure_count = total - success_count;
-                let success_rate = if total > 0 {
-                    success_count as f64 / total as f64
+
+                // If mode_name is empty, return summary with all modes instead
+                if mode_name.is_empty() {
+                    let summary = self.state.metrics.summary();
+                    (
+                        MetricsResponse {
+                            summary: Some(MetricsSummary {
+                                total_calls: summary.total_invocations,
+                                success_rate: summary.overall_success_rate,
+                                avg_latency_ms: summary
+                                    .by_mode
+                                    .values()
+                                    .map(|m| m.avg_latency_ms)
+                                    .sum::<f64>()
+                                    / summary.by_mode.len().max(1) as f64,
+                                by_mode: serde_json::to_value(&summary.by_mode).unwrap_or_default(),
+                            }),
+                            mode_stats: None,
+                            invocations: None,
+                            config: None,
+                        },
+                        true,
+                    )
                 } else {
-                    0.0
-                };
+                    let events = self.state.metrics.invocations_by_mode(&mode_name);
+                    let total = events.len() as u64;
+                    let success_count = events.iter().filter(|e| e.success).count() as u64;
+                    let failure_count = total - success_count;
+                    let success_rate = if total > 0 {
+                        success_count as f64 / total as f64
+                    } else {
+                        0.0
+                    };
 
-                // Calculate latency percentiles
-                let mut latencies: Vec<u64> = events.iter().map(|e| e.latency_ms).collect();
-                latencies.sort_unstable();
-                let p50 = latencies.get(latencies.len() / 2).copied().unwrap_or(0) as f64;
-                let p95 = latencies
-                    .get(latencies.len() * 95 / 100)
-                    .copied()
-                    .unwrap_or(0) as f64;
-                let p99 = latencies
-                    .get(latencies.len() * 99 / 100)
-                    .copied()
-                    .unwrap_or(0) as f64;
+                    // Calculate latency percentiles
+                    let mut latencies: Vec<u64> = events.iter().map(|e| e.latency_ms).collect();
+                    latencies.sort_unstable();
+                    let p50 = latencies.get(latencies.len() / 2).copied().unwrap_or(0) as f64;
+                    let p95 = latencies
+                        .get(latencies.len() * 95 / 100)
+                        .copied()
+                        .unwrap_or(0) as f64;
+                    let p99 = latencies
+                        .get(latencies.len() * 99 / 100)
+                        .copied()
+                        .unwrap_or(0) as f64;
 
-                (
-                    MetricsResponse {
-                        summary: None,
-                        mode_stats: Some(ModeStats {
-                            mode_name,
-                            call_count: total,
-                            success_count,
-                            failure_count,
-                            success_rate,
-                            latency_p50_ms: p50,
-                            latency_p95_ms: p95,
-                            latency_p99_ms: p99,
-                        }),
-                        invocations: None,
-                        config: None,
-                    },
-                    true,
-                )
+                    (
+                        MetricsResponse {
+                            summary: None,
+                            mode_stats: Some(ModeStats {
+                                mode_name,
+                                call_count: total,
+                                success_count,
+                                failure_count,
+                                success_rate,
+                                latency_p50_ms: p50,
+                                latency_p95_ms: p95,
+                                latency_p99_ms: p99,
+                            }),
+                            invocations: None,
+                            config: None,
+                        },
+                        true,
+                    )
+                }
             }
             "invocations" => {
                 let events = req.mode_name.as_ref().map_or_else(
