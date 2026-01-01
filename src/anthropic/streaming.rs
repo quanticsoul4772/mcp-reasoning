@@ -109,6 +109,7 @@ fn parse_event_data(data: &str) -> Result<StreamEvent, AnthropicError> {
                 .unwrap_or_else(|| "Unknown error".to_string());
             Ok(StreamEvent::Error { error })
         }
+        "ping" => Ok(StreamEvent::Ping),
         other => Err(AnthropicError::UnexpectedResponse {
             message: format!("Unknown event type: {other}"),
         }),
@@ -224,6 +225,9 @@ impl StreamAccumulator {
             }
             StreamEvent::Error { error: _ } => {
                 // Error event - caller should handle
+            }
+            StreamEvent::Ping => {
+                // Keep-alive event - no action needed
             }
         }
     }
@@ -395,6 +399,14 @@ mod tests {
             }
             e => panic!("Wrong event type: {e:?}"),
         }
+    }
+
+    #[test]
+    fn test_parse_sse_ping() {
+        let line = r#"data: {"type": "ping"}"#;
+        let result = parse_sse_line(line);
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap().unwrap(), StreamEvent::Ping));
     }
 
     #[test]

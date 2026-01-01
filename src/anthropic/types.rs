@@ -598,6 +598,8 @@ pub enum StreamEvent {
         /// Error message.
         error: String,
     },
+    /// Keep-alive ping event.
+    Ping,
 }
 
 /// API error response body.
