@@ -6,15 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 15 consolidated reasoning tools (vs 40 in the predecessor mcp-langbase-reasoning).
 
-**Status**: Complete. 38,000+ lines of Rust code and 2,039 tests.
+**Status**: Complete. 38,000+ lines of Rust code and 2,066 tests.
 
 **Key Stats**:
 - 118 source files, 38,000+ lines of code
-- 2,039 tests (95%+ coverage)
+- 2,066 tests (95%+ coverage)
 - 15 reasoning tools, 5 workflow presets
 - 4-phase self-improvement system with safety mechanisms
 - Tool chain tracking with pattern detection
 - Error enhancement with contextual alternatives
+- Streaming API with progress notifications
 
 **Key Documents**:
 - `docs/DESIGN.md` - Complete technical specification
@@ -89,10 +90,10 @@ src/
 │   ├── mod.rs           # Config struct + from_env()
 │   └── validation.rs    # Validation logic
 ├── anthropic/
-│   ├── client.rs        # AnthropicClient with retry + backoff
-│   ├── types.rs         # Request/Response types, Vision support
+│   ├── client.rs        # AnthropicClient with retry + backoff + streaming
+│   ├── types.rs         # Request/Response types, Vision support, StreamEvent
 │   ├── config.rs        # ModelConfig, ThinkingConfig (standard/deep/maximum)
-│   └── streaming.rs     # SSE stream handling
+│   └── streaming.rs     # SSE parsing, StreamAccumulator
 ├── storage/
 │   ├── mod.rs           # Storage trait
 │   ├── sqlite.rs        # Main implementation (<500 lines)
@@ -124,7 +125,11 @@ src/
 │   ├── mcp.rs           # JSON-RPC protocol
 │   ├── tools.rs         # 15 tool schemas (rmcp macros)
 │   ├── handlers.rs      # HandlerRegistry (HashMap pattern)
-│   └── transport.rs     # Stdio + HTTP transport
+│   ├── transport.rs     # Stdio + HTTP transport
+│   ├── progress.rs      # ProgressEvent, ProgressReporter, milestones
+│   ├── params.rs        # Tool parameter schemas
+│   ├── requests.rs      # Request types with JsonSchema
+│   └── types.rs         # AppState with progress broadcast channel
 ├── presets/
 │   ├── mod.rs           # PresetMode (list/run)
 │   └── builtin.rs       # 5 built-in presets
