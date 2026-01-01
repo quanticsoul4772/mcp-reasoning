@@ -715,7 +715,8 @@ impl Default for Timer {
     clippy::panic,
     clippy::float_cmp,
     clippy::approx_constant,
-    clippy::unreadable_literal
+    clippy::unreadable_literal,
+    clippy::cast_sign_loss
 )]
 mod tests {
     use super::*;

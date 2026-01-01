@@ -475,16 +475,13 @@ impl ReasoningServer {
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
         // Create progress reporter (use progress_token or generate one)
-        let progress_token = req.progress_token.unwrap_or_else(|| {
-            format!("divergent-{}", uuid::Uuid::new_v4())
-        });
+        let progress_token = req
+            .progress_token
+            .unwrap_or_else(|| format!("divergent-{}", uuid::Uuid::new_v4()));
         let progress = self.state.create_progress_reporter(&progress_token);
 
         // Apply tool-level timeout (DEEP_THINKING = 8192 tokens = 60s)
-        let timeout_ms = self
-            .state
-            .config
-            .timeout_for_thinking_budget(DEEP_THINKING);
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(DEEP_THINKING);
         let timeout_duration = Duration::from_millis(timeout_ms);
 
         let result = match tokio::time::timeout(
@@ -596,9 +593,9 @@ impl ReasoningServer {
         let operation = req.operation.as_deref().unwrap_or("process");
 
         // Create progress reporter (use progress_token or generate one)
-        let progress_token = req.progress_token.unwrap_or_else(|| {
-            format!("reflection-{}", uuid::Uuid::new_v4())
-        });
+        let progress_token = req
+            .progress_token
+            .unwrap_or_else(|| format!("reflection-{}", uuid::Uuid::new_v4()));
         let progress = self.state.create_progress_reporter(&progress_token);
 
         tracing::info!(
@@ -2021,9 +2018,9 @@ impl ReasoningServer {
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
         // Create progress reporter (use progress_token or generate one)
-        let progress_token = req.progress_token.unwrap_or_else(|| {
-            format!("mcts-{}", uuid::Uuid::new_v4())
-        });
+        let progress_token = req
+            .progress_token
+            .unwrap_or_else(|| format!("mcts-{}", uuid::Uuid::new_v4()));
         let progress = self.state.create_progress_reporter(&progress_token);
 
         tracing::info!(
@@ -2099,7 +2096,11 @@ impl ReasoningServer {
             "auto_backtrack" => {
                 let backtrack_result = match tokio::time::timeout(
                     timeout_duration,
-                    mode.auto_backtrack_streaming(content, Some(input_session_id.clone()), Some(&progress)),
+                    mode.auto_backtrack_streaming(
+                        content,
+                        Some(input_session_id.clone()),
+                        Some(&progress),
+                    ),
                 )
                 .await
                 {
@@ -2193,9 +2194,9 @@ impl ReasoningServer {
         let depth = req.analysis_depth.as_deref().unwrap_or("counterfactual");
 
         // Create progress reporter (use progress_token or generate one)
-        let progress_token = req.progress_token.unwrap_or_else(|| {
-            format!("counterfactual-{}", uuid::Uuid::new_v4())
-        });
+        let progress_token = req
+            .progress_token
+            .unwrap_or_else(|| format!("counterfactual-{}", uuid::Uuid::new_v4()));
         let progress = self.state.create_progress_reporter(&progress_token);
 
         tracing::info!(

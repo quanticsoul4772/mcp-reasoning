@@ -64,7 +64,6 @@ mod transport;
 mod types;
 
 pub use mcp::McpServer;
-pub use progress::{create_progress_channel, ProgressEvent, ProgressMilestone, ProgressReporter};
 pub use params::{
     AnalysisDepth, AutoParams, CausalModelDef, CausalRelationship, CheckpointOperation,
     CheckpointParams, CounterfactualParams, DecisionCriterion, DecisionParams, DecisionType,
@@ -74,6 +73,7 @@ pub use params::{
     PresetParams, ReflectionOperation, ReflectionParams, StakeholderDef, TimelineOperation,
     TimelineParams, TreeOperation, TreeParams,
 };
+pub use progress::{create_progress_channel, ProgressEvent, ProgressMilestone, ProgressReporter};
 pub use requests::{
     AutoRequest, CheckpointRequest, CounterfactualRequest, DecisionRequest, DetectRequest,
     DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, MctsRequest, MetricsRequest,

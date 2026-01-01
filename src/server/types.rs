@@ -91,7 +91,10 @@ impl AppState {
     ///
     /// * `token` - Unique identifier for the operation (or use request ID)
     #[must_use]
-    pub fn create_progress_reporter(&self, token: impl Into<String>) -> super::progress::ProgressReporter {
+    pub fn create_progress_reporter(
+        &self,
+        token: impl Into<String>,
+    ) -> super::progress::ProgressReporter {
         super::progress::ProgressReporter::new(token, self.progress_tx.clone())
     }
 }

@@ -170,7 +170,10 @@ pub enum ProgressMilestone {
 /// Returns a sender that can be cloned into `AppState` and
 /// multiple receivers for clients.
 #[must_use]
-pub fn create_progress_channel() -> (broadcast::Sender<ProgressEvent>, broadcast::Receiver<ProgressEvent>) {
+pub fn create_progress_channel() -> (
+    broadcast::Sender<ProgressEvent>,
+    broadcast::Receiver<ProgressEvent>,
+) {
     broadcast::channel(100) // Buffer 100 events
 }
 
@@ -306,7 +309,13 @@ mod tests {
 
     #[test]
     fn test_progress_milestone_values() {
-        assert_eq!(ProgressMilestone::RequestPrepared, ProgressMilestone::RequestPrepared);
-        assert_ne!(ProgressMilestone::ApiCallStarted, ProgressMilestone::Complete);
+        assert_eq!(
+            ProgressMilestone::RequestPrepared,
+            ProgressMilestone::RequestPrepared
+        );
+        assert_ne!(
+            ProgressMilestone::ApiCallStarted,
+            ProgressMilestone::Complete
+        );
     }
 }

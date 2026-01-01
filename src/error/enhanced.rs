@@ -269,7 +269,12 @@ impl ErrorEnhancer {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::similar_names,
+    clippy::default_constructed_unit_structs
+)]
 mod tests {
     use super::*;
 

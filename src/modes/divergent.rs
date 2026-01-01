@@ -1067,13 +1067,11 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|_| Ok(Session::new("test-session")));
 
-        mock_client
-            .expect_complete_streaming()
-            .returning(|_, _| {
-                Err(ModeError::ApiUnavailable {
-                    message: "Streaming API error".to_string(),
-                })
-            });
+        mock_client.expect_complete_streaming().returning(|_, _| {
+            Err(ModeError::ApiUnavailable {
+                message: "Streaming API error".to_string(),
+            })
+        });
 
         let mode = DivergentMode::new(mock_storage, mock_client);
         let result = mode
@@ -1096,27 +1094,25 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|_| Ok(Session::new("test-session")));
 
-        mock_client
-            .expect_complete_streaming()
-            .returning(|_, _| {
-                let (tx, rx) = mpsc::channel(32);
+        mock_client.expect_complete_streaming().returning(|_, _| {
+            let (tx, rx) = mpsc::channel(32);
 
-                tokio::spawn(async move {
-                    let _ = tx
-                        .send(Ok(StreamEvent::MessageStart {
-                            message_id: "msg_123".to_string(),
-                        }))
-                        .await;
-                    // Send error mid-stream
-                    let _ = tx
-                        .send(Err(ModeError::ApiUnavailable {
-                            message: "Rate limit exceeded mid-stream".to_string(),
-                        }))
-                        .await;
-                });
-
-                Ok(rx)
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(Ok(StreamEvent::MessageStart {
+                        message_id: "msg_123".to_string(),
+                    }))
+                    .await;
+                // Send error mid-stream
+                let _ = tx
+                    .send(Err(ModeError::ApiUnavailable {
+                        message: "Rate limit exceeded mid-stream".to_string(),
+                    }))
+                    .await;
             });
+
+            Ok(rx)
+        });
 
         let mode = DivergentMode::new(mock_storage, mock_client);
         let result = mode

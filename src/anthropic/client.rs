@@ -532,11 +532,11 @@ impl AnthropicClientTrait for AnthropicClient {
         }
 
         // Call the underlying streaming API method
-        let mut inner_rx = Self::complete_streaming(self, request)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
+        let mut inner_rx = Self::complete_streaming(self, request).await.map_err(|e| {
+            ModeError::ApiUnavailable {
                 message: e.to_string(),
-            })?;
+            }
+        })?;
 
         // Create new channel with mapped error type
         let (tx, rx) = mpsc::channel(32);
@@ -1303,7 +1303,11 @@ data: {"type": "message_stop", "usage": {"input_tokens": 10, "output_tokens": 5}
         }
 
         // Verify we got all expected events
-        assert!(events.len() >= 4, "Expected at least 4 events, got {}", events.len());
+        assert!(
+            events.len() >= 4,
+            "Expected at least 4 events, got {}",
+            events.len()
+        );
 
         // Verify first event is MessageStart
         match &events[0] {

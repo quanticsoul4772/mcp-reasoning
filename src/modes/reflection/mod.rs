@@ -174,7 +174,8 @@ where
                 vec![],
                 vec![
                     "Provide content via the 'content' parameter".to_string(),
-                    "Or use reasoning tools (linear, tree, etc.) first to generate thoughts".to_string(),
+                    "Or use reasoning tools (linear, tree, etc.) first to generate thoughts"
+                        .to_string(),
                 ],
             ));
         } else {
@@ -426,7 +427,8 @@ where
                 vec![],
                 vec![
                     "Provide content via the 'content' parameter".to_string(),
-                    "Or use reasoning tools (linear, tree, etc.) first to generate thoughts".to_string(),
+                    "Or use reasoning tools (linear, tree, etc.) first to generate thoughts"
+                        .to_string(),
                 ],
             ));
         } else {
