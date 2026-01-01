@@ -148,6 +148,16 @@ impl AnthropicClient {
         request: &ApiRequest,
     ) -> Result<ReasoningResponse, AnthropicError> {
         let url = format!("{}/messages", self.config.base_url);
+        let start = std::time::Instant::now();
+
+        tracing::debug!(
+            url = %url,
+            model = %request.model,
+            max_tokens = ?request.max_tokens,
+            thinking_budget = ?request.thinking.as_ref().map(|t| t.budget_tokens),
+            timeout_ms = self.config.timeout_ms,
+            "Starting Anthropic API request"
+        );
 
         let response = self
             .client
@@ -159,16 +169,37 @@ impl AnthropicClient {
             .send()
             .await
             .map_err(|e| {
+                let elapsed_ms = start.elapsed().as_millis() as u64;
                 if e.is_timeout() {
+                    tracing::error!(
+                        url = %url,
+                        elapsed_ms = elapsed_ms,
+                        timeout_ms = self.config.timeout_ms,
+                        "Anthropic API request timed out"
+                    );
                     AnthropicError::Timeout {
                         timeout_ms: self.config.timeout_ms,
                     }
                 } else {
+                    tracing::error!(
+                        url = %url,
+                        elapsed_ms = elapsed_ms,
+                        error = %e,
+                        "Anthropic API request failed"
+                    );
                     AnthropicError::Network {
                         message: e.to_string(),
                     }
                 }
             })?;
+
+        let elapsed_ms = start.elapsed().as_millis() as u64;
+        tracing::debug!(
+            url = %url,
+            status = %response.status(),
+            elapsed_ms = elapsed_ms,
+            "Anthropic API response received"
+        );
 
         let status = response.status();
 

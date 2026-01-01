@@ -112,30 +112,109 @@ impl SelfImprovementConfig {
             .map(|v| v.to_lowercase() != "false")
             .unwrap_or(DEFAULT_REQUIRE_APPROVAL);
 
-        let min_invocations_for_analysis = env::var("SELF_IMPROVEMENT_MIN_INVOCATIONS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(DEFAULT_MIN_INVOCATIONS);
-
-        let cycle_interval_secs = env::var("SELF_IMPROVEMENT_CYCLE_INTERVAL_SECS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .map_or(DEFAULT_CYCLE_INTERVAL_SECS, |v: u64| {
-                v.clamp(MIN_CYCLE_INTERVAL_SECS, MAX_CYCLE_INTERVAL_SECS)
+        let min_invocations_for_analysis =
+            env::var("SELF_IMPROVEMENT_MIN_INVOCATIONS").map_or(DEFAULT_MIN_INVOCATIONS, |value| {
+                match value.parse::<u64>() {
+                    Ok(parsed) => parsed,
+                    Err(e) => {
+                        tracing::warn!(
+                            var = "SELF_IMPROVEMENT_MIN_INVOCATIONS",
+                            value = %value,
+                            error = %e,
+                            default = DEFAULT_MIN_INVOCATIONS,
+                            "Invalid environment variable value, using default"
+                        );
+                        DEFAULT_MIN_INVOCATIONS
+                    }
+                }
             });
 
-        let max_actions_per_cycle = env::var("SELF_IMPROVEMENT_MAX_ACTIONS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .map_or(DEFAULT_MAX_ACTIONS_PER_CYCLE, |v: u32| {
-                v.min(MAX_ACTIONS_PER_CYCLE)
-            });
+        let cycle_interval_secs = env::var("SELF_IMPROVEMENT_CYCLE_INTERVAL_SECS").map_or(
+            DEFAULT_CYCLE_INTERVAL_SECS,
+            |value| match value.parse::<u64>() {
+                Ok(parsed) => {
+                    let clamped = parsed.clamp(MIN_CYCLE_INTERVAL_SECS, MAX_CYCLE_INTERVAL_SECS);
+                    if clamped != parsed {
+                        tracing::warn!(
+                            var = "SELF_IMPROVEMENT_CYCLE_INTERVAL_SECS",
+                            value = parsed,
+                            clamped = clamped,
+                            min = MIN_CYCLE_INTERVAL_SECS,
+                            max = MAX_CYCLE_INTERVAL_SECS,
+                            "Environment variable value clamped to valid range"
+                        );
+                    }
+                    clamped
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        var = "SELF_IMPROVEMENT_CYCLE_INTERVAL_SECS",
+                        value = %value,
+                        error = %e,
+                        default = DEFAULT_CYCLE_INTERVAL_SECS,
+                        "Invalid environment variable value, using default"
+                    );
+                    DEFAULT_CYCLE_INTERVAL_SECS
+                }
+            },
+        );
+
+        let max_actions_per_cycle = env::var("SELF_IMPROVEMENT_MAX_ACTIONS").map_or(
+            DEFAULT_MAX_ACTIONS_PER_CYCLE,
+            |value| match value.parse::<u32>() {
+                Ok(parsed) => {
+                    let capped = parsed.min(MAX_ACTIONS_PER_CYCLE);
+                    if capped != parsed {
+                        tracing::warn!(
+                            var = "SELF_IMPROVEMENT_MAX_ACTIONS",
+                            value = parsed,
+                            capped = capped,
+                            max = MAX_ACTIONS_PER_CYCLE,
+                            "Environment variable value capped to maximum"
+                        );
+                    }
+                    capped
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        var = "SELF_IMPROVEMENT_MAX_ACTIONS",
+                        value = %value,
+                        error = %e,
+                        default = DEFAULT_MAX_ACTIONS_PER_CYCLE,
+                        "Invalid environment variable value, using default"
+                    );
+                    DEFAULT_MAX_ACTIONS_PER_CYCLE
+                }
+            },
+        );
 
         let circuit_breaker_threshold = env::var("SELF_IMPROVEMENT_CIRCUIT_BREAKER_THRESHOLD")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .map_or(DEFAULT_CIRCUIT_BREAKER_THRESHOLD, |v: u32| {
-                v.min(MAX_CIRCUIT_BREAKER_THRESHOLD)
+            .map_or(DEFAULT_CIRCUIT_BREAKER_THRESHOLD, |value| {
+                match value.parse::<u32>() {
+                    Ok(parsed) => {
+                        let capped = parsed.min(MAX_CIRCUIT_BREAKER_THRESHOLD);
+                        if capped != parsed {
+                            tracing::warn!(
+                                var = "SELF_IMPROVEMENT_CIRCUIT_BREAKER_THRESHOLD",
+                                value = parsed,
+                                capped = capped,
+                                max = MAX_CIRCUIT_BREAKER_THRESHOLD,
+                                "Environment variable value capped to maximum"
+                            );
+                        }
+                        capped
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            var = "SELF_IMPROVEMENT_CIRCUIT_BREAKER_THRESHOLD",
+                            value = %value,
+                            error = %e,
+                            default = DEFAULT_CIRCUIT_BREAKER_THRESHOLD,
+                            "Invalid environment variable value, using default"
+                        );
+                        DEFAULT_CIRCUIT_BREAKER_THRESHOLD
+                    }
+                }
             });
 
         Self {

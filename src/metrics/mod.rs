@@ -236,23 +236,60 @@ impl MetricsCollector {
 
     /// Record a metric event.
     pub fn record(&self, event: MetricEvent) {
-        if let Ok(mut events) = self.events.write() {
-            events.push(event);
+        match self.events.write() {
+            Ok(mut events) => {
+                events.push(event);
+            }
+            Err(poison_error) => {
+                tracing::error!(
+                    mode = %event.mode,
+                    error = %poison_error,
+                    "Failed to record metric event: RwLock poisoned"
+                );
+            }
         }
     }
 
     /// Record a fallback event.
     pub fn record_fallback(&self, fallback: FallbackEvent) {
-        if let Ok(mut fallbacks) = self.fallbacks.write() {
-            fallbacks.push(fallback);
+        match self.fallbacks.write() {
+            Ok(mut fallbacks) => {
+                fallbacks.push(fallback);
+            }
+            Err(poison_error) => {
+                tracing::error!(
+                    from_mode = %fallback.from_mode,
+                    to_mode = %fallback.to_mode,
+                    error = %poison_error,
+                    "Failed to record fallback event: RwLock poisoned"
+                );
+            }
         }
     }
 
     /// Get summary statistics.
     #[must_use]
     pub fn summary(&self) -> MetricsSummary {
-        let events = self.events.read().map(|e| e.clone()).unwrap_or_default();
-        let fallbacks = self.fallbacks.read().map(|f| f.clone()).unwrap_or_default();
+        let events = match self.events.read() {
+            Ok(e) => e.clone(),
+            Err(poison_error) => {
+                tracing::warn!(
+                    error = %poison_error,
+                    "Reading events from poisoned lock, using recovered data"
+                );
+                poison_error.into_inner().clone()
+            }
+        };
+        let fallbacks = match self.fallbacks.read() {
+            Ok(f) => f.clone(),
+            Err(poison_error) => {
+                tracing::warn!(
+                    error = %poison_error,
+                    "Reading fallbacks from poisoned lock, using recovered data"
+                );
+                poison_error.into_inner().clone()
+            }
+        };
 
         let mut by_mode: HashMap<String, Vec<&MetricEvent>> = HashMap::new();
         for event in &events {

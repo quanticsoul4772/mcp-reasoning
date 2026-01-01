@@ -43,6 +43,15 @@ pub enum AppError {
     /// Configuration error.
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
+
+    /// Tool execution timeout.
+    #[error("Tool '{operation}' timed out after {timeout_ms}ms")]
+    Timeout {
+        /// The operation that timed out.
+        operation: String,
+        /// Timeout duration in milliseconds.
+        timeout_ms: u64,
+    },
 }
 
 /// Anthropic API errors.

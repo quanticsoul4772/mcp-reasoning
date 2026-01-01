@@ -75,13 +75,22 @@ impl ReasoningServer {
     async fn reasoning_linear(&self, req: Parameters<LinearRequest>) -> LinearResponse {
         let req = req.0;
         let timer = Timer::start();
+        let content_length = req.content.len();
+
+        tracing::info!(
+            tool = "reasoning_linear",
+            content_length = content_length,
+            session_id = ?req.session_id,
+            confidence_threshold = ?req.confidence,
+            "Tool invocation started"
+        );
+
         let mode = LinearMode::new(
             Arc::clone(&self.state.storage),
             Arc::clone(&self.state.client),
         );
 
         let input_session_id = req.session_id.clone().unwrap_or_default();
-        let content_length = req.content.len();
         let session_id_for_metadata = req.session_id.clone();
 
         let result = mode
@@ -90,15 +99,34 @@ impl ReasoningServer {
 
         let elapsed_ms = timer.elapsed_ms();
         let success = result.is_ok();
+
+        tracing::info!(
+            tool = "reasoning_linear",
+            elapsed_ms = elapsed_ms,
+            success = success,
+            "Tool invocation completed"
+        );
+
         self.state
             .metrics
             .record(MetricEvent::new("linear", elapsed_ms, success));
 
         // Build metadata for response enrichment
         let metadata = if success {
-            self.build_metadata_for_linear(content_length, session_id_for_metadata, elapsed_ms)
+            match self
+                .build_metadata_for_linear(content_length, session_id_for_metadata, elapsed_ms)
                 .await
-                .ok()
+            {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    tracing::warn!(
+                        tool = "reasoning_linear",
+                        error = %e,
+                        "Metadata enrichment failed, returning response without metadata"
+                    );
+                    None
+                }
+            }
         } else {
             None
         };
@@ -130,12 +158,21 @@ impl ReasoningServer {
     async fn reasoning_tree(&self, req: Parameters<TreeRequest>) -> TreeResponse {
         let req = req.0;
         let timer = Timer::start();
+        let operation = req.operation.as_deref().unwrap_or("create");
+
+        tracing::info!(
+            tool = "reasoning_tree",
+            operation = operation,
+            session_id = ?req.session_id,
+            num_branches = ?req.num_branches,
+            "Tool invocation started"
+        );
+
         let mut mode = TreeMode::new(
             Arc::clone(&self.state.storage),
             Arc::clone(&self.state.client),
         );
 
-        let operation = req.operation.as_deref().unwrap_or("create");
         let session_id = req.session_id.clone().unwrap_or_default();
 
         let (mut response, success) = match operation {
@@ -288,6 +325,15 @@ impl ReasoningServer {
         };
 
         let elapsed_ms = timer.elapsed_ms();
+
+        tracing::info!(
+            tool = "reasoning_tree",
+            operation = operation,
+            elapsed_ms = elapsed_ms,
+            success = success,
+            "Tool invocation completed"
+        );
+
         self.state
             .metrics
             .record(MetricEvent::new("tree", elapsed_ms, success).with_operation(operation));
@@ -296,7 +342,7 @@ impl ReasoningServer {
         if success {
             let num_branches = response.branches.as_ref().map_or(0, Vec::len);
 
-            if let Ok(metadata) = metadata_builders::build_metadata_for_tree(
+            match metadata_builders::build_metadata_for_tree(
                 &self.state.metadata_builder,
                 req.content.as_deref().unwrap_or("").len(),
                 operation,
@@ -306,7 +352,17 @@ impl ReasoningServer {
             )
             .await
             {
-                response.metadata = Some(metadata);
+                Ok(metadata) => {
+                    response.metadata = Some(metadata);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        tool = "reasoning_tree",
+                        operation = operation,
+                        error = %e,
+                        "Metadata enrichment failed, returning response without metadata"
+                    );
+                }
             }
         }
 
@@ -320,14 +376,26 @@ impl ReasoningServer {
     async fn reasoning_divergent(&self, req: Parameters<DivergentRequest>) -> DivergentResponse {
         let req = req.0;
         let timer = Timer::start();
+        let challenge = req.challenge_assumptions.unwrap_or(false);
+        let rebellion = req.force_rebellion.unwrap_or(false);
+        let content_length = req.content.len();
+
+        tracing::info!(
+            tool = "reasoning_divergent",
+            content_length = content_length,
+            num_perspectives = ?req.num_perspectives,
+            challenge_assumptions = challenge,
+            force_rebellion = rebellion,
+            session_id = ?req.session_id,
+            "Tool invocation started"
+        );
+
         let mode = DivergentMode::new(
             Arc::clone(&self.state.storage),
             Arc::clone(&self.state.client),
         );
 
         let input_session_id = req.session_id.clone().unwrap_or_default();
-        let challenge = req.challenge_assumptions.unwrap_or(false);
-        let rebellion = req.force_rebellion.unwrap_or(false);
 
         let result = mode
             .process(
@@ -341,6 +409,14 @@ impl ReasoningServer {
 
         let elapsed_ms = timer.elapsed_ms();
         let success = result.is_ok();
+
+        tracing::info!(
+            tool = "reasoning_divergent",
+            elapsed_ms = elapsed_ms,
+            success = success,
+            "Tool invocation completed"
+        );
+
         self.state
             .metrics
             .record(MetricEvent::new("divergent", elapsed_ms, success));
@@ -350,16 +426,26 @@ impl ReasoningServer {
                 let num_perspectives = resp.perspectives.len();
                 let session_id_clone = resp.session_id.clone();
 
-                let metadata = metadata_builders::build_metadata_for_divergent(
+                let metadata = match metadata_builders::build_metadata_for_divergent(
                     &self.state.metadata_builder,
-                    req.content.len(),
+                    content_length,
                     num_perspectives,
                     rebellion,
                     Some(session_id_clone),
                     elapsed_ms,
                 )
                 .await
-                .ok();
+                {
+                    Ok(m) => Some(m),
+                    Err(e) => {
+                        tracing::warn!(
+                            tool = "reasoning_divergent",
+                            error = %e,
+                            "Metadata enrichment failed, returning response without metadata"
+                        );
+                        None
+                    }
+                };
 
                 DivergentResponse {
                     thought_id: resp.thought_id,
