@@ -63,6 +63,7 @@ async fn create_test_state(server: &MockServer) -> AppState {
         Arc::new(mcp_reasoning::metadata::PresetIndex::build()),
         30000,
     );
+    let (progress_tx, _rx) = tokio::sync::broadcast::channel(100);
     AppState::new(
         storage,
         client,
@@ -70,6 +71,7 @@ async fn create_test_state(server: &MockServer) -> AppState {
         metrics,
         si_handle,
         metadata_builder,
+        progress_tx,
     )
 }
 

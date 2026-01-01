@@ -32,7 +32,9 @@ pub use crate::storage::{StoredBranch, StoredCheckpoint, StoredGraphEdge, Stored
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use tokio::sync::mpsc;
 
+use crate::anthropic::StreamEvent;
 use crate::error::{ModeError, StorageError};
 
 /// Anthropic API client trait for mocking.
@@ -57,6 +59,25 @@ pub trait AnthropicClientTrait: Send + Sync {
         messages: Vec<Message>,
         config: CompletionConfig,
     ) -> Result<CompletionResponse, ModeError>;
+
+    /// Send a streaming completion request to the API.
+    ///
+    /// Returns a channel receiver that yields `StreamEvent`s as they arrive.
+    /// The caller should consume events until a `StreamEvent::MessageStop` is received.
+    ///
+    /// # Arguments
+    ///
+    /// * `messages` - The conversation messages
+    /// * `config` - Completion configuration options
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if the API call fails or connection cannot be established.
+    async fn complete_streaming(
+        &self,
+        messages: Vec<Message>,
+        config: CompletionConfig,
+    ) -> Result<mpsc::Receiver<Result<StreamEvent, ModeError>>, ModeError>;
 }
 
 /// Storage trait for mocking.

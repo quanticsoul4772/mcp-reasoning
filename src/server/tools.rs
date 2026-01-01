@@ -3473,6 +3473,7 @@ mod tests {
             Arc::new(crate::metadata::PresetIndex::build()),
             30000,
         );
+        let (progress_tx, _rx) = tokio::sync::broadcast::channel(100);
         let state = AppState::new(
             storage,
             client,
@@ -3480,6 +3481,7 @@ mod tests {
             metrics,
             si_handle,
             metadata_builder,
+            progress_tx,
         );
         ReasoningServer::new(Arc::new(state))
     }
@@ -3513,6 +3515,7 @@ mod tests {
             Arc::new(crate::metadata::PresetIndex::build()),
             30000,
         );
+        let (progress_tx, _rx) = tokio::sync::broadcast::channel(100);
         let state = AppState::new(
             storage,
             client,
@@ -3520,6 +3523,7 @@ mod tests {
             metrics,
             si_handle,
             metadata_builder,
+            progress_tx,
         );
         ReasoningServer::new(Arc::new(state))
     }
@@ -3828,6 +3832,7 @@ mod tests {
                 Arc::new(crate::metadata::PresetIndex::build()),
                 30000,
             );
+            let (progress_tx, _rx) = tokio::sync::broadcast::channel(100);
             let state = AppState::new(
                 storage,
                 client,
@@ -3835,6 +3840,7 @@ mod tests {
                 metrics,
                 si_handle,
                 metadata_builder,
+                progress_tx,
             );
             ReasoningServer::new(Arc::new(state))
         }

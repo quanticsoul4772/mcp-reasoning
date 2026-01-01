@@ -80,6 +80,7 @@ mod test_utils;
 #[doc(hidden)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub mod doctest_helpers {
+    use crate::anthropic::StreamEvent;
     use crate::error::{ModeError, StorageError};
     use crate::traits::{
         AnthropicClientTrait, CompletionConfig, CompletionResponse, Message, Session, StorageTrait,
@@ -87,6 +88,7 @@ pub mod doctest_helpers {
     };
     use async_trait::async_trait;
     use chrono::{DateTime, Utc};
+    use tokio::sync::mpsc;
 
     /// A simple mock storage for doctests that stores nothing but returns valid responses.
     #[derive(Debug, Clone, Default)]
@@ -250,6 +252,38 @@ pub mod doctest_helpers {
                 self.response.clone(),
                 Usage::new(100, 50),
             ))
+        }
+
+        async fn complete_streaming(
+            &self,
+            _messages: Vec<Message>,
+            _config: CompletionConfig,
+        ) -> Result<mpsc::Receiver<Result<StreamEvent, ModeError>>, ModeError> {
+            let (tx, rx) = mpsc::channel(32);
+            let response = self.response.clone();
+
+            // Spawn a task that sends a simple streaming sequence
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(Ok(StreamEvent::MessageStart {
+                        message_id: "mock_msg".to_string(),
+                    }))
+                    .await;
+                let _ = tx
+                    .send(Ok(StreamEvent::TextDelta {
+                        index: 0,
+                        text: response,
+                    }))
+                    .await;
+                let _ = tx
+                    .send(Ok(StreamEvent::MessageStop {
+                        stop_reason: "end_turn".to_string(),
+                        usage: crate::anthropic::ApiUsage::new(100, 50),
+                    }))
+                    .await;
+            });
+
+            Ok(rx)
         }
     }
 

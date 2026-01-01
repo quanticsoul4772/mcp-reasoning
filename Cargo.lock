@@ -1160,6 +1160,7 @@ dependencies = [
  "chrono",
  "criterion",
  "dotenvy",
+ "futures-util",
  "mockall",
  "pretty_assertions",
  "proptest",

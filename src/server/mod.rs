@@ -20,7 +20,7 @@
 //!
 //! ```no_run
 //! use std::sync::Arc;
-//! use mcp_reasoning::server::{AppState, TransportConfig};
+//! use mcp_reasoning::server::{AppState, TransportConfig, create_progress_channel};
 //! use mcp_reasoning::storage::SqliteStorage;
 //! use mcp_reasoning::anthropic::{AnthropicClient, ClientConfig};
 //! use mcp_reasoning::config::{Config, SecretString, DEFAULT_MODEL};
@@ -47,7 +47,8 @@
 //!     Arc::new(mcp_reasoning::metadata::PresetIndex::build()),
 //!     30000,
 //! );
-//! let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder);
+//! let (progress_tx, _rx) = create_progress_channel();
+//! let state = AppState::new(storage, client, config, metrics, si_handle, metadata_builder, progress_tx);
 //! # Ok(())
 //! # }
 //! ```
@@ -55,6 +56,7 @@
 mod mcp;
 mod metadata_builders;
 mod params;
+mod progress;
 mod requests;
 mod responses;
 mod tools;
@@ -62,6 +64,7 @@ mod transport;
 mod types;
 
 pub use mcp::McpServer;
+pub use progress::{create_progress_channel, ProgressEvent, ProgressMilestone, ProgressReporter};
 pub use params::{
     AnalysisDepth, AutoParams, CausalModelDef, CausalRelationship, CheckpointOperation,
     CheckpointParams, CounterfactualParams, DecisionCriterion, DecisionParams, DecisionType,

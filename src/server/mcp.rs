@@ -98,6 +98,9 @@ impl McpServer {
             30_000, // Factory timeout (30s) - TODO: make configurable
         );
 
+        // Create progress notification channel
+        let (progress_tx, _progress_rx) = super::progress::create_progress_channel();
+
         // Create app state with shared metrics and self-improvement handle
         let state = AppState::new(
             storage,
@@ -106,6 +109,7 @@ impl McpServer {
             metrics,
             si_handle,
             metadata_builder,
+            progress_tx,
         );
 
         // Create reasoning server

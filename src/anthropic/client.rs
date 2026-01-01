@@ -13,12 +13,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures_util::StreamExt;
 use reqwest::Client;
+use tokio::sync::mpsc;
 
 use super::config::{ClientConfig, DEFAULT_MODEL};
+use super::streaming::parse_sse_line;
 use super::types::{
-    ApiMessage, ApiRequest, ApiResponse, ContentBlock, ReasoningResponse, ThinkingConfig,
-    ToolUseResult,
+    ApiMessage, ApiRequest, ApiResponse, ContentBlock, ReasoningResponse, StreamEvent,
+    ThinkingConfig, ToolUseResult,
 };
 use crate::error::{AnthropicError, ModeError};
 use crate::traits::{AnthropicClientTrait, CompletionConfig, CompletionResponse, Message, Usage};
@@ -81,6 +84,152 @@ impl AnthropicClient {
     pub async fn complete(&self, request: ApiRequest) -> Result<ReasoningResponse, AnthropicError> {
         Self::validate_request(&request)?;
         self.execute_with_retry(request).await
+    }
+
+    /// Send a streaming completion request.
+    ///
+    /// Returns a channel receiver that yields `StreamEvent`s as they arrive.
+    /// The caller should consume events until the channel closes or a
+    /// `StreamEvent::Error` or `StreamEvent::MessageStop` is received.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AnthropicError` if request validation fails or connection cannot be established.
+    pub async fn complete_streaming(
+        &self,
+        request: ApiRequest,
+    ) -> Result<mpsc::Receiver<Result<StreamEvent, AnthropicError>>, AnthropicError> {
+        Self::validate_request(&request)?;
+        let request = request.with_streaming(true);
+
+        let (tx, rx) = mpsc::channel(32);
+        let url = format!("{}/messages", self.config.base_url);
+
+        tracing::debug!(
+            url = %url,
+            model = %request.model,
+            max_tokens = ?request.max_tokens,
+            thinking_budget = ?request.thinking.as_ref().map(|t| t.budget_tokens),
+            "Starting streaming Anthropic API request"
+        );
+
+        let response = self
+            .client
+            .post(&url)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .header("content-type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    AnthropicError::Timeout {
+                        timeout_ms: self.config.timeout_ms,
+                    }
+                } else {
+                    AnthropicError::Network {
+                        message: e.to_string(),
+                    }
+                }
+            })?;
+
+        let status = response.status();
+
+        // Handle error status codes - fail fast, no fallbacks
+        if status.as_u16() == 401 {
+            return Err(AnthropicError::AuthenticationFailed);
+        }
+        if status.as_u16() == 429 {
+            let retry_after = response
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(60);
+            return Err(AnthropicError::RateLimited {
+                retry_after_seconds: retry_after,
+            });
+        }
+        if status.as_u16() == 529 {
+            return Err(AnthropicError::ModelOverloaded {
+                model: request.model.clone(),
+            });
+        }
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(AnthropicError::UnexpectedResponse {
+                message: format!("Status {}: {}", status, body),
+            });
+        }
+
+        // Spawn task to parse SSE stream and send events
+        let byte_stream = response.bytes_stream();
+        tokio::spawn(async move {
+            let mut stream = byte_stream;
+            let mut buffer = String::new();
+
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(bytes) => {
+                        let text = match String::from_utf8(bytes.to_vec()) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                let _ = tx
+                                    .send(Err(AnthropicError::UnexpectedResponse {
+                                        message: format!("Invalid UTF-8 in stream: {e}"),
+                                    }))
+                                    .await;
+                                return;
+                            }
+                        };
+
+                        buffer.push_str(&text);
+
+                        // Process complete lines
+                        while let Some(newline_pos) = buffer.find('\n') {
+                            let line = buffer[..newline_pos].to_string();
+                            buffer = buffer[newline_pos + 1..].to_string();
+
+                            if let Some(event_result) = parse_sse_line(&line) {
+                                match event_result {
+                                    Ok(event) => {
+                                        // Check for error events - propagate immediately
+                                        if let StreamEvent::Error { ref error } = event {
+                                            let _ = tx
+                                                .send(Err(AnthropicError::UnexpectedResponse {
+                                                    message: error.clone(),
+                                                }))
+                                                .await;
+                                            return;
+                                        }
+
+                                        if tx.send(Ok(event)).await.is_err() {
+                                            // Receiver dropped, stop processing
+                                            return;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(Err(e)).await;
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(Err(AnthropicError::Network {
+                                message: e.to_string(),
+                            }))
+                            .await;
+                        return;
+                    }
+                }
+            }
+        });
+
+        Ok(rx)
     }
 
     /// Validate request size limits.
@@ -349,6 +498,64 @@ impl AnthropicClientTrait for AnthropicClient {
             Usage::new(response.usage.input_tokens, response.usage.output_tokens),
         ))
     }
+
+    async fn complete_streaming(
+        &self,
+        messages: Vec<Message>,
+        config: CompletionConfig,
+    ) -> Result<mpsc::Receiver<Result<StreamEvent, ModeError>>, ModeError> {
+        // Convert messages to API format
+        let api_messages: Vec<ApiMessage> = messages
+            .into_iter()
+            .map(|m| {
+                if m.role == "user" {
+                    ApiMessage::user(&m.content)
+                } else {
+                    ApiMessage::assistant(&m.content)
+                }
+            })
+            .collect();
+
+        // Build API request using the default model
+        let max_tokens = config.max_tokens.unwrap_or(4096);
+        let mut request = ApiRequest::new(DEFAULT_MODEL, max_tokens, api_messages);
+
+        // Wire extended thinking if budget is specified
+        if let Some(budget) = config.thinking_budget {
+            request = request.with_thinking(ThinkingConfig::enabled(budget));
+        } else if let Some(temp) = config.temperature {
+            request = request.with_temperature(f64::from(temp));
+        }
+
+        if let Some(system) = config.system_prompt.as_ref() {
+            request = request.with_system(system);
+        }
+
+        // Call the underlying streaming API method
+        let mut inner_rx = Self::complete_streaming(self, request)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: e.to_string(),
+            })?;
+
+        // Create new channel with mapped error type
+        let (tx, rx) = mpsc::channel(32);
+
+        // Spawn task to forward events with error mapping
+        tokio::spawn(async move {
+            while let Some(event_result) = inner_rx.recv().await {
+                let mapped = event_result.map_err(|e| ModeError::ApiUnavailable {
+                    message: e.to_string(),
+                });
+                if tx.send(mapped).await.is_err() {
+                    // Receiver dropped
+                    return;
+                }
+            }
+        });
+
+        Ok(rx)
+    }
 }
 
 /// Blanket implementation for `Arc<AnthropicClient>`.
@@ -361,6 +568,20 @@ impl AnthropicClientTrait for Arc<AnthropicClient> {
     ) -> Result<CompletionResponse, ModeError> {
         // Explicitly call the trait method on the inner AnthropicClient
         <AnthropicClient as AnthropicClientTrait>::complete(self.as_ref(), messages, config).await
+    }
+
+    async fn complete_streaming(
+        &self,
+        messages: Vec<Message>,
+        config: CompletionConfig,
+    ) -> Result<mpsc::Receiver<Result<StreamEvent, ModeError>>, ModeError> {
+        // Explicitly call the trait method on the inner AnthropicClient
+        <AnthropicClient as AnthropicClientTrait>::complete_streaming(
+            self.as_ref(),
+            messages,
+            config,
+        )
+        .await
     }
 }
 

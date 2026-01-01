@@ -5,6 +5,9 @@
 
 use std::sync::Arc;
 
+use tokio::sync::broadcast;
+
+use super::progress::ProgressEvent;
 use crate::anthropic::AnthropicClient;
 use crate::config::Config;
 use crate::metadata::MetadataBuilder;
@@ -41,6 +44,11 @@ pub struct AppState {
     pub self_improvement: Arc<ManagerHandle>,
     /// Metadata builder for enriching tool responses.
     pub metadata_builder: Arc<MetadataBuilder>,
+    /// Broadcast sender for progress events.
+    ///
+    /// Tools use this to emit progress notifications during streaming operations.
+    /// Clients can subscribe via `progress_tx.subscribe()`.
+    pub progress_tx: broadcast::Sender<ProgressEvent>,
 }
 
 impl AppState {
@@ -54,6 +62,7 @@ impl AppState {
     /// * `metrics` - Shared metrics collector (used by both tools and self-improvement)
     /// * `self_improvement` - Self-improvement manager handle
     /// * `metadata_builder` - Metadata builder for tool responses
+    /// * `progress_tx` - Broadcast sender for progress events
     #[must_use]
     pub fn new(
         storage: SqliteStorage,
@@ -62,6 +71,7 @@ impl AppState {
         metrics: Arc<MetricsCollector>,
         self_improvement: ManagerHandle,
         metadata_builder: MetadataBuilder,
+        progress_tx: broadcast::Sender<ProgressEvent>,
     ) -> Self {
         Self {
             storage: Arc::new(storage),
@@ -71,7 +81,18 @@ impl AppState {
             presets: Arc::new(PresetRegistry::new()),
             self_improvement: Arc::new(self_improvement),
             metadata_builder: Arc::new(metadata_builder),
+            progress_tx,
         }
+    }
+
+    /// Create a progress reporter for an operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - Unique identifier for the operation (or use request ID)
+    #[must_use]
+    pub fn create_progress_reporter(&self, token: impl Into<String>) -> super::progress::ProgressReporter {
+        super::progress::ProgressReporter::new(token, self.progress_tx.clone())
     }
 }
 
@@ -155,6 +176,7 @@ mod tests {
             Arc::new(crate::metadata::PresetIndex::build()),
             30000,
         );
+        let (progress_tx, _rx) = broadcast::channel(100);
 
         let state = AppState::new(
             storage,
@@ -163,6 +185,7 @@ mod tests {
             metrics,
             si_handle,
             metadata_builder,
+            progress_tx,
         );
 
         // Verify all Arc wrappers are properly created
@@ -189,6 +212,7 @@ mod tests {
             Arc::new(crate::metadata::PresetIndex::build()),
             30000,
         );
+        let (progress_tx, _rx) = broadcast::channel(100);
 
         let state = AppState::new(
             storage,
@@ -197,6 +221,7 @@ mod tests {
             metrics,
             si_handle,
             metadata_builder,
+            progress_tx,
         );
         let debug = format!("{:?}", state);
 
@@ -219,6 +244,7 @@ mod tests {
             Arc::new(crate::metadata::PresetIndex::build()),
             30000,
         );
+        let (progress_tx, _rx) = broadcast::channel(100);
 
         let state1 = AppState::new(
             storage,
@@ -227,6 +253,7 @@ mod tests {
             metrics,
             si_handle,
             metadata_builder,
+            progress_tx,
         );
         let state2 = state1.clone();
 

@@ -46,6 +46,9 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 async-trait = "0.1"
 
+# Streaming support
+futures-util = "0.3"
+
 # Environment
 dotenvy = "0.15"
 
