@@ -41,7 +41,7 @@ fn parse_event_data(data: &str) -> Result<StreamEvent, AnthropicError> {
             message: format!("Failed to parse stream event: {e}"),
         })?;
 
-    match event.type_.as_str() {
+    match event.type_.as_deref().unwrap_or("") {
         "message_start" => {
             let message_id = event
                 .message
@@ -60,7 +60,7 @@ fn parse_event_data(data: &str) -> Result<StreamEvent, AnthropicError> {
         "content_block_delta" => {
             let index = event.index.unwrap_or(0);
             if let Some(delta) = event.delta {
-                match delta.type_.as_str() {
+                match delta.type_.as_deref().unwrap_or("") {
                     "text_delta" => {
                         let text = delta.text.unwrap_or_default();
                         Ok(StreamEvent::TextDelta { index, text })
@@ -69,7 +69,7 @@ fn parse_event_data(data: &str) -> Result<StreamEvent, AnthropicError> {
                         let thinking = delta.thinking.unwrap_or_default();
                         Ok(StreamEvent::ThinkingDelta { thinking })
                     }
-                    // Ignore unknown delta types (signature_delta, input_json_delta, etc.)
+                    // Ignore unknown delta types (signature_delta, input_json_delta, missing type, etc.)
                     _ => Ok(StreamEvent::Ignored),
                 }
             } else {
@@ -109,6 +109,8 @@ fn parse_event_data(data: &str) -> Result<StreamEvent, AnthropicError> {
             Ok(StreamEvent::Error { error })
         }
         "ping" => Ok(StreamEvent::Ping),
+        // Handle missing or empty type field gracefully
+        "" => Ok(StreamEvent::Ignored),
         other => Err(AnthropicError::UnexpectedResponse {
             message: format!("Unknown event type: {other}"),
         }),
@@ -118,8 +120,8 @@ fn parse_event_data(data: &str) -> Result<StreamEvent, AnthropicError> {
 /// Raw stream event from the API.
 #[derive(Debug, Deserialize)]
 struct RawStreamEvent {
-    #[serde(rename = "type")]
-    type_: String,
+    #[serde(rename = "type", default)]
+    type_: Option<String>,
     #[serde(default)]
     index: Option<usize>,
     #[serde(default)]
@@ -149,8 +151,8 @@ struct RawContentBlock {
 
 #[derive(Debug, Deserialize)]
 struct RawDelta {
-    #[serde(rename = "type")]
-    type_: String,
+    #[serde(rename = "type", default)]
+    type_: Option<String>,
     #[serde(default)]
     text: Option<String>,
     #[serde(default)]
@@ -415,6 +417,15 @@ mod tests {
     fn test_parse_sse_unknown_delta_type_ignored() {
         // signature_delta and other unknown delta types should be ignored, not error
         let line = r#"data: {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "abc"}}"#;
+        let result = parse_sse_line(line);
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap().unwrap(), StreamEvent::Ignored));
+    }
+
+    #[test]
+    fn test_parse_sse_missing_type_field() {
+        // Events without a type field should be ignored
+        let line = r#"data: {"index": 0, "delta": {"text": "hello"}}"#;
         let result = parse_sse_line(line);
         assert!(result.is_some());
         assert!(matches!(result.unwrap().unwrap(), StreamEvent::Ignored));
