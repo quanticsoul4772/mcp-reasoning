@@ -136,24 +136,41 @@ impl std::fmt::Debug for ModeCore {
 pub fn extract_json(text: &str) -> Result<serde_json::Value, ModeError> {
     let trimmed = text.trim();
 
-    // Fast path: Try raw JSON parse first
+    // Fast path: Try raw JSON parse first (most common case)
     if let Ok(value) = serde_json::from_str(trimmed) {
         return Ok(value);
     }
 
-    // Try to extract from ```json code blocks
-    if let Some(json_str) = extract_from_code_block(trimmed, "```json") {
-        return parse_json_with_context(&json_str, text);
+    // Early detection: Check if text contains JSON-like patterns before expensive operations
+    let has_code_block = trimmed.contains("```");
+    let has_braces = trimmed.contains('{') || trimmed.contains('[');
+
+    if !has_code_block && !has_braces {
+        // No JSON-like patterns found, fail fast
+        let preview = truncate_for_preview(text, 100);
+        return Err(ModeError::JsonParseFailed {
+            message: format!("No valid JSON found in response: {preview}"),
+        });
     }
 
-    // Try to extract from generic ``` code blocks
-    if let Some(json_str) = extract_from_code_block(trimmed, "```") {
-        return parse_json_with_context(&json_str, text);
+    // Try code blocks first (common for LLM responses)
+    if has_code_block {
+        // Try ```json blocks
+        if let Some(json_str) = extract_from_code_block(trimmed, "```json") {
+            return parse_json_with_context(&json_str, text);
+        }
+
+        // Try generic ``` blocks
+        if let Some(json_str) = extract_from_code_block(trimmed, "```") {
+            return parse_json_with_context(&json_str, text);
+        }
     }
 
-    // Try to find JSON object or array anywhere in the text
-    if let Some(json_str) = find_json_in_text(trimmed) {
-        return parse_json_with_context(&json_str, text);
+    // Fallback: Try to find JSON object or array anywhere in the text
+    if has_braces {
+        if let Some(json_str) = find_json_in_text(trimmed) {
+            return parse_json_with_context(&json_str, text);
+        }
     }
 
     // Clear error with truncated preview

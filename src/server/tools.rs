@@ -246,7 +246,7 @@ impl ReasoningServer {
                                         id: b.id,
                                         content: b.content,
                                         score: b.score,
-                                        status: format!("{:?}", b.status).to_lowercase(),
+                                        status: b.status.as_str().to_string(),
                                     })
                                     .collect()
                             }),
@@ -299,7 +299,7 @@ impl ReasoningServer {
                                         id: b.id,
                                         content: b.content,
                                         score: b.score,
-                                        status: format!("{:?}", b.status).to_lowercase(),
+                                        status: b.status.as_str().to_string(),
                                     })
                                     .collect()
                             }),
@@ -331,7 +331,7 @@ impl ReasoningServer {
                                     id: b.id,
                                     content: b.content,
                                     score: b.score,
-                                    status: format!("{:?}", b.status).to_lowercase(),
+                                    status: b.status.as_str().to_string(),
                                 })
                                 .collect()
                         }),
@@ -365,7 +365,7 @@ impl ReasoningServer {
                                         id: b.id,
                                         content: b.content,
                                         score: b.score,
-                                        status: format!("{:?}", b.status).to_lowercase(),
+                                        status: b.status.as_str().to_string(),
                                     })
                                     .collect()
                             }),
@@ -475,9 +475,14 @@ impl ReasoningServer {
         let input_session_id = req.session_id.clone().unwrap_or_default();
 
         // Create progress reporter (use progress_token or generate one)
-        let progress_token = req
-            .progress_token
-            .unwrap_or_else(|| format!("divergent-{}", uuid::Uuid::new_v4()));
+        let progress_token = req.progress_token.unwrap_or_else(|| {
+            // Efficient string building with pre-allocated capacity
+            let uuid = uuid::Uuid::new_v4();
+            let mut token = String::with_capacity(46); // "divergent-" (10) + UUID (36)
+            token.push_str("divergent-");
+            token.push_str(&uuid.to_string());
+            token
+        });
         let progress = self.state.create_progress_reporter(&progress_token);
 
         // Apply tool-level timeout (DEEP_THINKING = 8192 tokens = 60s)
@@ -593,9 +598,14 @@ impl ReasoningServer {
         let operation = req.operation.as_deref().unwrap_or("process");
 
         // Create progress reporter (use progress_token or generate one)
-        let progress_token = req
-            .progress_token
-            .unwrap_or_else(|| format!("reflection-{}", uuid::Uuid::new_v4()));
+        let progress_token = req.progress_token.unwrap_or_else(|| {
+            // Efficient string building with pre-allocated capacity
+            let uuid = uuid::Uuid::new_v4();
+            let mut token = String::with_capacity(47); // "reflection-" (11) + UUID (36)
+            token.push_str("reflection-");
+            token.push_str(&uuid.to_string());
+            token
+        });
         let progress = self.state.create_progress_reporter(&progress_token);
 
         tracing::info!(
@@ -1240,7 +1250,7 @@ impl ReasoningServer {
                                 .map(|b| Detection {
                                     detection_type: b.bias,
                                     category: None, // Biases don't have categories
-                                    severity: format!("{:?}", b.severity).to_lowercase(),
+                                    severity: b.severity.as_str().to_string(),
                                     confidence: resp.overall_assessment.reasoning_quality,
                                     evidence: b.evidence,
                                     explanation: b.impact,
@@ -1275,7 +1285,7 @@ impl ReasoningServer {
                                 .into_iter()
                                 .map(|f| Detection {
                                     detection_type: f.fallacy,
-                                    category: Some(format!("{:?}", f.category).to_lowercase()),
+                                    category: Some(f.category.as_str().to_string()),
                                     severity: if resp.overall_assessment.argument_strength < 0.4 {
                                         "high".to_string()
                                     } else if resp.overall_assessment.argument_strength < 0.7 {
@@ -1657,7 +1667,7 @@ impl ReasoningServer {
                                     .map(|p| EvidenceAssessment {
                                         content: p.summary,
                                         credibility_score: p.credibility.overall,
-                                        source_tier: format!("{:?}", p.source_type),
+                                        source_tier: p.source_type.as_str().to_string(),
                                         corroborated_by: None,
                                     })
                                     .collect(),

@@ -291,7 +291,8 @@ impl MetricsCollector {
             }
         };
 
-        let mut by_mode: HashMap<String, Vec<&MetricEvent>> = HashMap::new();
+        // Pre-allocate with typical number of modes (5-10)
+        let mut by_mode: HashMap<String, Vec<&MetricEvent>> = HashMap::with_capacity(10);
         for event in &events {
             by_mode.entry(event.mode.clone()).or_default().push(event);
         }
@@ -303,14 +304,20 @@ impl MetricsCollector {
                 let successful = mode_events.iter().filter(|e| e.success).count() as u64;
                 let failed = total - successful;
 
-                let latencies: Vec<u64> = mode_events.iter().map(|e| e.latency_ms).collect();
-                let avg_latency = if latencies.is_empty() {
-                    0.0
+                // Optimize: Compute stats in single pass without intermediate Vec
+                let (sum, min, max, count) = mode_events.iter().map(|e| e.latency_ms).fold(
+                    (0u64, u64::MAX, 0u64, 0usize),
+                    |(sum, min, max, count), lat| {
+                        (sum + lat, min.min(lat), max.max(lat), count + 1)
+                    },
+                );
+                let avg_latency = if count > 0 {
+                    sum as f64 / count as f64
                 } else {
-                    latencies.iter().sum::<u64>() as f64 / latencies.len() as f64
+                    0.0
                 };
-                let min_latency = latencies.iter().copied().min().unwrap_or(0);
-                let max_latency = latencies.iter().copied().max().unwrap_or(0);
+                let min_latency = if min == u64::MAX { 0 } else { min };
+                let max_latency = max;
                 let success_rate = if total > 0 {
                     successful as f64 / total as f64
                 } else {

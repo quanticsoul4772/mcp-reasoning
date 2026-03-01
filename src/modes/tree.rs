@@ -307,7 +307,8 @@ where
                 reason: "expected array".to_string(),
             })?;
 
-        let mut branches = Vec::new();
+        // Pre-allocate vector with exact capacity to avoid reallocations
+        let mut branches = Vec::with_capacity(branches_arr.len());
         for (i, b) in branches_arr.iter().enumerate() {
             let title = b
                 .get("title")

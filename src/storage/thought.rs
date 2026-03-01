@@ -8,26 +8,28 @@ use sqlx::Row;
 use super::core::SqliteStorage;
 use super::types::StoredThought;
 
+// SQL query constants to avoid repeated allocations
+const INSERT_THOUGHT: &str = "INSERT INTO thoughts (id, session_id, parent_id, mode, content, confidence, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+const SELECT_THOUGHT: &str = "SELECT id, session_id, parent_id, mode, content, confidence, metadata, created_at FROM thoughts WHERE id = ?";
+const SELECT_THOUGHTS_BY_SESSION: &str = "SELECT id, session_id, parent_id, mode, content, confidence, metadata, created_at FROM thoughts WHERE session_id = ? ORDER BY created_at ASC";
+
 impl SqliteStorage {
     /// Save a stored thought to the database.
     pub async fn save_stored_thought(&self, thought: &StoredThought) -> Result<(), StorageError> {
         let created_at_str = thought.created_at.to_rfc3339();
 
-        sqlx::query(
-            "INSERT INTO thoughts (id, session_id, parent_id, mode, content, confidence, metadata, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&thought.id)
-        .bind(&thought.session_id)
-        .bind(&thought.parent_id)
-        .bind(&thought.mode)
-        .bind(&thought.content)
-        .bind(thought.confidence)
-        .bind(&thought.metadata)
-        .bind(&created_at_str)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("INSERT thoughts", format!("{e}")))?;
+        sqlx::query(INSERT_THOUGHT)
+            .bind(&thought.id)
+            .bind(&thought.session_id)
+            .bind(&thought.parent_id)
+            .bind(&thought.mode)
+            .bind(&thought.content)
+            .bind(thought.confidence)
+            .bind(&thought.metadata)
+            .bind(&created_at_str)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("INSERT thoughts", format!("{e}")))?;
 
         Ok(())
     }
@@ -37,14 +39,11 @@ impl SqliteStorage {
         &self,
         id: &str,
     ) -> Result<Option<StoredThought>, StorageError> {
-        let row = sqlx::query(
-            "SELECT id, session_id, parent_id, mode, content, confidence, metadata, created_at
-             FROM thoughts WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT thoughts", format!("{e}")))?;
+        let row = sqlx::query(SELECT_THOUGHT)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT thoughts", format!("{e}")))?;
 
         match row {
             Some(row) => {
@@ -60,14 +59,11 @@ impl SqliteStorage {
         &self,
         session_id: &str,
     ) -> Result<Vec<StoredThought>, StorageError> {
-        let rows = sqlx::query(
-            "SELECT id, session_id, parent_id, mode, content, confidence, metadata, created_at
-             FROM thoughts WHERE session_id = ? ORDER BY created_at ASC",
-        )
-        .bind(session_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT thoughts", format!("{e}")))?;
+        let rows = sqlx::query(SELECT_THOUGHTS_BY_SESSION)
+            .bind(session_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT thoughts", format!("{e}")))?;
 
         let mut thoughts = Vec::with_capacity(rows.len());
         for row in &rows {

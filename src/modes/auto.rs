@@ -208,9 +208,14 @@ where
     fn parse_string_array(json: &serde_json::Value, key: &str) -> Option<Vec<String>> {
         json.get(key).and_then(|v| {
             v.as_array().map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_str().map(String::from))
-                    .collect()
+                // Pre-allocate with upper bound (actual size may be less if some items are not strings)
+                let mut result = Vec::with_capacity(arr.len());
+                for item in arr {
+                    if let Some(s) = item.as_str() {
+                        result.push(s.to_string());
+                    }
+                }
+                result
             })
         })
     }

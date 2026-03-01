@@ -9,6 +9,13 @@ use sqlx::Row;
 use super::core::SqliteStorage;
 use super::types::StoredSession;
 
+// SQL query constants to avoid repeated allocations
+const INSERT_SESSION: &str = "INSERT INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)";
+const SELECT_SESSION: &str =
+    "SELECT id, created_at, updated_at, metadata FROM sessions WHERE id = ?";
+const UPDATE_SESSION_TIMESTAMP: &str = "UPDATE sessions SET updated_at = ? WHERE id = ?";
+const DELETE_SESSION: &str = "DELETE FROM sessions WHERE id = ?";
+
 impl SqliteStorage {
     /// Create a new session.
     pub async fn create_session(&self) -> Result<StoredSession, StorageError> {
@@ -21,7 +28,7 @@ impl SqliteStorage {
         let now = Utc::now();
         let now_str = now.to_rfc3339();
 
-        sqlx::query("INSERT INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)")
+        sqlx::query(INSERT_SESSION)
             .bind(id)
             .bind(&now_str)
             .bind(&now_str)
@@ -37,12 +44,11 @@ impl SqliteStorage {
         &self,
         id: &str,
     ) -> Result<Option<StoredSession>, StorageError> {
-        let row =
-            sqlx::query("SELECT id, created_at, updated_at, metadata FROM sessions WHERE id = ?")
-                .bind(id)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| Self::query_error("SELECT sessions", format!("{e}")))?;
+        let row = sqlx::query(SELECT_SESSION)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT sessions", format!("{e}")))?;
 
         match row {
             Some(row) => {
@@ -69,7 +75,7 @@ impl SqliteStorage {
     pub async fn touch_session(&self, id: &str) -> Result<(), StorageError> {
         let now = Utc::now().to_rfc3339();
 
-        let result = sqlx::query("UPDATE sessions SET updated_at = ? WHERE id = ?")
+        let result = sqlx::query(UPDATE_SESSION_TIMESTAMP)
             .bind(&now)
             .bind(id)
             .execute(&self.pool)
@@ -87,7 +93,7 @@ impl SqliteStorage {
 
     /// Delete a session and all related data.
     pub async fn delete_session(&self, id: &str) -> Result<(), StorageError> {
-        let result = sqlx::query("DELETE FROM sessions WHERE id = ?")
+        let result = sqlx::query(DELETE_SESSION)
             .bind(id)
             .execute(&self.pool)
             .await

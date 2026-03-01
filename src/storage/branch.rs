@@ -8,40 +8,43 @@ use sqlx::Row;
 use super::core::SqliteStorage;
 use super::types::{BranchStatus, StoredBranch};
 
+// SQL query constants to avoid repeated allocations
+const INSERT_BRANCH: &str =
+    "INSERT INTO branches (id, session_id, parent_branch_id, content, score, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
+const SELECT_BRANCH: &str =
+    "SELECT id, session_id, parent_branch_id, content, score, status, created_at FROM branches WHERE id = ?";
+const SELECT_BRANCHES_BY_SESSION: &str =
+    "SELECT id, session_id, parent_branch_id, content, score, status, created_at FROM branches WHERE session_id = ? ORDER BY created_at ASC";
+const UPDATE_BRANCH_STATUS: &str = "UPDATE branches SET status = ? WHERE id = ?";
+
 impl SqliteStorage {
     /// Save a branch to the database.
     pub async fn save_branch(&self, branch: &StoredBranch) -> Result<(), StorageError> {
         let created_at_str = branch.created_at.to_rfc3339();
         let status_str = branch.status.as_str();
 
-        sqlx::query(
-            "INSERT INTO branches (id, session_id, parent_branch_id, content, score, status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&branch.id)
-        .bind(&branch.session_id)
-        .bind(&branch.parent_branch_id)
-        .bind(&branch.content)
-        .bind(branch.score)
-        .bind(status_str)
-        .bind(&created_at_str)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("INSERT branches", format!("{e}")))?;
+        sqlx::query(INSERT_BRANCH)
+            .bind(&branch.id)
+            .bind(&branch.session_id)
+            .bind(&branch.parent_branch_id)
+            .bind(&branch.content)
+            .bind(branch.score)
+            .bind(status_str)
+            .bind(&created_at_str)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("INSERT branches", format!("{e}")))?;
 
         Ok(())
     }
 
     /// Get a branch by ID.
     pub async fn get_branch(&self, id: &str) -> Result<Option<StoredBranch>, StorageError> {
-        let row = sqlx::query(
-            "SELECT id, session_id, parent_branch_id, content, score, status, created_at
-             FROM branches WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT branches", format!("{e}")))?;
+        let row = sqlx::query(SELECT_BRANCH)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT branches", format!("{e}")))?;
 
         match row {
             Some(row) => {
@@ -54,14 +57,11 @@ impl SqliteStorage {
 
     /// Get all branches for a session.
     pub async fn get_branches(&self, session_id: &str) -> Result<Vec<StoredBranch>, StorageError> {
-        let rows = sqlx::query(
-            "SELECT id, session_id, parent_branch_id, content, score, status, created_at
-             FROM branches WHERE session_id = ? ORDER BY created_at ASC",
-        )
-        .bind(session_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT branches", format!("{e}")))?;
+        let rows = sqlx::query(SELECT_BRANCHES_BY_SESSION)
+            .bind(session_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT branches", format!("{e}")))?;
 
         let mut branches = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -79,7 +79,7 @@ impl SqliteStorage {
     ) -> Result<(), StorageError> {
         let status_str = status.as_str();
 
-        let result = sqlx::query("UPDATE branches SET status = ? WHERE id = ?")
+        let result = sqlx::query(UPDATE_BRANCH_STATUS)
             .bind(status_str)
             .bind(id)
             .execute(&self.pool)

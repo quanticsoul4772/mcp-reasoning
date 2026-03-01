@@ -11,6 +11,7 @@
 #![allow(clippy::derive_partial_eq_without_eq)]
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 /// Request to the Anthropic Messages API.
 #[derive(Debug, Clone, Serialize)]
@@ -105,7 +106,8 @@ impl ApiRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ApiMessage {
     /// Role: "user" or "assistant".
-    pub role: String,
+    /// Uses Cow to avoid allocations for static role strings.
+    pub role: Cow<'static, str>,
     /// Message content.
     pub content: MessageContent,
 }
@@ -115,7 +117,7 @@ impl ApiMessage {
     #[must_use]
     pub fn user(content: impl Into<String>) -> Self {
         Self {
-            role: "user".to_string(),
+            role: Cow::Borrowed("user"),
             content: MessageContent::Text(content.into()),
         }
     }
@@ -124,7 +126,7 @@ impl ApiMessage {
     #[must_use]
     pub fn assistant(content: impl Into<String>) -> Self {
         Self {
-            role: "assistant".to_string(),
+            role: Cow::Borrowed("assistant"),
             content: MessageContent::Text(content.into()),
         }
     }
@@ -133,7 +135,7 @@ impl ApiMessage {
     #[must_use]
     pub fn user_multipart(parts: Vec<ContentPart>) -> Self {
         Self {
-            role: "user".to_string(),
+            role: Cow::Borrowed("user"),
             content: MessageContent::Parts(parts),
         }
     }

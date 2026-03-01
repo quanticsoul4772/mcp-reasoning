@@ -8,38 +8,40 @@ use sqlx::Row;
 use super::core::SqliteStorage;
 use super::types::StoredCheckpoint;
 
+// SQL query constants to avoid repeated allocations
+const INSERT_CHECKPOINT: &str =
+    "INSERT INTO checkpoints (id, session_id, name, description, state, created_at) VALUES (?, ?, ?, ?, ?, ?)";
+const SELECT_CHECKPOINT: &str =
+    "SELECT id, session_id, name, description, state, created_at FROM checkpoints WHERE id = ?";
+const SELECT_CHECKPOINTS_BY_SESSION: &str =
+    "SELECT id, session_id, name, description, state, created_at FROM checkpoints WHERE session_id = ? ORDER BY created_at ASC";
+
 impl SqliteStorage {
     /// Save a checkpoint to the database.
     pub async fn save_checkpoint(&self, checkpoint: &StoredCheckpoint) -> Result<(), StorageError> {
         let created_at_str = checkpoint.created_at.to_rfc3339();
 
-        sqlx::query(
-            "INSERT INTO checkpoints (id, session_id, name, description, state, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&checkpoint.id)
-        .bind(&checkpoint.session_id)
-        .bind(&checkpoint.name)
-        .bind(&checkpoint.description)
-        .bind(&checkpoint.state)
-        .bind(&created_at_str)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("INSERT checkpoints", format!("{e}")))?;
+        sqlx::query(INSERT_CHECKPOINT)
+            .bind(&checkpoint.id)
+            .bind(&checkpoint.session_id)
+            .bind(&checkpoint.name)
+            .bind(&checkpoint.description)
+            .bind(&checkpoint.state)
+            .bind(&created_at_str)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("INSERT checkpoints", format!("{e}")))?;
 
         Ok(())
     }
 
     /// Get a checkpoint by ID.
     pub async fn get_checkpoint(&self, id: &str) -> Result<Option<StoredCheckpoint>, StorageError> {
-        let row = sqlx::query(
-            "SELECT id, session_id, name, description, state, created_at
-             FROM checkpoints WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT checkpoints", format!("{e}")))?;
+        let row = sqlx::query(SELECT_CHECKPOINT)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT checkpoints", format!("{e}")))?;
 
         match row {
             Some(row) => {
@@ -55,14 +57,11 @@ impl SqliteStorage {
         &self,
         session_id: &str,
     ) -> Result<Vec<StoredCheckpoint>, StorageError> {
-        let rows = sqlx::query(
-            "SELECT id, session_id, name, description, state, created_at
-             FROM checkpoints WHERE session_id = ? ORDER BY created_at ASC",
-        )
-        .bind(session_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT checkpoints", format!("{e}")))?;
+        let rows = sqlx::query(SELECT_CHECKPOINTS_BY_SESSION)
+            .bind(session_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT checkpoints", format!("{e}")))?;
 
         let mut checkpoints = Vec::with_capacity(rows.len());
         for row in &rows {

@@ -37,6 +37,18 @@ pub enum BiasSeverity {
     High,
 }
 
+impl BiasSeverity {
+    /// Returns the lowercase string representation.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
 /// Overall assessment of biases in content.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BiasAssessment {
@@ -114,6 +126,19 @@ pub enum FallacyCategory {
     Relevance,
     /// Presumption fallacy - unwarranted assumption.
     Presumption,
+}
+
+impl FallacyCategory {
+    /// Returns the lowercase string representation.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Formal => "formal",
+            Self::Informal => "informal",
+            Self::Relevance => "relevance",
+            Self::Presumption => "presumption",
+        }
+    }
 }
 
 /// Structure of the analyzed argument.

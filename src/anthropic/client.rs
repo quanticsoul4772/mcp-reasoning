@@ -167,31 +167,32 @@ impl AnthropicClient {
         let byte_stream = response.bytes_stream();
         tokio::spawn(async move {
             let mut stream = byte_stream;
-            let mut buffer = String::new();
+            // Use Vec<u8> buffer to avoid repeated UTF-8 validation and String allocations
+            let mut buffer = Vec::with_capacity(8192);
 
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(bytes) => {
-                        let text = match String::from_utf8(bytes.to_vec()) {
-                            Ok(t) => t,
-                            Err(e) => {
-                                let _ = tx
-                                    .send(Err(AnthropicError::UnexpectedResponse {
-                                        message: format!("Invalid UTF-8 in stream: {e}"),
-                                    }))
-                                    .await;
-                                return;
-                            }
-                        };
-
-                        buffer.push_str(&text);
+                        // Extend buffer directly without intermediate allocations
+                        buffer.extend_from_slice(&bytes);
 
                         // Process complete lines
-                        while let Some(newline_pos) = buffer.find('\n') {
-                            let line = buffer[..newline_pos].to_string();
-                            buffer = buffer[newline_pos + 1..].to_string();
+                        while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                            // Extract line bytes and validate UTF-8 once
+                            let line_bytes = &buffer[..newline_pos];
+                            let line = match std::str::from_utf8(line_bytes) {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    let _ = tx
+                                        .send(Err(AnthropicError::UnexpectedResponse {
+                                            message: format!("Invalid UTF-8 in stream: {e}"),
+                                        }))
+                                        .await;
+                                    return;
+                                }
+                            };
 
-                            if let Some(event_result) = parse_sse_line(&line) {
+                            if let Some(event_result) = parse_sse_line(line) {
                                 match event_result {
                                     Ok(event) => {
                                         // Check for error events - propagate immediately
@@ -215,6 +216,9 @@ impl AnthropicClient {
                                     }
                                 }
                             }
+
+                            // Remove processed line from buffer efficiently
+                            buffer.drain(..=newline_pos);
                         }
                     }
                     Err(e) => {

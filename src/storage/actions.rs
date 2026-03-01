@@ -9,6 +9,17 @@ use sqlx::Row;
 use super::core::SqliteStorage;
 use super::types::{ActionStatus, StoredSelfImprovementAction};
 
+// SQL query constants to avoid repeated allocations
+const INSERT_ACTION: &str =
+    "INSERT INTO self_improvement_actions (id, action_type, parameters, status, result, created_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
+const SELECT_ACTION: &str =
+    "SELECT id, action_type, parameters, status, result, created_at, completed_at FROM self_improvement_actions WHERE id = ?";
+const SELECT_ACTIONS_BY_STATUS: &str =
+    "SELECT id, action_type, parameters, status, result, created_at, completed_at FROM self_improvement_actions WHERE status = ? ORDER BY created_at ASC";
+const UPDATE_ACTION_STATUS: &str = "UPDATE self_improvement_actions SET status = ? WHERE id = ?";
+const UPDATE_ACTION_COMPLETE: &str =
+    "UPDATE self_improvement_actions SET status = ?, result = ?, completed_at = ? WHERE id = ?";
+
 impl SqliteStorage {
     /// Save a self-improvement action to the database.
     pub async fn save_action(
@@ -19,20 +30,17 @@ impl SqliteStorage {
         let completed_at_str = action.completed_at.map(|dt| dt.to_rfc3339());
         let status_str = action.status.as_str();
 
-        sqlx::query(
-            "INSERT INTO self_improvement_actions (id, action_type, parameters, status, result, created_at, completed_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&action.id)
-        .bind(&action.action_type)
-        .bind(&action.parameters)
-        .bind(status_str)
-        .bind(&action.result)
-        .bind(&created_at_str)
-        .bind(&completed_at_str)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("INSERT self_improvement_actions", format!("{e}")))?;
+        sqlx::query(INSERT_ACTION)
+            .bind(&action.id)
+            .bind(&action.action_type)
+            .bind(&action.parameters)
+            .bind(status_str)
+            .bind(&action.result)
+            .bind(&created_at_str)
+            .bind(&completed_at_str)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("INSERT self_improvement_actions", format!("{e}")))?;
 
         Ok(())
     }
@@ -42,14 +50,11 @@ impl SqliteStorage {
         &self,
         id: &str,
     ) -> Result<Option<StoredSelfImprovementAction>, StorageError> {
-        let row = sqlx::query(
-            "SELECT id, action_type, parameters, status, result, created_at, completed_at
-             FROM self_improvement_actions WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT self_improvement_actions", format!("{e}")))?;
+        let row = sqlx::query(SELECT_ACTION)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT self_improvement_actions", format!("{e}")))?;
 
         match row {
             Some(row) => {
@@ -67,14 +72,11 @@ impl SqliteStorage {
     ) -> Result<Vec<StoredSelfImprovementAction>, StorageError> {
         let status_str = status.as_str();
 
-        let rows = sqlx::query(
-            "SELECT id, action_type, parameters, status, result, created_at, completed_at
-             FROM self_improvement_actions WHERE status = ? ORDER BY created_at ASC",
-        )
-        .bind(status_str)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT self_improvement_actions", format!("{e}")))?;
+        let rows = sqlx::query(SELECT_ACTIONS_BY_STATUS)
+            .bind(status_str)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT self_improvement_actions", format!("{e}")))?;
 
         let mut actions = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -92,7 +94,7 @@ impl SqliteStorage {
     ) -> Result<(), StorageError> {
         let status_str = status.as_str();
 
-        let result = sqlx::query("UPDATE self_improvement_actions SET status = ? WHERE id = ?")
+        let result = sqlx::query(UPDATE_ACTION_STATUS)
             .bind(status_str)
             .bind(id)
             .execute(&self.pool)
@@ -113,16 +115,14 @@ impl SqliteStorage {
         let completed_at = Utc::now().to_rfc3339();
         let status_str = ActionStatus::Completed.as_str();
 
-        let query_result = sqlx::query(
-            "UPDATE self_improvement_actions SET status = ?, result = ?, completed_at = ? WHERE id = ?",
-        )
-        .bind(status_str)
-        .bind(result)
-        .bind(&completed_at)
-        .bind(id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("UPDATE self_improvement_actions", format!("{e}")))?;
+        let query_result = sqlx::query(UPDATE_ACTION_COMPLETE)
+            .bind(status_str)
+            .bind(result)
+            .bind(&completed_at)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("UPDATE self_improvement_actions", format!("{e}")))?;
 
         if query_result.rows_affected() == 0 {
             return Err(StorageError::Internal {
@@ -138,16 +138,14 @@ impl SqliteStorage {
         let completed_at = Utc::now().to_rfc3339();
         let status_str = ActionStatus::Failed.as_str();
 
-        let query_result = sqlx::query(
-            "UPDATE self_improvement_actions SET status = ?, result = ?, completed_at = ? WHERE id = ?",
-        )
-        .bind(status_str)
-        .bind(error)
-        .bind(&completed_at)
-        .bind(id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("UPDATE self_improvement_actions", format!("{e}")))?;
+        let query_result = sqlx::query(UPDATE_ACTION_COMPLETE)
+            .bind(status_str)
+            .bind(error)
+            .bind(&completed_at)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("UPDATE self_improvement_actions", format!("{e}")))?;
 
         if query_result.rows_affected() == 0 {
             return Err(StorageError::Internal {

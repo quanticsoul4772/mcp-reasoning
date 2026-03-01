@@ -9,39 +9,43 @@ use sqlx::Row;
 use super::core::SqliteStorage;
 use super::types::StoredMetric;
 
+// SQL query constants to avoid repeated allocations
+const INSERT_METRIC: &str =
+    "INSERT INTO metrics (mode, tool_name, latency_ms, success, error_message, created_at) VALUES (?, ?, ?, ?, ?, ?)";
+const SELECT_METRICS_BY_MODE: &str =
+    "SELECT id, mode, tool_name, latency_ms, success, error_message, created_at FROM metrics WHERE mode = ? ORDER BY created_at DESC";
+const SELECT_METRICS_IN_RANGE: &str =
+    "SELECT id, mode, tool_name, latency_ms, success, error_message, created_at FROM metrics WHERE created_at >= ? AND created_at <= ? ORDER BY created_at DESC";
+const SELECT_RECENT_METRICS: &str =
+    "SELECT id, mode, tool_name, latency_ms, success, error_message, created_at FROM metrics ORDER BY created_at DESC LIMIT ?";
+
 impl SqliteStorage {
     /// Save a metric to the database.
     pub async fn save_metric(&self, metric: &StoredMetric) -> Result<i64, StorageError> {
         let created_at_str = metric.created_at.to_rfc3339();
         let success_i32: i32 = i32::from(metric.success);
 
-        let result = sqlx::query(
-            "INSERT INTO metrics (mode, tool_name, latency_ms, success, error_message, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&metric.mode)
-        .bind(&metric.tool_name)
-        .bind(metric.latency_ms)
-        .bind(success_i32)
-        .bind(&metric.error_message)
-        .bind(&created_at_str)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("INSERT metrics", format!("{e}")))?;
+        let result = sqlx::query(INSERT_METRIC)
+            .bind(&metric.mode)
+            .bind(&metric.tool_name)
+            .bind(metric.latency_ms)
+            .bind(success_i32)
+            .bind(&metric.error_message)
+            .bind(&created_at_str)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("INSERT metrics", format!("{e}")))?;
 
         Ok(result.last_insert_rowid())
     }
 
     /// Get metrics by mode.
     pub async fn get_metrics_by_mode(&self, mode: &str) -> Result<Vec<StoredMetric>, StorageError> {
-        let rows = sqlx::query(
-            "SELECT id, mode, tool_name, latency_ms, success, error_message, created_at
-             FROM metrics WHERE mode = ? ORDER BY created_at DESC",
-        )
-        .bind(mode)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT metrics", format!("{e}")))?;
+        let rows = sqlx::query(SELECT_METRICS_BY_MODE)
+            .bind(mode)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT metrics", format!("{e}")))?;
 
         let mut metrics = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -60,15 +64,12 @@ impl SqliteStorage {
         let start_str = start.to_rfc3339();
         let end_str = end.to_rfc3339();
 
-        let rows = sqlx::query(
-            "SELECT id, mode, tool_name, latency_ms, success, error_message, created_at
-             FROM metrics WHERE created_at >= ? AND created_at <= ? ORDER BY created_at DESC",
-        )
-        .bind(&start_str)
-        .bind(&end_str)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT metrics", format!("{e}")))?;
+        let rows = sqlx::query(SELECT_METRICS_IN_RANGE)
+            .bind(&start_str)
+            .bind(&end_str)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT metrics", format!("{e}")))?;
 
         let mut metrics = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -80,14 +81,11 @@ impl SqliteStorage {
 
     /// Get recent metrics (last N).
     pub async fn get_recent_metrics(&self, limit: u32) -> Result<Vec<StoredMetric>, StorageError> {
-        let rows = sqlx::query(
-            "SELECT id, mode, tool_name, latency_ms, success, error_message, created_at
-             FROM metrics ORDER BY created_at DESC LIMIT ?",
-        )
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Self::query_error("SELECT metrics", format!("{e}")))?;
+        let rows = sqlx::query(SELECT_RECENT_METRICS)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("SELECT metrics", format!("{e}")))?;
 
         let mut metrics = Vec::with_capacity(rows.len());
         for row in &rows {

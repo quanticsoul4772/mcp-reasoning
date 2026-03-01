@@ -55,7 +55,8 @@ pub fn parse_improvements(json: &serde_json::Value) -> Result<Vec<Improvement>, 
             reason: "expected array".to_string(),
         })?;
 
-    let mut improvements = Vec::new();
+    // Pre-allocate vector with exact capacity to avoid reallocations
+    let mut improvements = Vec::with_capacity(improvements_arr.len());
     for item in improvements_arr {
         let issue = item
             .get("issue")

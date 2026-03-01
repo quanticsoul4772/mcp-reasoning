@@ -52,6 +52,19 @@ pub enum SourceType {
     Anecdotal,
 }
 
+impl SourceType {
+    /// Returns the lowercase string representation.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Secondary => "secondary",
+            Self::Tertiary => "tertiary",
+            Self::Anecdotal => "anecdotal",
+        }
+    }
+}
+
 /// A piece of evidence with credibility and quality assessment.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EvidencePiece {

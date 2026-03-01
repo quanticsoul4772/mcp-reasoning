@@ -425,7 +425,8 @@ where
             });
         }
 
-        let mut perspectives = Vec::new();
+        // Pre-allocate vector with exact capacity to avoid reallocations
+        let mut perspectives = Vec::with_capacity(perspectives_arr.len());
         for (i, p) in perspectives_arr.iter().enumerate() {
             let viewpoint = p
                 .get("name")
