@@ -1408,6 +1408,96 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_analyze_save_thought_storage_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "DB error".to_string(),
+            })
+        });
+
+        let response_json = mock_counterfactual_response();
+        mock_client.expect_complete().returning(move |_, _| {
+            Ok(CompletionResponse::new(
+                response_json.clone(),
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Test scenario", None).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_analyze_streaming_save_thought_storage_error() {
+        use crate::anthropic::{ApiUsage, StreamEvent};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "DB error".to_string(),
+            })
+        });
+
+        let response_json = mock_counterfactual_response();
+        mock_client
+            .expect_complete_streaming()
+            .returning(move |_, _| {
+                let response_text = response_json.clone();
+                let (tx, rx) = tokio::sync::mpsc::channel(32);
+
+                tokio::spawn(async move {
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStart {
+                            message_id: "msg_123".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStart {
+                            index: 0,
+                            block_type: "text".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::TextDelta {
+                            index: 0,
+                            text: response_text,
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStop { index: 0 }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStop {
+                            stop_reason: "end_turn".to_string(),
+                            usage: ApiUsage::new(100, 200),
+                        }))
+                        .await;
+                });
+                Ok(rx)
+            });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze_streaming("Test scenario", None, None).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
     async fn test_analyze_missing_counterfactual_level() {
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
