@@ -17,6 +17,8 @@ COPY benches benches
 COPY tests tests
 
 # Build release binary with static linking
+# Set SQLX_OFFLINE=true to skip compile-time SQL verification
+ENV SQLX_OFFLINE=true
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Runtime image
