@@ -1,0 +1,61 @@
+# Pre-commit hooks for mcp-reasoning
+# See https://pre-commit.com for more information
+
+repos:
+  # Rust formatting
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+        name: cargo fmt
+        description: Format Rust code with rustfmt
+        entry: cargo fmt --
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: clippy
+        name: cargo clippy
+        description: Lint Rust code with clippy
+        entry: cargo clippy -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+  # Secret scanning
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: gitleaks
+        description: Scan for secrets and credentials
+        entry: gitleaks protect --verbose --redact --staged
+        language: system
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: trim trailing whitespace
+      - id: end-of-file-fixer
+        name: fix end of files
+      - id: check-yaml
+        name: check yaml syntax
+      - id: check-toml
+        name: check toml syntax
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+        name: check for large files
+      - id: check-merge-conflict
+        name: check for merge conflicts
+      - id: mixed-line-ending
+        name: check line endings
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.43.0
+    hooks:
+      - id: markdownlint
+        name: markdownlint
+        args: ['--config', '.markdownlint.json', '--fix']

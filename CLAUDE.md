@@ -42,6 +42,11 @@ cargo llvm-cov                        # Coverage report
 # Full validation (run before every commit)
 cargo fmt --check && cargo clippy -- -D warnings && cargo test
 
+# Pre-commit hooks (recommended)
+pip install pre-commit               # Install pre-commit
+pre-commit install                   # Install git hooks
+pre-commit run --all-files           # Run manually
+
 # Database
 cargo sqlx prepare --database-url "sqlite:./data/reasoning.db"  # Prepare SQLx queries
 

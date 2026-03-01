@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask a Question
+    url: https://github.com/quanticsoul4772/mcp-reasoning/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: Security Issue
+    url: https://github.com/quanticsoul4772/mcp-reasoning/security/advisories/new
+    about: Report security vulnerabilities privately

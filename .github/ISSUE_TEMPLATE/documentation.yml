@@ -1,0 +1,56 @@
+name: Documentation Issue
+description: Report missing, incorrect, or unclear documentation
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve the documentation! Please describe what's missing or unclear.
+
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      description: What kind of documentation issue is this?
+      options:
+        - Missing documentation
+        - Incorrect/outdated information
+        - Unclear explanation
+        - Broken link
+        - Typo/grammar
+        - Example needed
+        - API reference
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Location
+      description: Where in the documentation is this issue?
+      placeholder: "e.g., README.md line 123, docs/DESIGN.md section 'Storage', CLAUDE.md build commands"
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: What's Wrong or Missing?
+      description: Describe the documentation issue clearly
+      placeholder: "The section on X doesn't explain Y, which is confusing because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: How would you improve this documentation?
+      placeholder: "I think it should say... or include an example like..."
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other relevant information or links

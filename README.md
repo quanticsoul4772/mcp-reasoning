@@ -715,12 +715,36 @@ MIT
 
 ## Contributing
 
+We welcome contributions! Please follow these steps:
+
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Ensure all tests pass (`cargo test`)
-4. Ensure clippy passes (`cargo clippy -- -D warnings`)
-5. Commit your changes (use conventional commits)
-6. Submit a pull request
+3. **Install pre-commit hooks** (recommended):
+   ```bash
+   pip install pre-commit
+   pre-commit install
+   ```
+   See [docs/PRE_COMMIT_SETUP.md](docs/PRE_COMMIT_SETUP.md) for details
+4. Make your changes
+5. Ensure all tests pass (`cargo test`)
+6. Ensure clippy passes (`cargo clippy -- -D warnings`)
+7. Ensure formatting is correct (`cargo fmt --check`)
+8. Commit your changes (use conventional commits)
+9. Submit a pull request using the PR template
+
+### Issue Templates
+
+When reporting bugs or requesting features, please use the appropriate issue template:
+- **Bug Report** - For reporting bugs and unexpected behavior
+- **Feature Request** - For suggesting new features or enhancements
+- **Documentation** - For reporting documentation issues
+
+### Code Quality Standards
+
+- All code must pass `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test`
+- Maintain test coverage above 95%
+- No `.unwrap()` or `.expect()` in production code paths
+- Follow conventional commit message format
 
 ## Acknowledgments
 
