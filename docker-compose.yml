@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  mcp-reasoning:
+    image: ghcr.io/quanticsoul4772/mcp-reasoning:latest
+    container_name: mcp-reasoning
+    restart: unless-stopped
+
+    environment:
+      # Required: Set your Anthropic API key
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+      # Optional configuration
+      - DATABASE_PATH=/app/data/reasoning.db
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - REQUEST_TIMEOUT_MS=${REQUEST_TIMEOUT_MS:-30000}
+      - MAX_RETRIES=${MAX_RETRIES:-3}
+
+    volumes:
+      # Persist database
+      - ./data:/app/data
+
+    # For stdio transport (default)
+    stdin_open: true
+    tty: true
+
+    # Optional: For HTTP transport
+    # ports:
+    #   - "8080:8080"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mcp-reasoning", "--health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+# Optional: Use .env file for configuration
+# Create a .env file with:
+#   ANTHROPIC_API_KEY=sk-ant-xxx
+#   LOG_LEVEL=info

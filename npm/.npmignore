@@ -1,0 +1,5 @@
+# Don't publish these to npm
+node_modules/
+*.log
+.DS_Store
+download.*

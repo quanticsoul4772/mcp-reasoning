@@ -1,0 +1,54 @@
+{
+  "name": "@mcp-reasoning/server",
+  "version": "0.1.0",
+  "description": "MCP server providing structured reasoning capabilities for Claude Code and Claude Desktop",
+  "main": "index.js",
+  "bin": {
+    "mcp-reasoning": "bin/mcp-reasoning"
+  },
+  "scripts": {
+    "postinstall": "node install.js",
+    "test": "node bin/mcp-reasoning --version"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quanticsoul4772/mcp-reasoning.git"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "reasoning",
+    "ai",
+    "anthropic",
+    "llm",
+    "structured-reasoning",
+    "decision-analysis",
+    "monte-carlo",
+    "graph-of-thoughts"
+  ],
+  "author": "quanticsoul4772",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/quanticsoul4772/mcp-reasoning/issues"
+  },
+  "homepage": "https://github.com/quanticsoul4772/mcp-reasoning#readme",
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "install.js",
+    "index.js",
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ]
+}

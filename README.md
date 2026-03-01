@@ -37,31 +37,105 @@ Each tool includes intelligent metadata: execution time predictions, next-step s
 
 ### Prerequisites
 
-- [Rust 1.75+](https://www.rust-lang.org/tools/install)
-- [Anthropic API key](https://console.anthropic.com/)
+- [Anthropic API key](https://console.anthropic.com/) (required)
+- Choose one installation method below (no Rust required!)
 
 ### Installation
+
+Choose the method that works best for you:
+
+#### 🚀 Option 1: One-Command Install (Recommended)
+
+**macOS/Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/quanticsoul4772/mcp-reasoning/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/quanticsoul4772/mcp-reasoning/main/install.ps1 | iex
+```
+
+This downloads the pre-built binary, installs it to your PATH, and offers to configure Claude Desktop automatically.
+
+#### 📦 Option 2: npm (Easiest for Developers)
+
+```bash
+# Global install
+npm install -g @mcp-reasoning/server
+
+# Or use without installing
+npx @mcp-reasoning/server --version
+```
+
+**Why npm?** Cross-platform, auto-updates, works with `npx` (no install needed).
+
+#### 🍺 Option 3: Homebrew (macOS/Linux)
+
+```bash
+brew tap quanticsoul4772/mcp
+brew install mcp-reasoning
+```
+
+Auto-updates with `brew upgrade`.
+
+#### 🍫 Option 4: Chocolatey (Windows)
+
+```powershell
+choco install mcp-reasoning
+```
+
+Auto-updates with `choco upgrade`.
+
+#### 🐳 Option 5: Docker
+
+```bash
+docker pull ghcr.io/quanticsoul4772/mcp-reasoning:latest
+
+# Or use docker-compose
+curl -O https://raw.githubusercontent.com/quanticsoul4772/mcp-reasoning/main/docker-compose.yml
+# Edit docker-compose.yml to add your API key
+docker-compose up -d
+```
+
+#### 🔨 Option 6: Build from Source
 
 ```bash
 git clone https://github.com/quanticsoul4772/mcp-reasoning.git
 cd mcp-reasoning
 cargo build --release
+# Binary at: target/release/mcp-reasoning
 ```
 
-The binary will be at `target/release/mcp-reasoning` (or `target/release/mcp-reasoning.exe` on Windows).
+Requires [Rust 1.75+](https://www.rust-lang.org/tools/install).
+
+---
 
 ### Configuration
 
-#### For Claude Code
+#### Automatic Configuration (Easiest)
+
+After installing the binary, run:
+
+```bash
+# Interactive wizard guides you through setup
+curl -fsSL https://raw.githubusercontent.com/quanticsoul4772/mcp-reasoning/main/configure.sh | bash
+```
+
+#### Manual Configuration
+
+**For Claude Code:**
 
 ```bash
 claude mcp add mcp-reasoning \
   --transport stdio \
   --env ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-  -- /path/to/target/release/mcp-reasoning
+  -- mcp-reasoning
 ```
 
-#### For Claude Desktop
+**For Claude Desktop:**
 
 **macOS/Linux**: Edit `~/.config/Claude/claude_desktop_config.json`
 **Windows**: Edit `%APPDATA%\Claude\claude_desktop_config.json`
@@ -72,7 +146,23 @@ Add:
 {
   "mcpServers": {
     "mcp-reasoning": {
-      "command": "/absolute/path/to/target/release/mcp-reasoning",
+      "command": "mcp-reasoning",
+      "env": {
+        "ANTHROPIC_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+**Using npm/npx:**
+
+```json
+{
+  "mcpServers": {
+    "mcp-reasoning": {
+      "command": "npx",
+      "args": ["-y", "@mcp-reasoning/server"],
       "env": {
         "ANTHROPIC_API_KEY": "your-api-key-here"
       }
@@ -82,6 +172,17 @@ Add:
 ```
 
 Restart Claude Desktop.
+
+#### Verify Installation
+
+```bash
+# Check version
+mcp-reasoning --version
+
+# Run health checks
+export ANTHROPIC_API_KEY=your-key-here  # or use .env file
+mcp-reasoning --health
+```
 
 ### Environment Variables
 

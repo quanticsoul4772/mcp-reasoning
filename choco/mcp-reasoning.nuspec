@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>mcp-reasoning</id>
+    <version>0.1.0</version>
+    <packageSourceUrl>https://github.com/quanticsoul4772/mcp-reasoning</packageSourceUrl>
+    <owners>quanticsoul4772</owners>
+    <title>MCP Reasoning Server</title>
+    <authors>quanticsoul4772</authors>
+    <projectUrl>https://github.com/quanticsoul4772/mcp-reasoning</projectUrl>
+    <licenseUrl>https://github.com/quanticsoul4772/mcp-reasoning/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>mcp claude reasoning ai anthropic ml llm</tags>
+    <summary>MCP server providing 15 structured reasoning tools for Claude Code and Claude Desktop</summary>
+    <description>
+MCP Reasoning Server - A high-performance MCP server that provides structured reasoning capabilities for Claude Code and Claude Desktop. Built in Rust with 15 reasoning modes including:
+
+- Core reasoning: linear, tree, divergent, reflection, checkpoint, auto
+- Graph-of-Thoughts: Complex reasoning chain building
+- Analysis tools: Bias/fallacy detection, decision analysis, evidence evaluation
+- Advanced: Timeline reasoning, Monte Carlo Tree Search, counterfactual analysis
+- Infrastructure: Pre-configured workflows, usage metrics
+
+Features:
+- Session persistence with SQLite
+- Self-improvement system with circuit breaker safety
+- Extended thinking budgets for complex reasoning
+- Streaming API with progress notifications
+- 2,020 tests with 95%+ coverage
+- Zero unsafe code, production-ready
+
+Perfect for developers working with Claude on complex reasoning tasks including code review, debugging, architecture decisions, and strategic planning.
+    </description>
+    <releaseNotes>https://github.com/quanticsoul4772/mcp-reasoning/blob/main/CHANGELOG.md</releaseNotes>
+    <dependencies>
+      <!-- No runtime dependencies - statically linked binary -->
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
