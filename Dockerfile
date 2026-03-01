@@ -8,7 +8,6 @@ WORKDIR /build
 
 # Copy dependency manifests first for better caching
 COPY Cargo.toml Cargo.lock ./
-COPY .sqlx .sqlx
 COPY rust-toolchain.toml ./
 
 # Copy source code
