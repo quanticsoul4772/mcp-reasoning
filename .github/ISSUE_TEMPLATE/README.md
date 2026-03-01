@@ -15,6 +15,7 @@ When creating a new issue, GitHub will present these templates as options. Selec
 ## Labels
 
 Issues created from templates are automatically tagged with:
+
 - `bug` - Bug reports
 - `enhancement` - Feature requests
 - `documentation` - Documentation issues

@@ -1,8 +1,8 @@
 # Plan: Fix Pedantic Lint Warnings (8 Issues)
 
-**Date:** 2024-12-29  
-**Issue:** 8 minor code style issues flagged by clippy pedantic mode  
-**Severity:** LOW-MEDIUM  
+**Date:** 2024-12-29
+**Issue:** 8 minor code style issues flagged by clippy pedantic mode
+**Severity:** LOW-MEDIUM
 **Estimated Time:** 15-30 minutes
 
 ---
@@ -26,13 +26,14 @@ These are non-critical style issues that don't affect functionality but reduce c
 **Issue:** `r#"..."#` should be `r"..."` when no hashes are needed
 
 **Locations:**
+
 - `src/modes/core.rs:380` - `r#"[1, 2, 3]"#`
 - `src/modes/core.rs:508` - Multi-line JSON block
 - `src/server/params.rs:858` - `r#"{}"#`
 - `src/server/params.rs:890` - `r#"{}"#`
 - `src/server/params.rs:970` - `r#"{}"#`
 
-**Rationale:** Raw string hashes (`#`) are only needed when the string contains `"`  
+**Rationale:** Raw string hashes (`#`) are only needed when the string contains `"`
 **Fix:** Remove hashes: `r#"text"#` -> `r"text"`
 
 ### 2. Unreadable Long Literals (3 instances)
@@ -40,11 +41,12 @@ These are non-critical style issues that don't affect functionality but reduce c
 **Issue:** Long numeric literals lack separators for readability
 
 **Locations:**
+
 - `src/self_improvement/anthropic_calls.rs:1398` - `120000`
 - `src/self_improvement/anthropic_calls.rs:1406` - `3600000`
 - `src/self_improvement/cli.rs:977` - `172800`
 
-**Rationale:** Hard to read large numbers at a glance  
+**Rationale:** Hard to read large numbers at a glance
 **Fix:** Add underscores: `120000` -> `120_000`
 
 ### 3. Redundant Default Constructor (1 instance)
@@ -54,11 +56,12 @@ These are non-critical style issues that don't affect functionality but reduce c
 **Location:** `src/traits/mod.rs:162`
 
 **Current:**
+
 ```rust
 let provider = RealTimeProvider::default();
 ```
 
-**Rationale:** Unit structs don't need explicit `default()` call  
+**Rationale:** Unit structs don't need explicit `default()` call
 **Fix:** Use struct directly: `RealTimeProvider`
 
 ### 4. No-Effect Underscore Binding (1 instance)
@@ -68,11 +71,12 @@ let provider = RealTimeProvider::default();
 **Location:** `src/traits/mod.rs:181`
 
 **Current:**
+
 ```rust
 let _cloned = provider;
 ```
 
-**Rationale:** Underscore prefix means "intentionally unused" but binding still occurs  
+**Rationale:** Underscore prefix means "intentionally unused" but binding still occurs
 **Fix:** Remove variable or use `std::mem::drop()` if testing Drop impl
 
 ### 5. Unnecessary Async Function (1 instance)
@@ -83,7 +87,7 @@ let _cloned = provider;
 
 **Function:** `create_mock_client()` in tests
 
-**Rationale:** Async overhead without async operations  
+**Rationale:** Async overhead without async operations
 **Fix:** Remove `async` keyword and return type directly
 
 ---
@@ -95,11 +99,13 @@ let _cloned = provider;
 Use `cargo clippy --fix` to automatically apply most fixes.
 
 **Pros:**
+
 - Fast (1-2 minutes)
 - Safe (clippy validates changes)
 - Handles most cases automatically
 
 **Cons:**
+
 - May not fix all issues (some require manual review)
 - Requires `--allow-dirty` if uncommitted changes exist
 
@@ -108,10 +114,12 @@ Use `cargo clippy --fix` to automatically apply most fixes.
 Edit each file individually with precise changes.
 
 **Pros:**
+
 - Full control over changes
 - Can review each change
 
 **Cons:**
+
 - Time-consuming (15-30 minutes)
 - Risk of typos
 
@@ -143,6 +151,7 @@ git diff
 ```
 
 **Verify:**
+
 - Raw string hashes removed correctly
 - Numeric separators added correctly
 - No unintended changes
@@ -158,6 +167,7 @@ If auto-fix doesn't handle all issues, manually fix remaining warnings.
 **File: `src/modes/core.rs`**
 
 Line 380:
+
 ```rust
 // Before
 let json = r#"[1, 2, 3]"#;
@@ -167,12 +177,13 @@ let json = r"[1, 2, 3]";
 ```
 
 Lines 508-509:
+
 ```rust
 // Before
 let json = r#"```json
 ```"#;
 
-// After  
+// After
 let json = r"```json
 ```";
 ```
@@ -180,6 +191,7 @@ let json = r"```json
 **File: `src/server/params.rs`**
 
 Lines 858, 890, 970:
+
 ```rust
 // Before
 let json = r#"{}"#;
@@ -193,6 +205,7 @@ let json = r"{}";
 **File: `src/self_improvement/anthropic_calls.rs`**
 
 Line 1398:
+
 ```rust
 // Before
 assert!(matches!(result.unwrap(), ParamValue::DurationMs(120000)));
@@ -202,6 +215,7 @@ assert!(matches!(result.unwrap(), ParamValue::DurationMs(120_000)));
 ```
 
 Line 1406:
+
 ```rust
 // Before
 assert!(matches!(result.unwrap(), ParamValue::DurationMs(3600000)));
@@ -213,6 +227,7 @@ assert!(matches!(result.unwrap(), ParamValue::DurationMs(3_600_000)));
 **File: `src/self_improvement/cli.rs`**
 
 Line 977:
+
 ```rust
 // Before
 assert_eq!(format_duration(Duration::from_secs(172800)), "2d");
@@ -226,6 +241,7 @@ assert_eq!(format_duration(Duration::from_secs(172_800)), "2d");
 **File: `src/traits/mod.rs`**
 
 Line 162:
+
 ```rust
 // Before
 let provider = RealTimeProvider::default();
@@ -239,6 +255,7 @@ let provider = RealTimeProvider;
 **File: `src/traits/mod.rs`**
 
 Line 181:
+
 ```rust
 // Before
 let _cloned = provider;
@@ -256,6 +273,7 @@ let _cloned = provider;
 **File: `src/anthropic/client.rs`**
 
 Line 372:
+
 ```rust
 // Before
 async fn create_mock_client(server: &MockServer) -> AnthropicClient {
@@ -286,7 +304,8 @@ fn create_mock_client(server: &MockServer) -> AnthropicClient {
 cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery
 ```
 
-**Expected result:** 
+**Expected result:**
+
 - 0 pedantic warnings from our 8 issues
 - May still have cargo/dependency warnings (acceptable)
 
@@ -403,17 +422,20 @@ cargo clippy --all-targets -- -D clippy::pedantic -D clippy::nursery || exit 1
 ## Success Criteria
 
 **Must Have:**
+
 - All 8 pedantic warnings resolved
 - All 1,674 tests passing
 - Clean clippy output for our files
 - No functional changes
 
 **Should Have:**
+
 - Clean git diff (only expected changes)
 - Documentation updated
 - Changes reviewed
 
 **Nice to Have:**
+
 - Automated clippy in CI/CD
 - Pre-commit hook for future prevention
 
@@ -434,6 +456,7 @@ cargo clippy --all-targets -- -D clippy::pedantic -D clippy::nursery || exit 1
 ## Implementation Checklist
 
 ### **Quick Path (Auto-fix only)** - 15 minutes
+
 - [ ] Check current clippy warnings
 - [ ] Run `cargo clippy --fix --allow-dirty`
 - [ ] Review `git diff` for correctness
@@ -443,6 +466,7 @@ cargo clippy --all-targets -- -D clippy::pedantic -D clippy::nursery || exit 1
 - [ ] Update LESSONS_LEARNED.md
 
 ### **Full Path (With manual fixes)** - 25 minutes
+
 - [ ] Complete Quick Path steps
 - [ ] Identify any remaining warnings
 - [ ] Apply manual fixes per Phase 2
@@ -474,7 +498,7 @@ Files modified:
 - src/traits/mod.rs
 - src/anthropic/client.rs
 
-All 1,674 tests passing 
+All 1,674 tests passing
 
 Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>
 ```
@@ -494,6 +518,7 @@ Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.g
 ### Prevention Strategies
 
 1. **Add to CI/CD:**
+
 ```yaml
 - name: Clippy pedantic check
   run: cargo clippy --all-targets -- -D clippy::pedantic -D clippy::nursery
@@ -525,6 +550,6 @@ let y = Thing;                 // Direct construction
 
 ---
 
-**Status:** READY FOR IMPLEMENTATION  
-**Recommendation:** Use Quick Path (auto-fix) first  
+**Status:** READY FOR IMPLEMENTATION
+**Recommendation:** Use Quick Path (auto-fix) first
 **Last updated:** 2024-12-29

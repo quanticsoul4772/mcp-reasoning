@@ -5,6 +5,7 @@ This document provides detailed API documentation for all 15 reasoning tools.
 ## Response Metadata
 
 **All tool responses include a `metadata` field** with timing predictions, tool suggestions, and workflow recommendations. This enables AI agents to:
+
 - Predict execution time and choose appropriate timeouts
 - Discover optimal next steps and tool sequences
 - Find relevant workflow presets for complex tasks
@@ -39,6 +40,7 @@ interface ResponseMetadata {
 ### Metadata in Responses
 
 Every tool response includes `"metadata": ResponseMetadata | null` as a top-level field. Metadata is `null` only when:
+
 - The metadata builder fails (logged as warning)
 - Historical data is unavailable (cold start)
 
@@ -974,6 +976,7 @@ All tools return errors in response fields when operations fail:
 ```
 
 Common error scenarios:
+
 - Empty content provided
 - Invalid operation for the tool
 - API call failures (retried automatically)

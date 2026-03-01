@@ -66,8 +66,8 @@ impl TimingDatabase {
         let complexity_score = calculate_complexity_score(&complexity);
 
         sqlx::query(
-            "INSERT INTO tool_timing_history 
-             (tool_name, mode_name, duration_ms, complexity_score, timestamp) 
+            "INSERT INTO tool_timing_history
+             (tool_name, mode_name, duration_ms, complexity_score, timestamp)
              VALUES (?, ?, ?, ?, ?)",
         )
         .bind(tool)
@@ -94,8 +94,8 @@ impl TimingDatabase {
         mode: Option<&str>,
     ) -> Result<Option<(u64, usize)>, AppError> {
         let result: Option<(i64, i64)> = sqlx::query_as(
-            "SELECT AVG(duration_ms), COUNT(*) 
-             FROM tool_timing_history 
+            "SELECT AVG(duration_ms), COUNT(*)
+             FROM tool_timing_history
              WHERE tool_name = ? AND (mode_name = ? OR ? IS NULL)
              AND timestamp > ?",
         )

@@ -77,6 +77,7 @@ async fn test_init() { ... }
 ```
 
 And include in mod.rs:
+
 ```rust
 #[cfg(test)]
 mod tests;

@@ -47,21 +47,25 @@ brew install gitleaks
 ## Configured Hooks
 
 ### Rust Formatting (`cargo fmt`)
+
 - Automatically formats Rust code using rustfmt
 - Ensures consistent code style across the project
 - **Auto-fix**: Yes
 
 ### Rust Linting (`cargo clippy`)
+
 - Runs clippy with `-D warnings` (treats warnings as errors)
 - Catches common mistakes and enforces best practices
 - **Auto-fix**: No (manual fixes required)
 
 ### Secret Scanning (`gitleaks`)
+
 - Scans staged files for secrets and credentials
 - Prevents accidentally committing API keys, passwords, etc.
 - **Auto-fix**: No (manual removal required)
 
 ### General File Checks
+
 - Trailing whitespace removal
 - End-of-file fixer (ensures newline at EOF)
 - YAML syntax validation
@@ -71,6 +75,7 @@ brew install gitleaks
 - Line ending normalization
 
 ### Markdown Linting (`markdownlint`)
+
 - Lints and auto-fixes markdown files
 - Ensures consistent markdown formatting
 - **Auto-fix**: Yes
@@ -115,16 +120,19 @@ This updates the `rev` field in `.pre-commit-config.yaml` to the latest release.
 ## Troubleshooting
 
 ### Hook execution is slow
+
 - First run is slower as it sets up environments
 - Subsequent runs are much faster (cached)
 - Consider running hooks in parallel (default behavior)
 
 ### Clippy fails on valid code
+
 - Ensure you're using the same Rust version as CI
 - Check `rust-toolchain.toml` for the required version
 - Run `cargo clippy -- -D warnings` manually to see issues
 
 ### Gitleaks reports false positives
+
 - Add exceptions to `.gitleaksignore` if needed
 - Use `gitleaks protect --verbose` to see what was detected
 

@@ -10,7 +10,7 @@ A repository ruleset exists (ID: 12805654) but is currently **disabled**. The ru
 
 ### Via GitHub Web UI
 
-1. Go to: https://github.com/quanticsoul4772/mcp-reasoning/settings/rules
+1. Go to: <https://github.com/quanticsoul4772/mcp-reasoning/settings/rules>
 2. Find the "mcp-reasoning" ruleset
 3. Click "Edit"
 4. Change "Enforcement status" from **Disabled** to **Active**
@@ -19,6 +19,7 @@ A repository ruleset exists (ID: 12805654) but is currently **disabled**. The ru
 ### Current Ruleset Configuration
 
 The existing ruleset includes:
+
 - **Deletion protection** - Prevents branch deletion
 - **Non-fast-forward protection** - Prevents force pushes
 
@@ -79,6 +80,7 @@ git push --force origin main
 ### API Access Issues
 
 If you encounter 404 errors when trying to modify rulesets via API, you may need:
+
 - Additional GitHub permissions (repo admin)
 - Personal access token with `admin:repo_hook` scope
 - Use the GitHub web UI instead
@@ -86,6 +88,7 @@ If you encounter 404 errors when trying to modify rulesets via API, you may need
 ### Protection Not Working
 
 If protection seems not to be enforced:
+
 - Verify enforcement is set to "Active", not "Disabled"
 - Check if bypass actors are configured (can override protections)
 - Ensure you're testing with a non-admin account (admins can bypass)

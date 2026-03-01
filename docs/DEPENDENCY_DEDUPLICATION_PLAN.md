@@ -1,8 +1,8 @@
 # Plan: Fix Dependency Duplication (14 Duplicate Crates)
 
-**Date:** 2024-12-29  
-**Issue:** 14 duplicate dependencies across the dependency tree  
-**Severity:** MEDIUM-HIGH  
+**Date:** 2024-12-29
+**Issue:** 14 duplicate dependencies across the dependency tree
+**Severity:** MEDIUM-HIGH
 **Estimated Impact:** ~500KB binary size reduction, faster compile times
 
 ---
@@ -34,14 +34,17 @@ Running `cargo tree --duplicates` reveals 14 duplicate crates:
 ### Impact Assessment
 
 **Binary Size:**
+
 - Estimated 400-600KB additional size from duplicates
 - Largest contributors: `windows-sys` (4 versions), `base64`, `getrandom`
 
 **Compile Time:**
+
 - ~10-15% slower due to compiling multiple versions
 - Duplicated macro expansions and codegen
 
 **Potential Issues:**
+
 - Trait incompatibilities between versions
 - Confusion in error messages
 - Harder dependency auditing
@@ -51,30 +54,37 @@ Running `cargo tree --duplicates` reveals 14 duplicate crates:
 ## Strategy Overview
 
 ### **Approach A: Cargo Patches** ⭐ RECOMMENDED
+
 Use `[patch.crates-io]` to force version unification where safe.
 
 **Pros:**
+
 - Minimal code changes
 - Can be applied selectively
 - Reversible if issues arise
 - Doesn't require upstream changes
 
 **Cons:**
+
 - May break if APIs are incompatible
 - Requires testing after each patch
 
 ### **Approach B: Update Direct Dependencies**
+
 Update `Cargo.toml` to use newer versions that align dependencies.
 
 **Pros:**
+
 - Clean long-term solution
 - May bring bug fixes
 
 **Cons:**
+
 - May require code changes
 - Riskier for major updates
 
 ### **Approach C: Hybrid Approach**
+
 Combine patches with selective updates.
 
 **Recommended Strategy:** Start with Approach A (patches), then selectively apply B for critical crates.
@@ -135,7 +145,8 @@ cargo test --all-targets
 cargo tree --duplicates
 ```
 
-**Expected result:** 
+**Expected result:**
+
 - `windows-sys` should show only v0.61.2
 - `base64` should show only v0.22.1
 - `getrandom` should show only v0.3.4
@@ -174,7 +185,7 @@ Record size: `____ MB`
 # Before
 cargo tree --depth 1 | wc -l
 
-# After  
+# After
 cargo tree --depth 1 | wc -l
 ```
 
@@ -194,12 +205,13 @@ Only proceed if Phase 1 succeeds.
 hashbrown = "0.16"
 ```
 
-**Risk:** May affect sqlx internal behavior  
+**Risk:** May affect sqlx internal behavior
 **Test:** Run full test suite + manual testing
 
 #### 3.2 Document Any Failures
 
 If a patch causes compilation or test failures:
+
 1. Remove the patch
 2. Document in "Known Limitations" section
 3. Consider filing upstream issue
@@ -227,6 +239,7 @@ cargo test --all-targets
 #### 4.3 Evaluate Major Updates
 
 Review for breaking changes:
+
 - `rmcp` (if using older base64)
 - `sqlx` (if using older hashbrown)
 - `tokio` (always check carefully)
@@ -237,7 +250,7 @@ Review for breaking changes:
 
 | Patch Target | Risk Level | Mitigation |
 |--------------|------------|------------|
-| `windows-sys` | LOW | Windows-only, well-tested | 
+| `windows-sys` | LOW | Windows-only, well-tested |
 | `base64` | LOW | Simple API, backward compatible |
 | `getrandom` | LOW | OS randomness, stable API |
 | `hashbrown` | MEDIUM | Internal hash map, test thoroughly |
@@ -269,6 +282,7 @@ After each patch, verify:
 If patches cause issues:
 
 ### Quick Rollback
+
 ```bash
 # Remove patches from Cargo.toml
 git restore Cargo.toml Cargo.lock
@@ -278,6 +292,7 @@ cargo test
 ```
 
 ### Selective Rollback
+
 ```bash
 # Keep working patches, remove problematic ones
 # Edit Cargo.toml to comment out specific patches
@@ -286,6 +301,7 @@ cargo test
 ```
 
 ### Document Issues
+
 - Record which patches failed
 - Note the error messages
 - Check if upstream issue exists
@@ -296,12 +312,14 @@ cargo test
 ## Expected Outcomes
 
 ### **Immediate (After Phase 1-2)**
+
 - 8-10 duplicate crates eliminated
 - 400-600KB binary size reduction
 - 10-15% faster compile times
 - Cleaner `cargo tree` output
 
 ### **Long-term Benefits**
+
 - Easier security audits (fewer versions to track)
 - Simpler dependency updates
 - Reduced chance of trait incompatibilities
@@ -310,6 +328,7 @@ cargo test
 ### **Remaining Duplicates**
 
 Some duplicates may be unavoidable:
+
 - **futures-***: Different crates legitimately need different versions
 - **Internal duplication** (e.g., sqlx-sqlite): Internal implementation detail
 - **Log/tracing**: Acceptable logging ecosystem fragmentation
@@ -347,15 +366,18 @@ cargo clean && time cargo build --release
 ## Known Limitations
 
 ### Cannot Patch (By Design)
+
 - **tokio**: Core async runtime, exact version critical
 - **serde**: Widely used, version changes risky
 - **tracing**: Logging framework, version flexibility needed
 
 ### Difficult to Patch
+
 - **futures-***: Ecosystem-wide usage, complex dependency relationships
 - **Internal crates**: Like `sqlx-sqlite`, part of parent crate structure
 
 ### Windows Platform Crates
+
 - Multiple architecture variants (x86_64, i686, aarch64)
 - Multiple targets (msvc, gnu, gnullvm)
 - Patching one requires patching all related variants
@@ -367,17 +389,20 @@ cargo clean && time cargo build --release
 After successful patching:
 
 ### Update Cargo.toml Comments
+
 ```toml
 [patch.crates-io]
 # Dependency deduplication patches (Added 2024-12-29)
 # These eliminate duplicate versions to reduce binary size (~500KB)
 # and improve compile times (~10-15% faster).
-# 
+#
 # See docs/DEPENDENCY_DEDUPLICATION_PLAN.md for rationale and testing.
 ```
 
 ### Update LESSONS_LEARNED.md
+
 Add section:
+
 ```markdown
 ### Dependency Deduplication
 
@@ -397,7 +422,9 @@ Add section:
 ```
 
 ### Update CLAUDE.md
+
 Add to dependencies section:
+
 ```markdown
 ## Dependency Management
 
@@ -419,6 +446,7 @@ cargo test --all-targets # Verify all tests pass
 ## Implementation Checklist
 
 ### **Quick Path (Phase 1-2 Only)** - 45 minutes
+
 - [ ] Run baseline `cargo tree --duplicates`
 - [ ] Record baseline binary size
 - [ ] Add `[patch.crates-io]` section with safe patches
@@ -429,6 +457,7 @@ cargo test --all-targets # Verify all tests pass
 - [ ] Document results in commit message
 
 ### **Full Path (All Phases)** - 3-4 hours
+
 - [ ] Complete Quick Path checklist
 - [ ] Attempt hashbrown patch (Phase 3)
 - [ ] If failures, document and skip
@@ -444,6 +473,7 @@ cargo test --all-targets # Verify all tests pass
 ## Monitoring After Deployment
 
 ### Regular Checks
+
 ```bash
 # Monthly: Check for new duplicates
 cargo tree --duplicates
@@ -457,7 +487,9 @@ ls -lh target/release/mcp-reasoning
 ```
 
 ### CI/CD Integration (Future)
+
 Add to GitHub Actions:
+
 ```yaml
 - name: Check for dependency duplicates
   run: |
@@ -473,20 +505,26 @@ Add to GitHub Actions:
 ## Alternative Solutions (If Patches Fail)
 
 ### Option 1: Feature Flags
+
 Some dependencies can be deduplicated via features:
+
 ```toml
 [dependencies]
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"], default-features = false }
 ```
 
 ### Option 2: Replace Dependencies
+
 If a dependency causes excessive duplication:
+
 - Evaluate alternatives
 - Consider vendoring critical functionality
 - File upstream issues
 
 ### Option 3: Accept Some Duplication
+
 Pragmatic approach:
+
 - Focus on largest duplicates (windows-sys, base64)
 - Accept minor duplicates (either, log)
 - Prioritize by impact
@@ -496,18 +534,21 @@ Pragmatic approach:
 ## Success Criteria
 
 **Must Have:**
+
 - All 1,624 tests pass
 - No new compilation errors
 - At least 8 duplicates eliminated
 - At least 300KB binary size reduction
 
 **Should Have:**
+
 - 10+ duplicates eliminated
 - 400-500KB binary size reduction
 - 10%+ faster compile times
 - Clean `cargo tree --duplicates` output
 
 **Nice to Have:**
+
 - All duplicates eliminated (except unavoidable)
 - 500KB+ binary size reduction
 - 15%+ faster compile times
@@ -549,6 +590,7 @@ Pragmatic approach:
 ### High-Impact Duplicates (Fix First)
 
 #### windows-sys (4 versions: 0.48.0, 0.52.0, 0.60.2, 0.61.2)
+
 ```
 Caused by: socket2, mio, tokio, tempfile, schannel
 Size impact: ~150KB per extra version = ~450KB total
@@ -557,6 +599,7 @@ Risk: LOW
 ```
 
 #### base64 (2 versions: 0.21.7, 0.22.1)
+
 ```
 v0.21.7 <- rmcp
 v0.22.1 <- reqwest, sqlx-core, wiremock
@@ -566,6 +609,7 @@ Risk: LOW (API compatible)
 ```
 
 #### getrandom (2 versions: 0.2.16, 0.3.4)
+
 ```
 v0.2.16 <- Various old dependencies
 v0.3.4 <- Current standard
@@ -577,6 +621,7 @@ Risk: LOW
 ### Medium-Impact Duplicates
 
 #### hashbrown (2 versions: 0.15.5, 0.16.1)
+
 ```
 v0.15.5 <- sqlx-core
 v0.16.1 <- indexmap
@@ -604,6 +649,6 @@ Multiple small crates with minimal size impact. Accept as-is unless causing issu
 
 ---
 
-**Last Updated:** 2024-12-29  
-**Status:** READY FOR IMPLEMENTATION  
+**Last Updated:** 2024-12-29
+**Status:** READY FOR IMPLEMENTATION
 **Recommended Start:** Phase 1 (Safe Patches)

@@ -1,14 +1,15 @@
 # Dependency Deduplication - Implementation Status
 
-**Date:** 2024-12-29  
-**Status:** ANALYSIS COMPLETE - Pragmatic approach documented  
+**Date:** 2024-12-29
+**Status:** ANALYSIS COMPLETE - Pragmatic approach documented
 **Previous Blocker:** External changes fixed, compilation restored
 
 ---
 
-## UPDATE: Compilation Restored 
+## UPDATE: Compilation Restored
 
 The compilation errors have been resolved externally. Analysis resumed successfully:
+
 - All 1,674 tests passing (increased from 1,624)
 - Code compiles with 1 minor warning
 - Full dependency analysis completed
@@ -56,6 +57,7 @@ We were able to gather baseline measurements before discovering the compilation 
 ### Identified Duplicates
 
 Real duplicates (not same-version multi-path):
+
 - `base64`: v0.21.7 (rmcp) and v0.22.1 (reqwest/sqlx/wiremock)
 - `hashbrown`: v0.15.5 (sqlx) and v0.16.1 (indexmap)
 - `windows-sys`: v0.48.0, v0.52.0, v0.60.2, v0.61.2 (4 versions)
@@ -66,23 +68,27 @@ Real duplicates (not same-version multi-path):
 ## Implementation Attempts
 
 ### Attempt 1: Cargo Patches
+
 **Approach:** Add `[patch.crates-io]` section with version overrides
 
-**Result:** FAILED  
+**Result:** FAILED
 **Reason:** Cargo patches require pointing to different sources (git repos, paths), not just version numbers. The error was:
+
 ```
-patch for `base64` in `https://github.com/rust-lang/crates.io-index` 
+patch for `base64` in `https://github.com/rust-lang/crates.io-index`
 points to the same source, but patches must point to different sources
 ```
 
 ### Attempt 2: Cargo Update
+
 **Approach:** Run `cargo update` to unify within semver constraints
 
-**Result:** MINIMAL EFFECT  
-**Changes:** Updated 2 unrelated packages (iri-string, zmij)  
+**Result:** MINIMAL EFFECT
+**Changes:** Updated 2 unrelated packages (iri-string, zmij)
 **Duplicates:** 202 -> 205 lines (slight increase)
 
 **Reason:** Dependencies have pinned versions that prevent unification:
+
 - `rmcp v0.1.5` requires `base64 = "^0.21"`
 - `sqlx` internals require specific `hashbrown` versions
 - `windows-sys` requirements are spread across many transitive dependencies
@@ -122,9 +128,11 @@ The `windows-sys` ecosystem has 10+ related crates (`windows-targets`, `windows_
 Since cargo patches don't work for version unification and we have compilation errors, here's the revised approach:
 
 ### Phase 0: Fix Compilation (PREREQUISITE)
-**Priority:** CRITICAL  
-**Owner:** Needs investigation  
+
+**Priority:** CRITICAL
+**Owner:** Needs investigation
 **Tasks:**
+
 1. Implement missing `save_branch`, `get_branch`, `get_branches`, `update_branch_status` methods
 2. Fix module visibility issues (`types` module)
 3. Verify all tests pass
@@ -133,10 +141,12 @@ Since cargo patches don't work for version unification and we have compilation e
 **Estimated time:** 2-4 hours
 
 ### Phase 1: Update Direct Dependencies (After compilation fixed)
-**Priority:** HIGH  
+
+**Priority:** HIGH
 **Approach:** Update our direct dependencies to versions that use newer shared deps
 
 **Candidates for update:**
+
 ```toml
 [dependencies]
 rmcp = "0.2"  # Check if this uses base64 = "0.22"
@@ -144,6 +154,7 @@ sqlx = "0.9"  # Check if this updates hashbrown
 ```
 
 **Process:**
+
 1. Check if newer versions exist: `cargo search <package>`
 2. Check their dependencies: Browse crates.io
 3. Update Cargo.toml if compatible
@@ -152,10 +163,12 @@ sqlx = "0.9"  # Check if this updates hashbrown
 **Estimated time:** 2-3 hours
 
 ### Phase 2: Accept Remaining Duplicates (Pragmatic)
-**Priority:** MEDIUM  
+
+**Priority:** MEDIUM
 **Approach:** Document unavoidable duplicates
 
 **Acceptable duplicates:**
+
 - `windows-sys`: Platform-specific, hard to unify
 - `futures-*`: Async ecosystem fragmentation (common)
 - Internal duplicates: Like `sqlx-sqlite` (part of parent crate)
@@ -196,11 +209,13 @@ sqlx = "0.9"  # Check if this updates hashbrown
 ### Future Dependency Management
 
 1. **Monitor for updates** to direct dependencies (monthly)
+
    ```bash
    cargo outdated  # Requires cargo-outdated tool
    ```
 
 2. **Check for new duplicates** after updates
+
    ```bash
    cargo tree --duplicates
    ```
@@ -212,6 +227,7 @@ sqlx = "0.9"  # Check if this updates hashbrown
 ### Documentation Updates
 
 Add to `LESSONS_LEARNED.md`:
+
 ```markdown
 ## Dependency Deduplication Challenges
 
@@ -238,9 +254,11 @@ Add to `LESSONS_LEARNED.md`:
 ## Files Modified (Pending Compilation Fix)
 
 ### Changed
+
 - `Cargo.toml` - Added `[patch.crates-io]` section (needs revision)
 
 ### Created
+
 - `docs/DEPENDENCY_DEDUPLICATION_PLAN.md` - Original plan
 - `docs/DEPENDENCY_DEDUP_STATUS.md` - This status report
 
@@ -259,7 +277,7 @@ Add to `LESSONS_LEARNED.md`:
 
 ## Conclusion
 
-The dependency deduplication effort revealed important findings about Cargo's patching mechanism and exposed existing compilation errors in the codebase. 
+The dependency deduplication effort revealed important findings about Cargo's patching mechanism and exposed existing compilation errors in the codebase.
 
 **Key takeaway:** Fix the code first, then optimize dependencies.
 
@@ -303,6 +321,7 @@ After compilation was restored, analysis revealed only **3 actual duplicate crat
 ### Most "Duplicates" Are Not Problems
 
 The vast majority of the 202 lines are **same-version multi-path duplicates** (marked with `(*)` in cargo tree):
+
 - `crypto-common v0.1.7` (same version, 2 paths)
 - `digest v0.10.7` (same version, 2 paths)
 - `either v1.15.0` (same version, 2 paths)
@@ -317,11 +336,13 @@ The vast majority of the 202 lines are **same-version multi-path duplicates** (m
 **Total actual wastage:** ~280KB (base64 + hashbrown + windows-sys)
 
 **Cost/benefit analysis:**
+
 - Updating rmcp 0.1 -> 0.12: Breaking changes, unknown API differences
 - Updating sqlx: Tight coupling with database, high risk
 - Forcing transitive deps: Requires forking or patches (doesn't work well)
 
 **Recommended approach:**
+
 1. Accept current duplicates as reasonable cost
 2. Monitor for natural updates (monthly `cargo update`)
 3. Re-evaluate when major dependency updates happen anyway
@@ -338,7 +359,7 @@ The vast majority of the 202 lines are **same-version multi-path duplicates** (m
 
 ---
 
-**Status:** ANALYSIS COMPLETE  
-**Recommendation:** Accept current state, revisit during natural dependency updates  
-**Total time invested:** ~2 hours (analysis + documentation)  
+**Status:** ANALYSIS COMPLETE
+**Recommendation:** Accept current state, revisit during natural dependency updates
+**Total time invested:** ~2 hours (analysis + documentation)
 **Last updated:** 2024-12-29 (post-compilation fix)

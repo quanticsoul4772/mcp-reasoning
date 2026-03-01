@@ -18,6 +18,7 @@ Six categories of silent failures were identified:
 ## Fix 1: Apply Transport Timeout
 
 ### Problem
+
 `TransportConfig.read_timeout_ms` (default 300,000ms = 5 min) is defined but the `serve()` function ignores `self.config` entirely.
 
 ### Design
@@ -87,6 +88,7 @@ pub enum AppError {
 ```
 
 ### Tests Required
+
 - Test that timeout is triggered after configured duration
 - Test that timeout error is properly logged
 - Test that timeout doesn't affect successful operations
@@ -96,6 +98,7 @@ pub enum AppError {
 ## Fix 2: Add Logging to Metrics RwLock
 
 ### Problem
+
 When `self.events.write()` or `self.fallbacks.write()` fails (lock poisoned), the failure is completely silent.
 
 ### Design
@@ -103,6 +106,7 @@ When `self.events.write()` or `self.fallbacks.write()` fails (lock poisoned), th
 **File**: `src/metrics/mod.rs`
 
 **Before**:
+
 ```rust
 pub fn record(&self, event: MetricEvent) {
     if let Ok(mut events) = self.events.write() {
@@ -112,6 +116,7 @@ pub fn record(&self, event: MetricEvent) {
 ```
 
 **After**:
+
 ```rust
 pub fn record(&self, event: MetricEvent) {
     match self.events.write() {
@@ -146,6 +151,7 @@ pub fn record_fallback(&self, fallback: FallbackEvent) {
 ```
 
 **Also update `summary()` method**:
+
 ```rust
 pub fn summary(&self) -> MetricsSummary {
     let events = match self.events.read() {
@@ -163,6 +169,7 @@ pub fn summary(&self) -> MetricsSummary {
 ```
 
 ### Tests Required
+
 - Test that poisoned lock scenario is logged (mock tracing)
 - Test that `into_inner()` recovery works for reads
 
@@ -171,6 +178,7 @@ pub fn summary(&self) -> MetricsSummary {
 ## Fix 3: Log Metadata Errors
 
 ### Problem
+
 Multiple places use `.ok()` to silently convert metadata building errors to `None`.
 
 ### Design
@@ -178,6 +186,7 @@ Multiple places use `.ok()` to silently convert metadata building errors to `Non
 **File**: `src/server/tools.rs`
 
 **Before** (multiple locations):
+
 ```rust
 let metadata = self.build_metadata_for_linear(...)
     .await
@@ -185,6 +194,7 @@ let metadata = self.build_metadata_for_linear(...)
 ```
 
 **After**:
+
 ```rust
 let metadata = match self.build_metadata_for_linear(...).await {
     Ok(m) => Some(m),
@@ -200,6 +210,7 @@ let metadata = match self.build_metadata_for_linear(...).await {
 ```
 
 **Affected Methods** (by line number in tools.rs):
+
 - Line 99-101: `reasoning_linear`
 - Line 299: `reasoning_tree`
 - Line 353-362: `reasoning_divergent`
@@ -233,6 +244,7 @@ where
 ```
 
 ### Tests Required
+
 - Test that metadata errors are logged with correct tool name
 - Test that response still returns successfully without metadata
 
@@ -241,6 +253,7 @@ where
 ## Fix 4: Add Request Lifecycle Logging
 
 ### Problem
+
 No visibility into when tool handlers start, when API calls are made, or when they complete.
 
 ### Design
@@ -328,12 +341,14 @@ async fn execute_once(&self, request: &ApiRequest) -> Result<ReasoningResponse, 
 ```
 
 ### Log Levels
+
 - `INFO`: Tool start/complete (always visible at default log level)
 - `DEBUG`: API request details (visible with LOG_LEVEL=debug)
 - `WARN`: Non-fatal issues (metadata failures, fallbacks)
 - `ERROR`: Fatal issues (timeouts, RwLock poisoning)
 
 ### Tests Required
+
 - Test that log messages contain expected fields
 - Test that timing information is accurate
 
@@ -342,6 +357,7 @@ async fn execute_once(&self, request: &ApiRequest) -> Result<ReasoningResponse, 
 ## Fix 5: Log Environment Parsing Failures
 
 ### Problem
+
 Invalid environment variable values are silently replaced with defaults in `SelfImprovementConfig::from_env()`.
 
 ### Design
@@ -349,6 +365,7 @@ Invalid environment variable values are silently replaced with defaults in `Self
 **File**: `src/config/self_improvement.rs`
 
 **Before**:
+
 ```rust
 let min_invocations_for_analysis = env::var("SELF_IMPROVEMENT_MIN_INVOCATIONS")
     .ok()
@@ -357,6 +374,7 @@ let min_invocations_for_analysis = env::var("SELF_IMPROVEMENT_MIN_INVOCATIONS")
 ```
 
 **After**:
+
 ```rust
 let min_invocations_for_analysis = match env::var("SELF_IMPROVEMENT_MIN_INVOCATIONS") {
     Ok(value) => match value.parse::<u64>() {
@@ -377,6 +395,7 @@ let min_invocations_for_analysis = match env::var("SELF_IMPROVEMENT_MIN_INVOCATI
 ```
 
 **Also apply to**:
+
 - `SELF_IMPROVEMENT_CYCLE_INTERVAL_SECS`
 - `SELF_IMPROVEMENT_MAX_ACTIONS`
 - `SELF_IMPROVEMENT_CIRCUIT_BREAKER_THRESHOLD`
@@ -384,12 +403,14 @@ let min_invocations_for_analysis = match env::var("SELF_IMPROVEMENT_MIN_INVOCATI
 **File**: `src/config/mod.rs`
 
 Apply same pattern to:
+
 - `REQUEST_TIMEOUT_MS`
 - `REQUEST_TIMEOUT_DEEP_MS`
 - `REQUEST_TIMEOUT_MAXIMUM_MS`
 - `MAX_RETRIES`
 
 ### Tests Required
+
 - Test that valid values are parsed correctly
 - Test that invalid values log warning and use default
 - Test that missing values silently use default (no warning)
@@ -399,14 +420,17 @@ Apply same pattern to:
 ## Implementation Order
 
 ### Phase 1: Critical Fixes (Observability)
+
 1. **Fix 4: Request Lifecycle Logging** - Most impactful for debugging
 2. **Fix 2: Metrics RwLock Logging** - Prevents silent data loss
 
 ### Phase 2: Error Visibility
+
 3. **Fix 3: Metadata Error Logging** - Shows enrichment failures
 4. **Fix 5: Environment Parsing Logging** - Shows config issues
 
 ### Phase 3: Timeout Protection
+
 5. **Fix 1: Transport Timeout** - Prevents infinite hangs
 
 ---

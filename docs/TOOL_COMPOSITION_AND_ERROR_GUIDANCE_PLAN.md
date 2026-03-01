@@ -23,12 +23,14 @@ Both features leverage existing metadata enrichment infrastructure and are desig
 ### What We Have
 
 #### Metadata Enrichment (Completed)
+
 - `TimingDatabase` tracks execution history
 - `SuggestionEngine` provides rule-based next-tool recommendations
 - `PresetIndex` with 5 workflow presets
 - `MetadataBuilder` enriches all tool responses
 
 #### Metrics Collection (Basic)
+
 - `MetricsCollector` tracks:
   - Per-mode invocations (count)
   - Success/failure rates
@@ -37,11 +39,13 @@ Both features leverage existing metadata enrichment infrastructure and are desig
 - **Missing**: Tool chain patterns, transition frequencies, success correlations
 
 #### Error Handling (Minimal)
+
 - Structured error types (thiserror)
 - Basic error messages: `"Request timeout after 30000ms"`
 - **Missing**: Contextual alternatives, recovery suggestions, agent-friendly guidance
 
 #### Tool Suggestions (Static Rules)
+
 - Hard-coded next-tool logic per tool
 - Based on result context (complexity, branches, outputs)
 - **Missing**: Dynamic learning from actual usage patterns
@@ -49,12 +53,14 @@ Both features leverage existing metadata enrichment infrastructure and are desig
 ### What We Need
 
 #### Tool Composition Guidance
+
 1. **Chain Discovery**: Identify common tool sequences from metrics
 2. **Transition Matrix**: Track which tools follow which (with success rates)
 3. **Dynamic Suggestions**: Use historical data to improve recommendations
 4. **Chain Visualization**: Show common paths in reasoning_metrics output
 
 #### Enhanced Error Messages
+
 1. **Alternative Suggestions**: Offer faster/alternative tools on failure
 2. **Recovery Strategies**: Break down complex operations into smaller steps
 3. **Context-Aware**: Use timing metadata to suggest appropriate timeout tiers
@@ -69,6 +75,7 @@ Both features leverage existing metadata enrichment infrastructure and are desig
 #### 2.1: Chain Tracking in MetricsCollector
 
 **New Data Structure:**
+
 ```rust
 /// A tool transition event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,14 +117,15 @@ pub struct TransitionStats {
 ```
 
 **Changes to MetricsCollector:**
+
 ```rust
 impl MetricsCollector {
     // NEW: Record tool transitions
     pub fn record_transition(&self, transition: ToolTransition);
-    
+
     // NEW: Get chain analysis
     pub fn chain_summary(&self) -> ChainSummary;
-    
+
     // NEW: Get transitions for a specific tool
     pub fn transitions_from(&self, tool: &str) -> HashMap<String, TransitionStats>;
 }
@@ -251,6 +259,7 @@ impl SuggestionEngine {
 #### 2.3: Dynamic Tool Suggestions
 
 **Enhance SuggestionEngine with historical metrics:**
+
 ```rust
 impl SuggestionEngine {
     // NEW: Constructor with metrics
@@ -258,7 +267,7 @@ impl SuggestionEngine {
         preset_index: Arc<PresetIndex>,
         metrics: Arc<MetricsCollector>,
     ) -> Self;
-    
+
     // ENHANCED: Use historical data
     pub fn suggest_next_tools(
         &self,
@@ -267,11 +276,11 @@ impl SuggestionEngine {
     ) -> Vec<ToolSuggestion> {
         // 1. Get static rule-based suggestions (existing)
         let mut suggestions = self.suggest_static(current_tool, result_context);
-        
+
         // 2. Get historical transitions (NEW)
         if let Some(metrics) = &self.metrics {
             let historical = metrics.transitions_from(current_tool);
-            
+
             // Add high-frequency transitions not in static rules
             for (to_tool, stats) in historical {
                 if stats.count >= 5 && stats.success_rate > 0.7 {
@@ -289,7 +298,7 @@ impl SuggestionEngine {
                 }
             }
         }
-        
+
         suggestions
     }
 }
@@ -298,6 +307,7 @@ impl SuggestionEngine {
 #### 2.3: reasoning_metrics Enhancement
 
 **Add New Query Types:**
+
 ```rust
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MetricsRequest {
@@ -308,11 +318,12 @@ pub struct MetricsRequest {
 ```
 
 **Response Changes:**
+
 ```rust
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct MetricsResponse {
     // ... existing fields ...
-    
+
     // NEW: Tool chain data (if query == "chains")
     pub common_chains: Option<Vec<ToolChain>>,
     pub transitions: Option<HashMap<String, HashMap<String, TransitionStats>>>,
@@ -322,6 +333,7 @@ pub struct MetricsResponse {
 ```
 
 **Implementation:**
+
 ```rust
 async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsResponse {
     match req.0.query.as_str() {
@@ -330,7 +342,7 @@ async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsRes
         "invocations" => { /* existing */ },
         "fallbacks" => { /* existing */ },
         "config" => { /* existing */ },
-        
+
         // NEW
         "chains" => {
             let chain_summary = self.state.metrics.chain_summary();
@@ -342,7 +354,7 @@ async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsRes
                 ..Default::default()
             }
         },
-        
+
         // NEW
         "transitions" => {
             let tool = req.0.tool_name.as_deref().unwrap_or("");
@@ -352,7 +364,7 @@ async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsRes
                 ..Default::default()
             }
         },
-        
+
         _ => MetricsResponse::default(),
     }
 }
@@ -361,6 +373,7 @@ async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsRes
 ### Implementation Roadmap
 
 #### Phase 1: Chain Tracking
+
 1. Add `ToolTransition` struct to metrics/mod.rs
 2. Add `transitions` field to `MetricsCollector`
 3. Implement `record_transition()` method
@@ -368,6 +381,7 @@ async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsRes
 5. Add unit tests for transition recording
 
 #### Phase 2: Chain Analysis
+
 1. Implement `ChainSummary` analysis logic
 2. Create `chain_summary()` method with:
    - Sliding window pattern detection (3-5 tool sequences)
@@ -376,12 +390,14 @@ async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsRes
 3. Add unit tests for chain detection
 
 #### Phase 3: Dynamic Suggestions
+
 1. Update `SuggestionEngine` constructor to accept metrics
 2. Enhance `suggest_next_tools()` with historical data
 3. Update `MetadataBuilder` to pass metrics to engine
 4. Add integration tests
 
 #### Phase 4: Metrics Query Enhancement
+
 1. Add "chains" and "transitions" query types to MetricsRequest
 2. Update MetricsResponse with new fields
 3. Implement query handlers in reasoning_metrics
@@ -444,6 +460,7 @@ fn now_millis() -> u64 {
 ```
 
 **Key Integration Points**:
+
 1. **Session ID extraction**: Get from MCP request context or create per-connection
 2. **Last tool tracking**: Maintain per-session state (in-memory HashMap or session struct)
 3. **Transition recording**: Call `record_transition()` BEFORE executing each tool
@@ -567,6 +584,7 @@ impl ServerState {
 #### 3.3: Error Enhancement Logic
 
 **Create `src/error/enhanced.rs`:**
+
 ```rust
 /// Enhance errors with contextual alternatives.
 pub struct ErrorEnhancer {
@@ -595,7 +613,7 @@ impl ErrorEnhancer {
     ) -> EnhancedError {
         let category = self.categorize_error(error);
         let alternatives = self.generate_alternatives(&category, &context);
-        
+
         EnhancedError {
             error: error.to_string(),
             category,
@@ -603,7 +621,7 @@ impl ErrorEnhancer {
             context: Some(context),
         }
     }
-    
+
     fn categorize_error(&self, error: &AppError) -> ErrorCategory {
         match error {
             AppError::Anthropic(ae) => match ae {
@@ -617,7 +635,7 @@ impl ErrorEnhancer {
             _ => ErrorCategory::Other,
         }
     }
-    
+
     fn generate_alternatives(
         &self,
         category: &ErrorCategory,
@@ -630,10 +648,10 @@ impl ErrorEnhancer {
             _ => vec![],
         }
     }
-    
+
     fn timeout_alternatives(&self, ctx: &ErrorContext) -> Vec<Alternative> {
         let mut alts = vec![];
-        
+
         // Suggest faster tool if available
         if ctx.failed_tool == "reasoning_divergent" {
             alts.push(Alternative {
@@ -642,7 +660,7 @@ impl ErrorEnhancer {
                 estimated_duration_ms: Some(12_000),
             });
         }
-        
+
         if ctx.failed_tool == "reasoning_graph" {
             alts.push(Alternative {
                 suggestion: "Use reasoning_tree with 2-3 branches".into(),
@@ -650,7 +668,7 @@ impl ErrorEnhancer {
                 estimated_duration_ms: Some(18_000),
             });
         }
-        
+
         // Suggest breaking down if complex
         if ctx.complexity.content_length > 10_000 {
             alts.push(Alternative {
@@ -662,14 +680,14 @@ impl ErrorEnhancer {
                 estimated_duration_ms: Some(8_000 * 3),
             });
         }
-        
+
         // Suggest mode auto-selection
         alts.push(Alternative {
             suggestion: "Use reasoning_auto to select faster mode".into(),
             reason: "Automatically routes to optimal mode for complexity".into(),
             estimated_duration_ms: Some(15_000),
         });
-        
+
         // Suggest using appropriate timeout tier
         if ctx.timeout_ms < 60_000 {
             alts.push(Alternative {
@@ -681,10 +699,10 @@ impl ErrorEnhancer {
                 estimated_duration_ms: None,
             });
         }
-        
+
         alts
     }
-    
+
     fn rate_limit_alternatives(&self, ctx: &ErrorContext) -> Vec<Alternative> {
         vec![
             Alternative {
@@ -699,13 +717,13 @@ impl ErrorEnhancer {
             },
         ]
     }
-    
+
     fn unavailable_alternatives(&self, ctx: &ErrorContext) -> Vec<Alternative> {
         // Check if we have cached/historical data
         let has_history = self.metrics
             .invocations_by_mode(&ctx.failed_tool)
             .len() > 0;
-        
+
         let mut alts = vec![
             Alternative {
                 suggestion: "Retry with exponential backoff".into(),
@@ -713,7 +731,7 @@ impl ErrorEnhancer {
                 estimated_duration_ms: None,
             },
         ];
-        
+
         if has_history {
             alts.push(Alternative {
                 suggestion: "Check reasoning_metrics for past successful patterns".into(),
@@ -721,7 +739,7 @@ impl ErrorEnhancer {
                 estimated_duration_ms: None,
             });
         }
-        
+
         alts
     }
 }
@@ -730,11 +748,12 @@ impl ErrorEnhancer {
 #### 3.3: Integration with Tool Handlers
 
 **Update tool handler pattern:**
+
 ```rust
 async fn reasoning_divergent(&self, req: Parameters<DivergentRequest>) -> DivergentResponse {
     let req = req.0;
     let timer = Timer::start();
-    
+
     // Build error context BEFORE operation
     let error_context = ErrorContext {
         failed_tool: "reasoning_divergent".into(),
@@ -746,16 +765,16 @@ async fn reasoning_divergent(&self, req: Parameters<DivergentRequest>) -> Diverg
         },
         timeout_ms: self.state.config.request_timeout_ms,
     };
-    
+
     let mode = DivergentMode::new(
         Arc::clone(&self.state.storage),
         Arc::clone(&self.state.client),
     );
-    
+
     let result = mode
         .generate(&req.content, /* ... */)
         .await;
-    
+
     match result {
         Ok(response) => {
             // Success path with metadata
@@ -776,15 +795,16 @@ async fn reasoning_divergent(&self, req: Parameters<DivergentRequest>) -> Diverg
 ```
 
 **Update Response Types:**
+
 ```rust
 // Add to ALL response types
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct DivergentResponse {
     // ... existing fields ...
-    
+
     /// Error message if operation failed
     pub error: Option<String>,
-    
+
     /// Suggested alternatives on failure
     pub alternatives: Option<Vec<Alternative>>,
 }
@@ -793,6 +813,7 @@ pub struct DivergentResponse {
 ### Example Output
 
 **Before (current):**
+
 ```json
 {
   "error": "Anthropic API error: Request timeout after 30000ms"
@@ -800,6 +821,7 @@ pub struct DivergentResponse {
 ```
 
 **After (enhanced):**
+
 ```json
 {
   "error": "Request timeout (30s limit)",
@@ -826,6 +848,7 @@ pub struct DivergentResponse {
 ### Implementation Roadmap
 
 #### Phase 1: Error Context & Enhancement
+
 1. Create error/enhanced.rs with types
 2. Implement ErrorEnhancer struct
 3. Add categorize_error() method
@@ -833,17 +856,20 @@ pub struct DivergentResponse {
 5. Add unit tests for each alternative generator
 
 #### Phase 2: Response Type Updates
+
 1. Add `error` and `alternatives` fields to all 15 response types
 2. Update response constructors to handle errors
 3. Ensure backward compatibility (fields are optional)
 
 #### Phase 3: Tool Handler Integration
+
 1. Update each tool handler to build ErrorContext
 2. Integrate ErrorEnhancer calls on failures
 3. Return enhanced errors in responses
 4. Add integration tests for error scenarios
 
 #### Phase 4: Documentation
+
 1. Update TOOL_REFERENCE.md with error response examples
 2. Add error handling guide to README
 3. Document ErrorCategory enum values
@@ -855,11 +881,12 @@ pub struct DivergentResponse {
 ### Tool Composition Tests
 
 #### Unit Tests
+
 ```rust
 #[test]
 fn test_chain_detection() {
     let collector = MetricsCollector::new();
-    
+
     // Record a chain: linear -> divergent -> decision
     collector.record_transition(ToolTransition {
         from_tool: "reasoning_linear".into(),
@@ -875,12 +902,12 @@ fn test_chain_detection() {
         success: true,
         timestamp: 2000,
     });
-    
+
     // Repeat chain 5+ times for detection
     // ...
-    
+
     let summary = collector.chain_summary();
-    assert!(summary.common_chains.iter().any(|c| 
+    assert!(summary.common_chains.iter().any(|c|
         c.tools == vec!["reasoning_linear", "reasoning_divergent", "reasoning_decision"]
     ));
 }
@@ -890,38 +917,39 @@ fn test_dynamic_suggestions() {
     let metrics = Arc::new(MetricsCollector::new());
     // Record many transitions from linear -> evidence
     // ...
-    
+
     let engine = SuggestionEngine::with_metrics(
         Arc::new(PresetIndex::build()),
         metrics,
     );
-    
+
     let suggestions = engine.suggest_next_tools(
         "reasoning_linear",
         &ResultContext::default(),
     );
-    
+
     assert!(suggestions.iter().any(|s| s.tool == "reasoning_evidence"));
 }
 ```
 
 #### Integration Tests
+
 ```rust
 #[tokio::test]
 async fn test_reasoning_metrics_chains() {
     let server = create_test_server().await;
-    
+
     // Execute a tool chain
     server.reasoning_linear(/* ... */).await;
     server.reasoning_divergent(/* ... */).await;
     server.reasoning_decision(/* ... */).await;
-    
+
     // Query chains
     let response = server.reasoning_metrics(Parameters(MetricsRequest {
         query: "chains".into(),
         ..Default::default()
     })).await;
-    
+
     assert!(response.common_chains.is_some());
 }
 ```
@@ -929,6 +957,7 @@ async fn test_reasoning_metrics_chains() {
 ### Error Enhancement Tests
 
 #### Unit Tests
+
 ```rust
 #[test]
 fn test_timeout_alternatives() {
@@ -942,16 +971,16 @@ fn test_timeout_alternatives() {
         },
         timeout_ms: 30_000,
     };
-    
+
     let error = AppError::Anthropic(AnthropicError::Timeout {
         timeout_ms: 30_000,
     });
-    
+
     let enhanced = enhancer.enhance(&error, context);
-    
+
     assert_eq!(enhanced.category, ErrorCategory::Timeout);
     assert!(enhanced.alternatives.len() >= 3);
-    assert!(enhanced.alternatives.iter().any(|a| 
+    assert!(enhanced.alternatives.iter().any(|a|
         a.suggestion.contains("reasoning_linear")
     ));
 }
@@ -969,32 +998,33 @@ fn test_complex_content_alternatives() {
         },
         timeout_ms: 30_000,
     };
-    
+
     let error = AppError::Anthropic(AnthropicError::Timeout {
         timeout_ms: 30_000,
     });
-    
+
     let enhanced = enhancer.enhance(&error, context);
-    
+
     // Should suggest breaking down
-    assert!(enhanced.alternatives.iter().any(|a| 
+    assert!(enhanced.alternatives.iter().any(|a|
         a.suggestion.contains("smaller") || a.suggestion.contains("Break")
     ));
 }
 ```
 
 #### Integration Tests
+
 ```rust
 #[tokio::test]
 async fn test_tool_failure_with_alternatives() {
     let server = create_test_server_with_failing_client().await;
-    
+
     let response = server.reasoning_divergent(Parameters(DivergentRequest {
         content: "x".repeat(20_000), // Force timeout
         num_perspectives: Some(5),
         ..Default::default()
     })).await;
-    
+
     assert!(response.error.is_some());
     assert!(response.alternatives.is_some());
     let alts = response.alternatives.unwrap();
@@ -1009,6 +1039,7 @@ async fn test_tool_failure_with_alternatives() {
 None required. All new data structures use in-memory storage in MetricsCollector (existing pattern).
 
 If persistence is desired later, add:
+
 ```sql
 -- migrations/004_tool_transitions.sql
 CREATE TABLE IF NOT EXISTS tool_transitions (
@@ -1029,15 +1060,20 @@ CREATE INDEX idx_transitions_session ON tool_transitions(session_id);
 ## API Changes
 
 ### Breaking Changes
+
 None. All new features are additive.
 
 ### New Fields (Backward Compatible)
+
 All response types gain optional fields:
+
 - `error: Option<String>`
 - `alternatives: Option<Vec<Alternative>>`
 
 ### New Query Types
+
 reasoning_metrics gains:
+
 - `query: "chains"` - Returns common tool chains
 - `query: "transitions"` - Returns transition matrix
 
@@ -1046,16 +1082,19 @@ reasoning_metrics gains:
 ## Performance Considerations
 
 ### Chain Detection
+
 - **Memory**: O(N) where N = number of transitions (typically < 10K)
 - **CPU**: Pattern matching with sliding window (O(N * W) where W = max chain length)
 - **Mitigation**: Run chain analysis lazily on metrics query, not per-request
 
 ### Error Enhancement
+
 - **Overhead**: ~1-2ms per failed request (negligible)
 - **CPU**: Simple rule-based logic, no LLM calls
 - **Memory**: Small structs (~1KB per enhanced error)
 
 ### Transition Tracking
+
 - **Overhead**: ~50 bytes per transition event
 - **CPU**: HashMap insert (O(1))
 - **Mitigation**: Implement circular buffer with max 10K transitions
@@ -1065,6 +1104,7 @@ reasoning_metrics gains:
 ## Documentation Updates
 
 ### Files to Update
+
 1. **README.md**: Add error handling section, tool composition examples
 2. **TOOL_REFERENCE.md**: Document error response format, alternatives field
 3. **docs/DESIGN.md**: Add ErrorEnhancer architecture
@@ -1076,12 +1116,14 @@ reasoning_metrics gains:
 ## Rollout Plan
 
 ### Phase 1: Tool Composition
+
 1. Implement chain tracking
 2. Add chain analysis
 3. Update metrics queries
 4. Testing + documentation
 
 ### Phase 2: Error Enhancement
+
 1. Implement ErrorEnhancer
 2. Update response types
 3. Integrate with tool handlers
@@ -1094,11 +1136,13 @@ reasoning_metrics gains:
 ## Success Metrics
 
 ### Tool Composition
+
 - **Chain Coverage**: 80%+ of multi-tool sessions captured in common_chains
 - **Suggestion Quality**: Dynamic suggestions used 30%+ of the time
 - **Documentation**: 5+ example chains documented for common workflows
 
 ### Error Enhancement
+
 - **Alternative Usage**: 40%+ of timeout errors result in trying suggested alternative
 - **Recovery Rate**: 60%+ of errors with alternatives lead to eventual success
 - **Agent Satisfaction**: Measured via feedback in retry attempts
@@ -1108,6 +1152,7 @@ reasoning_metrics gains:
 ## Future Enhancements
 
 ### Beyond This Plan
+
 1. **LLM-Based Alternatives**: Use Claude to generate custom alternatives based on error context
 2. **Persistent Chain Storage**: Move transition data to SQLite for cross-session learning
 3. **Chain Prediction**: ML model to predict optimal next tool based on content features
@@ -1119,15 +1164,19 @@ reasoning_metrics gains:
 ## Risks & Mitigations
 
 ### Risk: Chain Detection False Positives
+
 **Mitigation**: Require minimum 5 occurrences and 70% success rate for chain inclusion
 
 ### Risk: Alternative Overload
+
 **Mitigation**: Limit to 5 alternatives per error, ranked by relevance
 
 ### Risk: Performance Impact
+
 **Mitigation**: Lazy evaluation, circular buffers, async metrics collection
 
 ### Risk: Breaking Changes
+
 **Mitigation**: All new fields optional, feature flags for gradual rollout
 
 ---
@@ -1135,16 +1184,17 @@ reasoning_metrics gains:
 ## Appendix A: Example Workflows
 
 ### Workflow: Architecture Decision (with composition)
+
 ```
 1. reasoning_linear "Analyze microservices vs monolith"
    -> Metadata suggests: reasoning_divergent, reasoning_decision
-   
+
 2. reasoning_divergent "Explore perspectives" (4 perspectives)
    -> Metadata suggests: reasoning_decision, reasoning_detect
-   
+
 3. reasoning_decision "Compare options" (TOPSIS)
    -> Metadata suggests: reasoning_checkpoint, reasoning_reflection
-   
+
 4. reasoning_checkpoint "Save decision"
    -> Chain complete
 
@@ -1152,17 +1202,18 @@ Metrics show: This chain used 73 times, 89% success rate
 ```
 
 ### Workflow: Timeout Recovery
+
 ```
 1. reasoning_graph init (fails with timeout after 30s)
    -> Error alternatives:
       - "Use reasoning_tree with 2-3 branches" (18s)
       - "Break into smaller reasoning_linear calls" (12s each)
       - "Use reasoning_auto for mode selection" (15s)
-      
+
 2. Agent chooses reasoning_tree (3 branches)
    -> Succeeds in 19s
    -> Metadata records: graph_timeout -> tree_success transition
-   
+
 3. Next time graph times out, tree is suggested first (learned from history)
 ```
 
@@ -1171,6 +1222,7 @@ Metrics show: This chain used 73 times, 89% success rate
 ## Appendix B: Code Locations
 
 ### New Files
+
 - `src/metrics/chains.rs` - Chain detection logic
 - `src/metrics/transitions.rs` - Transition tracking
 - `src/error/enhanced.rs` - Error enhancement
@@ -1178,6 +1230,7 @@ Metrics show: This chain used 73 times, 89% success rate
 - `docs/ERROR_HANDLING_GUIDE.md`
 
 ### Modified Files
+
 - `src/metrics/mod.rs` - Add chain methods
 - `src/metadata/suggestions.rs` - Add dynamic suggestions
 - `src/server/responses.rs` - Add error/alternatives fields (all types)
@@ -1186,6 +1239,7 @@ Metrics show: This chain used 73 times, 89% success rate
 - `README.md` - Add sections
 
 ### Test Files
+
 - `tests/integration/chains.rs`
 - `tests/integration/error_enhancement.rs`
 - `src/metrics/chains.rs` (unit tests inline)

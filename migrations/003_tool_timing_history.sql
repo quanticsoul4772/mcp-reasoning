@@ -9,9 +9,9 @@ CREATE TABLE IF NOT EXISTS tool_timing_history (
 );
 
 -- Index for efficient lookups
-CREATE INDEX IF NOT EXISTS idx_timing_lookup 
+CREATE INDEX IF NOT EXISTS idx_timing_lookup
     ON tool_timing_history(tool_name, mode_name, timestamp);
 
 -- Index for cleanup of old data
-CREATE INDEX IF NOT EXISTS idx_timing_timestamp 
+CREATE INDEX IF NOT EXISTS idx_timing_timestamp
     ON tool_timing_history(timestamp);

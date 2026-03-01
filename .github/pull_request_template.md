@@ -26,9 +26,9 @@ Related to #
 
 <!-- Provide a detailed list of changes -->
 
-- 
-- 
-- 
+-
+-
+-
 
 ## Testing Done
 
@@ -45,9 +45,9 @@ Related to #
 
 <!-- Describe manual testing steps performed -->
 
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
 ## Quality Checklist
 

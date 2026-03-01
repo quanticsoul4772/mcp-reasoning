@@ -314,6 +314,7 @@ The `TimingDatabase` tracks actual execution times and learns from historical da
   - **High**: 50+ samples
 
 **Example:**
+
 ```json
 {
   "estimated_duration_ms": 45000,
@@ -321,6 +322,7 @@ The `TimingDatabase` tracks actual execution times and learns from historical da
   "complexity_score": 3.2
 }
 ```
+
 → Agent knows to use 60s timeout tier instead of 30s
 
 #### 2. Tool Suggestions
@@ -332,11 +334,12 @@ The `SuggestionEngine` uses rule-based logic to recommend next steps:
 - **Explains Why**: Includes reasoning for each suggestion
 
 **Example after `reasoning_divergent`:**
+
 ```json
 {
   "next_tools": [
     "reasoning_decision",
-    "reasoning_detect", 
+    "reasoning_detect",
     "reasoning_evidence"
   ],
   "reasoning": "Multiple perspectives generated - use decision tool to evaluate options, or detect tool to check for biases"
@@ -352,6 +355,7 @@ The `PresetIndex` matches tool history to built-in workflow presets:
 - **Contextual**: Considers complexity and operation types
 
 **Example:**
+
 ```json
 {
   "preset_recommendations": [
@@ -360,6 +364,7 @@ The `PresetIndex` matches tool history to built-in workflow presets:
   ]
 }
 ```
+
 → Agent discovers the "architecture-decision" preset is relevant
 
 #### 4. Complexity Analysis
@@ -388,6 +393,7 @@ Factors that influence duration estimates:
 ### Linear Reasoning
 
 **Request:**
+
 ```json
 {
   "tool": "reasoning_linear",
@@ -399,6 +405,7 @@ Factors that influence duration estimates:
 ```
 
 **Response (with metadata):**
+
 ```json
 {
   "thought_id": "uuid",
@@ -720,10 +727,12 @@ We welcome contributions! Please follow these steps:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. **Install pre-commit hooks** (recommended):
+
    ```bash
    pip install pre-commit
    pre-commit install
    ```
+
    See [docs/PRE_COMMIT_SETUP.md](docs/PRE_COMMIT_SETUP.md) for details
 4. Make your changes
 5. Ensure all tests pass (`cargo test`)
@@ -735,6 +744,7 @@ We welcome contributions! Please follow these steps:
 ### Issue Templates
 
 When reporting bugs or requesting features, please use the appropriate issue template:
+
 - **Bug Report** - For reporting bugs and unexpected behavior
 - **Feature Request** - For suggesting new features or enhancements
 - **Documentation** - For reporting documentation issues

@@ -9,6 +9,7 @@ The langbase project accumulated structural debt over time. This document captur
 ## What Worked Well
 
 ### 1. Error Handling Architecture
+
 ```rust
 // Hierarchical error types with clear separation
 AppError
@@ -17,11 +18,13 @@ AppError
 +-- McpError (protocol layer)
 +-- ModeError (business logic)
 ```
+
 - Use `thiserror` for all error types
 - Each subsystem owns its errors
 - Clear `From` implementations for composition
 
 ### 2. ModeCore Composition Pattern
+
 ```rust
 // Share dependencies via composition, not inheritance
 pub struct ModeCore {
@@ -33,11 +36,13 @@ impl LinearMode {
     core: ModeCore,  // Not: impl ReasoningMode trait
 }
 ```
+
 - Avoids trait complexity
 - Single source of truth for dependencies
 - Easy to test with mock core
 
 ### 3. Configuration as First-Class Citizen
+
 ```rust
 // Unified config loaded once at startup
 pub struct Config {
@@ -50,11 +55,13 @@ impl Config {
     pub fn from_env() -> Result<Self, ConfigError>
 }
 ```
+
 - Fail fast on missing required values
 - Sensible defaults for optional values
 - Struct-based, not scattered env reads
 
 ### 4. JSON Extraction
+
 ```rust
 // Handle multiple response formats
 fn extract_json(text: &str) -> Result<Value, Error> {
@@ -63,11 +70,13 @@ fn extract_json(text: &str) -> Result<Value, Error> {
     // Clear error with truncated preview
 }
 ```
+
 - LLMs return inconsistent formats
 - Fast path for clean responses
 - Graceful fallback with good errors
 
 ### 5. Retry Logic with Exponential Backoff
+
 ```rust
 // Retry with backoff
 while retries <= max_retries {
@@ -81,11 +90,13 @@ while retries <= max_retries {
     }
 }
 ```
+
 - Always have retry logic for external APIs
 - Log each attempt
 - Track last error for reporting
 
 ### 6. Structured Logging
+
 ```rust
 tracing::info!(
     mode = %mode_name,
@@ -94,11 +105,13 @@ tracing::info!(
     "Reasoning complete"
 );
 ```
+
 - Use `tracing` not `log`
 - Structured fields for filtering
 - stderr for logs (stdout for MCP)
 
 ### 7. Zero Unsafe Code Policy
+
 - No `unsafe` blocks
 - No `.unwrap()` in production paths
 - No `.expect()` in handlers
@@ -106,6 +119,7 @@ tracing::info!(
 - Use `unwrap_or()` or `?` operator
 
 ### 8. Test Organization
+
 ```rust
 // Tests alongside code
 #[cfg(test)]
@@ -120,6 +134,7 @@ mod tests {
     }
 }
 ```
+
 - 2000+ tests is not excessive
 - Test error cases explicitly
 - Use `serial_test` for DB tests
@@ -130,9 +145,11 @@ mod tests {
 ## What Caused Problems
 
 ### 1. Giant Files
+
 **Problem:** `sqlite.rs` was 4533 lines, `storage/mod.rs` was 3513 lines
 
 **Solution for new project:**
+
 ```
 src/storage/
 +-- mod.rs           # Trait + re-exports only (~100 lines)
@@ -144,9 +161,11 @@ src/storage/
 ```
 
 ### 2. Tool Explosion (40 tools)
+
 **Problem:** Every operation became its own tool
 
 **Solution:** Consolidated to 15 tools with `operation` parameter
+
 ```json
 // Before: 8 separate tools
 "reasoning_got_init", "reasoning_got_generate", "reasoning_got_score"...
@@ -156,9 +175,11 @@ src/storage/
 ```
 
 ### 3. Handler Routing Monolith
+
 **Problem:** 1600+ line match statement routing tools
 
 **Solution:** Tool registry pattern
+
 ```rust
 // Before
 match tool_name {
@@ -173,9 +194,11 @@ handlers.get(tool_name)?.handle(args).await
 ```
 
 ### 4. Parameter Struct Proliferation
+
 **Problem:** 15+ nearly-identical Params structs
 
 **Solution:** Common base with mode-specific extensions
+
 ```rust
 // Common fields
 pub struct ReasoningParams {
@@ -193,9 +216,11 @@ pub enum ModeParams {
 ```
 
 ### 5. Prompts in Single File
+
 **Problem:** 1579 lines of prompts in one file
 
 **Solution:** Organize by category
+
 ```
 src/prompts/
 +-- mod.rs           # get_prompt_for_mode() router
@@ -205,9 +230,11 @@ src/prompts/
 ```
 
 ### 6. No Config Validation
+
 **Problem:** Invalid configs discovered at runtime
 
 **Solution:** Validate on load
+
 ```rust
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
@@ -229,9 +256,11 @@ impl Config {
 ```
 
 ### 7. No Request Size Limits
+
 **Problem:** Unbounded message sizes to API
 
 **Solution:** Add limits
+
 ```rust
 const MAX_REQUEST_BYTES: usize = 100_000;  // 100KB
 const MAX_MESSAGES: usize = 50;
@@ -245,9 +274,11 @@ fn validate_request(req: &Request) -> Result<(), Error> {
 ```
 
 ### 8. Self-Improvement Architecture
+
 **Problem:** 14 interconnected files made it hard to understand
 
 **Solution for new project:** Implement from day one, but with clearer organization
+
 - Self-improvement is important - implement immediately
 - Simplify the file structure (fewer files, clearer boundaries)
 - Keep the 4-phase loop: Monitor -> Analyzer -> Executor -> Learner
@@ -259,6 +290,7 @@ fn validate_request(req: &Request) -> Result<(), Error> {
 ## Architecture Decisions for New Project
 
 ### File Size Limits
+
 | File Type | Max Lines | Action if Exceeded |
 |-----------|-----------|-------------------|
 | Any .rs file | 500 | Split into submodules |
@@ -266,6 +298,7 @@ fn validate_request(req: &Request) -> Result<(), Error> {
 | Test file | 500 | Organize with nested modules |
 
 ### Module Organization
+
 ```
 src/
 +-- main.rs              # Entry point only (<100 lines)
@@ -303,6 +336,7 @@ src/
 ```
 
 ### Testing Strategy
+
 - Unit tests in same file as code
 - Integration tests in `tests/` directory
 - Aim for 80% coverage, not 100%
@@ -310,6 +344,7 @@ src/
 - Use `#[tokio::test]` for async
 
 ### Dependencies (Minimal)
+
 ```toml
 [dependencies]
 # Core
@@ -361,6 +396,7 @@ chrono = { version = "0.4", features = ["serde"] }
 **Context:** Cargo.toml enforces `#![deny(unwrap_used, expect_used)]` for production code. This initially caused 872 clippy errors in test code.
 
 **Rationale:**
+
 - Tests are allowed to panic - it's their job to fail loudly and clearly
 - `.expect("descriptive message")` provides better diagnostics than `?` in tests
 - Maintains test readability and reduces verbosity
@@ -368,15 +404,18 @@ chrono = { version = "0.4", features = ["serde"] }
 - Enables strict production lints while keeping pragmatic test patterns
 
 **Implementation:**
+
 - Added `#[allow(clippy::unwrap_used, clippy::expect_used)]` to all `#[cfg(test)] mod tests` blocks
 - Added `#![allow(...)]` to integration test files in `tests/` directory
 - Production code remains panic-free with zero unwrap/expect calls
 
 **Alternatives Considered:**
+
 - Rewrite all tests to use `Result<()>` - rejected (40+ hours, reduced readability)
 - Hybrid approach with Result for critical paths - possible future enhancement
 
 **When to use Result<()> in tests:**
+
 - Integration tests with complex error chains
 - Tests that need to propagate errors through multiple operations
 - Error recovery testing where full error context is valuable
@@ -390,12 +429,14 @@ See `docs/TEST_ERROR_HANDLING_PLAN.md` for complete analysis.
 Fixed 8+ clippy pedantic warnings using a hybrid automated + manual approach.
 
 **Issues resolved:**
+
 - Removed unnecessary raw string hashes (`r#""#` -> `r""`) - 5 locations
 - Added numeric separators for readability (`120000` -> `120_000`) - 3 locations
 - Simplified pattern matches (removed unnecessary field patterns)
 - Other auto-fixed style improvements (17 fixes total)
 
 **Method:**
+
 1. Used `cargo clippy --fix --allow-dirty` for automated fixes (handled most issues)
 2. Manual fixes for long literals (clippy auto-fix doesn't handle these)
 3. Verified with full test suite (all 1,658 tests passing)
@@ -405,6 +446,7 @@ Fixed 8+ clippy pedantic warnings using a hybrid automated + manual approach.
 **Files modified:** 19 files (src/modes/core.rs, src/server/params.rs, src/self_improvement/*, tests/*)
 
 **Prevention:**
+
 - Consider adding clippy pedantic to CI/CD pipeline
 - Use editor integration (rust-analyzer with clippy enabled)
 - Pre-commit hooks for automated style checks
@@ -414,6 +456,7 @@ Fixed 8+ clippy pedantic warnings using a hybrid automated + manual approach.
 ## Dependency Cleanup (2024-12-30)
 
 Removed 4 unused dependencies from Cargo.toml:
+
 - `anyhow` - not used, project uses thiserror for error handling
 - `futures` - not directly imported anywhere
 - `async-stream` - not used

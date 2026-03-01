@@ -9,6 +9,7 @@ MCP Reasoning Server - A Rust-based MCP server providing structured reasoning ca
 **Status**: Complete. 38,000+ lines of Rust code and 2,069 tests.
 
 **Key Stats**:
+
 - 118 source files, 38,000+ lines of code
 - 2,069 tests (95%+ coverage)
 - 15 reasoning tools, 5 workflow presets
@@ -18,6 +19,7 @@ MCP Reasoning Server - A Rust-based MCP server providing structured reasoning ca
 - Streaming API with progress notifications
 
 **Key Documents**:
+
 - `docs/DESIGN.md` - Complete technical specification
 - `docs/IMPLEMENTATION_PLAN.md` - TDD execution guide (completed)
 - `docs/LESSONS_LEARNED.md` - Patterns replicated from predecessor
@@ -174,6 +176,7 @@ src/
 ## Key Design Patterns
 
 ### ModeCore Composition (from LESSONS_LEARNED.md)
+
 ```rust
 pub struct ModeCore {
     storage: SqliteStorage,
@@ -185,12 +188,14 @@ impl LinearMode {
 ```
 
 ### Tool Registry Pattern (avoids giant match statements)
+
 ```rust
 let handlers: HashMap<&str, Box<dyn ToolHandler>> = create_handlers();
 handlers.get(tool_name)?.handle(args).await
 ```
 
 ### JSON Extraction
+
 ```rust
 fn extract_json(text: &str) -> Result<Value, ModeError> {
     // Fast path: raw JSON
@@ -200,6 +205,7 @@ fn extract_json(text: &str) -> Result<Value, ModeError> {
 ```
 
 ### Request Size Limits
+
 ```rust
 const MAX_REQUEST_BYTES: usize = 100_000;  // 100KB
 const MAX_MESSAGES: usize = 50;
@@ -207,6 +213,7 @@ const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message
 ```
 
 ### Extended Thinking Budgets
+
 | Mode | Thinking Budget |
 |------|-----------------|
 | Linear, Tree, Auto, Checkpoint | None (fast) |
@@ -248,12 +255,14 @@ All phases complete:
 ### Error Handling in Tests
 
 Test code uses `#[allow(clippy::unwrap_used, clippy::expect_used)]` because:
+
 1. Test panics are acceptable and often preferable for clarity
 2. `.expect()` provides better panic messages than `?` in tests
 3. Reduces test verbosity while maintaining debuggability
 4. Industry standard practice (see [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/documentation.html#examples-use-panics-not-try-not-unwrap-c-question-mark))
 
 **Test Code Pattern:**
+
 ```rust
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
@@ -270,6 +279,7 @@ mod tests {
 ```
 
 **Production Code Pattern:**
+
 ```rust
 pub async fn operation() -> Result<Output, Error> {
     let value = fallible_operation()?;  // Never unwrap/expect
@@ -280,6 +290,7 @@ pub async fn operation() -> Result<Output, Error> {
 ## Client Configuration
 
 ### Claude Code
+
 ```bash
 claude mcp add mcp-reasoning \
   --transport stdio \
@@ -288,6 +299,7 @@ claude mcp add mcp-reasoning \
 ```
 
 ### Claude Desktop (claude_desktop_config.json)
+
 ```json
 {
   "mcpServers": {

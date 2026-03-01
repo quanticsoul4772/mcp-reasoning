@@ -8,6 +8,10 @@ on:
   schedule:
     - cron: '0 0 * * 0'  # Weekly on Sunday
 
+permissions:
+  checks: write
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 

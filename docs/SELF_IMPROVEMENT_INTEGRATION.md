@@ -124,6 +124,7 @@ impl Default for SelfImprovementConfig {
 ```
 
 **Environment Variables:**
+
 ```bash
 # Self-improvement is ALWAYS enabled - no toggle!
 SELF_IMPROVEMENT_REQUIRE_APPROVAL=true|false
@@ -319,6 +320,7 @@ pub async fn run_stdio(&self) -> Result<(), AppError> {
 3. **Create `ManagerHandle`** - Define the interface between MCP tools and manager
 
 Files to modify:
+
 - `src/config/mod.rs` - Add config struct
 - `src/config/validation.rs` - Add validation
 
@@ -329,6 +331,7 @@ Files to modify:
 3. **Add approval channel** - mpsc channel for approval flow
 
 Files to create:
+
 - `src/self_improvement/manager.rs` - New file
 
 ### Phase 3: Server Integration (2-3 hours)
@@ -338,6 +341,7 @@ Files to create:
 3. **Add graceful shutdown** - Ensure manager shuts down cleanly
 
 Files to modify:
+
 - `src/server/types.rs` - Extend AppState
 - `src/server/mcp.rs` - Add initialization
 
@@ -348,6 +352,7 @@ Files to modify:
 3. **Add to tool registry** - Register new tools
 
 Files to create:
+
 - `src/server/tools_si.rs` - New file
 - `src/server/params_si.rs` - Parameter types
 - `src/server/responses_si.rs` - Response types
@@ -359,6 +364,7 @@ Files to create:
 3. **Add usage examples** - Show how to enable and use
 
 Files to modify:
+
 - `tests/integration_si.rs` - New integration tests
 - `README.md` - Documentation updates
 - `docs/DESIGN.md` - Architecture updates
@@ -398,6 +404,7 @@ After integration, validate that:
 ## File Summary
 
 ### New Files
+
 - `src/self_improvement/manager.rs` - Manager struct and background task
 - `src/server/tools_si.rs` - MCP tool implementations
 - `src/server/params_si.rs` - Tool parameter types
@@ -405,6 +412,7 @@ After integration, validate that:
 - `tests/integration_si.rs` - Integration tests
 
 ### Modified Files
+
 - `src/config/mod.rs` - Add SelfImprovementConfig
 - `src/config/validation.rs` - Add SI config validation
 - `src/server/types.rs` - Extend AppState

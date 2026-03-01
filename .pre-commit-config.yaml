@@ -17,20 +17,22 @@ repos:
       - id: clippy
         name: cargo clippy
         description: Lint Rust code with clippy
-        entry: cargo clippy -- -D warnings
+        entry: bash -c 'cargo clippy -- -D warnings'
         language: system
         types: [rust]
         pass_filenames: false
+        files: \.rs$
 
-  # Secret scanning
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.21.2
-    hooks:
-      - id: gitleaks
-        name: gitleaks
-        description: Scan for secrets and credentials
-        entry: gitleaks protect --verbose --redact --staged
-        language: system
+  # Secret scanning (optional - requires gitleaks binary)
+  # Uncomment after installing: https://github.com/gitleaks/gitleaks/releases
+  # - repo: https://github.com/gitleaks/gitleaks
+  #   rev: v8.21.2
+  #   hooks:
+  #     - id: gitleaks
+  #       name: gitleaks
+  #       description: Scan for secrets and credentials
+  #       entry: gitleaks protect --verbose --redact --staged
+  #       language: system
 
   # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks

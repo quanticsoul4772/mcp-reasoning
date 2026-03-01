@@ -3,6 +3,7 @@
 ## Problem Statement
 
 AI agents (primary users) are underutilizing the reasoning server's capabilities because:
+
 - No visibility into tool execution time → can't predict Factory timeouts
 - No guidance on tool composition → don't know which tools work well together
 - No discovery of presets/workflows → unaware of built-in patterns
@@ -15,6 +16,7 @@ AI agents (primary users) are underutilizing the reasoning server's capabilities
 ## Solution: Rich Response Metadata
 
 Add structured metadata to every tool response enabling AI agents to:
+
 1. **Predict timeouts** before making calls
 2. **Discover next steps** through intelligent suggestions
 3. **Find relevant presets** for current workflow
@@ -57,7 +59,7 @@ Add structured metadata to every tool response enabling AI agents to:
   // Existing tool-specific fields (unchanged)
   "thought_id": "...",
   "content": "...",
-  
+
   // NEW: Universal metadata object
   "metadata": {
     "timing": {
@@ -183,7 +185,7 @@ impl TimingDatabase {
         // Apply complexity adjustments
         // Return estimate with confidence
     }
-    
+
     /// Record actual execution time for learning.
     pub async fn record_execution(
         &self,
@@ -245,7 +247,7 @@ impl SuggestionEngine {
             _ => vec![],
         }
     }
-    
+
     /// Find relevant presets for current workflow.
     pub fn suggest_presets(
         &self,
@@ -271,14 +273,14 @@ pub struct ResultContext {
 ```rust
 fn suggest_after_divergent(&self, ctx: &ResultContext) -> Vec<ToolSuggestion> {
     let mut suggestions = vec![];
-    
+
     // Always suggest checkpoint after complex analysis
     suggestions.push(ToolSuggestion {
         tool: "reasoning_checkpoint".into(),
         reason: "Save this multi-perspective analysis before continuing".into(),
         estimated_duration_ms: 100,
     });
-    
+
     // Suggest decision analysis if multiple perspectives
     if ctx.num_outputs >= 3 {
         suggestions.push(ToolSuggestion {
@@ -287,7 +289,7 @@ fn suggest_after_divergent(&self, ctx: &ResultContext) -> Vec<ToolSuggestion> {
             estimated_duration_ms: 15000,
         });
     }
-    
+
     // Suggest reflection if complex
     if ctx.complexity == "complex" {
         suggestions.push(ToolSuggestion {
@@ -296,7 +298,7 @@ fn suggest_after_divergent(&self, ctx: &ResultContext) -> Vec<ToolSuggestion> {
             estimated_duration_ms: 25000,
         });
     }
-    
+
     suggestions
 }
 ```
@@ -325,7 +327,7 @@ impl PresetIndex {
     /// Build index from builtin presets and custom definitions.
     pub fn build() -> Self {
         let mut presets = HashMap::new();
-        
+
         // Example: Decision analysis preset
         presets.insert("decision_analysis".into(), PresetMetadata {
             id: "decision_analysis".into(),
@@ -343,12 +345,12 @@ impl PresetIndex {
             ],
             keywords: vec!["decision", "choice", "options", "trade-off"],
         });
-        
+
         // Load other presets...
-        
+
         Self { presets }
     }
-    
+
     /// Find presets matching tool history pattern.
     pub fn find_matching_presets(
         &self,
@@ -386,20 +388,20 @@ impl MetadataBuilder {
     ) -> Result<ResponseMetadata, MetadataError> {
         // 1. Estimate timing
         let timing = self.build_timing_metadata(request).await?;
-        
+
         // 2. Generate suggestions
         let suggestions = self.build_suggestion_metadata(request).await?;
-        
+
         // 3. Build context
         let context = self.build_context_metadata(request);
-        
+
         Ok(ResponseMetadata {
             timing,
             suggestions,
             context,
         })
     }
-    
+
     async fn build_timing_metadata(
         &self,
         request: &MetadataRequest,
@@ -411,7 +413,7 @@ impl MetadataBuilder {
                 request.complexity.clone(),
             )
             .await?;
-        
+
         Ok(TimingMetadata {
             estimated_duration_ms,
             confidence,
@@ -419,7 +421,7 @@ impl MetadataBuilder {
             factory_timeout_ms: self.factory_timeout_ms,
         })
     }
-    
+
     async fn build_suggestion_metadata(
         &self,
         request: &MetadataRequest,
@@ -428,18 +430,18 @@ impl MetadataBuilder {
             &request.tool_name,
             &request.result_context,
         );
-        
+
         let relevant_presets = self.suggestion_engine.suggest_presets(
             &request.tool_history,
             request.goal.as_deref(),
         );
-        
+
         Ok(SuggestionMetadata {
             next_tools,
             relevant_presets,
         })
     }
-    
+
     fn build_context_metadata(&self, request: &MetadataRequest) -> ContextMetadata {
         ContextMetadata {
             mode_used: request.mode_name.clone().unwrap_or_else(|| "none".into()),
@@ -491,10 +493,10 @@ pub struct LinearResponse {
 // Before
 async fn handle_reasoning_linear(&self, args: Value) -> Result<Value, ToolError> {
     let request: LinearRequest = serde_json::from_value(args)?;
-    
+
     // Execute mode
     let result = self.linear_mode.process(&request).await?;
-    
+
     // Return result
     Ok(serde_json::to_value(result)?)
 }
@@ -503,10 +505,10 @@ async fn handle_reasoning_linear(&self, args: Value) -> Result<Value, ToolError>
 async fn handle_reasoning_linear(&self, args: Value) -> Result<Value, ToolError> {
     let request: LinearRequest = serde_json::from_value(args)?;
     let start = Instant::now();
-    
+
     // Execute mode
     let result = self.linear_mode.process(&request).await?;
-    
+
     // Build metadata
     let metadata = self.metadata_builder.build(&MetadataRequest {
         tool_name: "reasoning_linear".into(),
@@ -528,7 +530,7 @@ async fn handle_reasoning_linear(&self, args: Value) -> Result<Value, ToolError>
         thinking_budget: Some("none".into()),
         session_state: None,
     }).await?;
-    
+
     // Record actual timing
     let actual_duration = start.elapsed().as_millis() as u64;
     self.metadata_builder.timing_db.record_execution(
@@ -537,7 +539,7 @@ async fn handle_reasoning_linear(&self, args: Value) -> Result<Value, ToolError>
         actual_duration,
         complexity,
     ).await?;
-    
+
     // Add metadata to response
     let response = LinearResponse {
         thought_id: result.thought_id,
@@ -545,7 +547,7 @@ async fn handle_reasoning_linear(&self, args: Value) -> Result<Value, ToolError>
         confidence: result.confidence,
         metadata,
     };
-    
+
     Ok(serde_json::to_value(response)?)
 }
 ```
@@ -563,19 +565,19 @@ impl SqliteStorage {
         limit: usize,
     ) -> Result<Vec<String>, StorageError> {
         let query = "
-            SELECT DISTINCT tool_name 
-            FROM metrics_invocations 
-            WHERE session_id = ? 
-            ORDER BY timestamp DESC 
+            SELECT DISTINCT tool_name
+            FROM metrics_invocations
+            WHERE session_id = ?
+            ORDER BY timestamp DESC
             LIMIT ?
         ";
-        
+
         let tools: Vec<String> = sqlx::query_scalar(query)
             .bind(session_id)
             .bind(limit as i64)
             .fetch_all(&self.pool)
             .await?;
-        
+
         Ok(tools)
     }
 }
@@ -596,12 +598,12 @@ async fn main() -> Result<()> {
     let storage = SqliteStorage::new(":memory:").await?;
     let client = create_test_client()?;
     let timing_db = TimingDatabase::new(Arc::new(storage));
-    
+
     // Run each tool 20 times with varying complexity
     for complexity in [SIMPLE, MODERATE, COMPLEX] {
         for tool in ALL_TOOLS {
             let durations = benchmark_tool(tool, complexity, 20).await?;
-            
+
             for duration in durations {
                 timing_db.record_execution(
                     tool,
@@ -612,7 +614,7 @@ async fn main() -> Result<()> {
             }
         }
     }
-    
+
     println!("Calibration complete. {} samples recorded.", total);
     Ok(())
 }
@@ -630,29 +632,29 @@ pub fn get_default_timing(tool: &str, complexity: &ComplexityMetrics) -> u64 {
         "reasoning_checkpoint" => 100,
         "reasoning_metrics" => 500,
         "reasoning_si_status" => 100,
-        
+
         // Standard tools (8-15s)
         "reasoning_linear" => 12_000,
         "reasoning_auto" => 10_000,
-        
+
         // Medium tools (15-30s)
         "reasoning_tree" => 18_000,
         "reasoning_decision" => 20_000,
         "reasoning_evidence" => 22_000,
-        
+
         // Heavy tools (30-60s)
         "reasoning_divergent" => 45_000,
         "reasoning_reflection" => 35_000,
-        
+
         // Very heavy tools (60-120s)
         "reasoning_graph" => 75_000,
         "reasoning_mcts" => 90_000,
         "reasoning_counterfactual" => 65_000,
         "reasoning_timeline" => 55_000,
-        
+
         _ => 15_000,  // Default fallback
     };
-    
+
     // Apply complexity multipliers
     let complexity_factor = match (
         complexity.num_perspectives,
@@ -664,7 +666,7 @@ pub fn get_default_timing(tool: &str, complexity: &ComplexityMetrics) -> u64 {
         (_, _, Some(8192..)) => 1.3,  // Deep/maximum thinking
         _ => 1.0,
     };
-    
+
     (base_time as f64 * complexity_factor) as u64
 }
 ```
@@ -681,7 +683,7 @@ pub fn get_default_timing(tool: &str, complexity: &ComplexityMetrics) -> u64 {
 #[tokio::test]
 async fn test_timing_estimation_linear() {
     let timing_db = create_test_timing_db().await;
-    
+
     // Record some samples
     for _ in 0..10 {
         timing_db.record_execution(
@@ -691,14 +693,14 @@ async fn test_timing_estimation_linear() {
             simple_complexity(),
         ).await.unwrap();
     }
-    
+
     // Estimate
     let (estimate, confidence) = timing_db.estimate_duration(
         "reasoning_linear",
         Some("linear"),
         simple_complexity(),
     ).await.unwrap();
-    
+
     assert!(estimate >= 10_000 && estimate <= 15_000);
     assert_eq!(confidence, ConfidenceLevel::High);
 }
@@ -706,16 +708,16 @@ async fn test_timing_estimation_linear() {
 #[tokio::test]
 async fn test_suggestion_after_divergent() {
     let engine = SuggestionEngine::new();
-    
+
     let ctx = ResultContext {
         num_outputs: 4,
         has_branches: false,
         session_id: Some("test".into()),
         complexity: "complex".into(),
     };
-    
+
     let suggestions = engine.suggest_next_tools("reasoning_divergent", &ctx);
-    
+
     assert!(suggestions.iter().any(|s| s.tool == "reasoning_decision"));
     assert!(suggestions.iter().any(|s| s.tool == "reasoning_checkpoint"));
 }
@@ -723,7 +725,7 @@ async fn test_suggestion_after_divergent() {
 #[tokio::test]
 async fn test_timeout_prediction() {
     let builder = create_test_metadata_builder(30_000);  // 30s Factory timeout
-    
+
     let request = MetadataRequest {
         tool_name: "reasoning_divergent".into(),
         mode_name: Some("divergent".into()),
@@ -733,9 +735,9 @@ async fn test_timeout_prediction() {
         },
         ..default()
     };
-    
+
     let metadata = builder.build(&request).await.unwrap();
-    
+
     assert!(metadata.timing.will_timeout_on_factory);
     assert!(metadata.timing.estimated_duration_ms > 30_000);
 }
@@ -749,17 +751,17 @@ async fn test_timeout_prediction() {
 #[tokio::test]
 async fn test_linear_response_has_metadata() {
     let server = create_test_server().await;
-    
+
     let request = json!({
         "content": "Test analysis",
         "session_id": "test"
     });
-    
+
     let response: LinearResponse = server
         .call_tool("reasoning_linear", request)
         .await
         .unwrap();
-    
+
     // Verify metadata present
     assert!(response.metadata.timing.estimated_duration_ms > 0);
     assert!(!response.metadata.suggestions.next_tools.is_empty());
@@ -769,18 +771,18 @@ async fn test_linear_response_has_metadata() {
 #[tokio::test]
 async fn test_metadata_learns_from_actual_timing() {
     let server = create_test_server().await;
-    
+
     // Call tool 5 times
     for _ in 0..5 {
         server.call_tool("reasoning_linear", test_request()).await.unwrap();
     }
-    
+
     // 6th call should have high confidence
     let response: LinearResponse = server
         .call_tool("reasoning_linear", test_request())
         .await
         .unwrap();
-    
+
     assert_eq!(response.metadata.timing.confidence, ConfidenceLevel::High);
 }
 ```
@@ -839,6 +841,7 @@ See [METADATA.md](docs/METADATA.md) for full details.
 **File**: `docs/METADATA.md`
 
 Comprehensive guide covering:
+
 - Metadata structure reference
 - How timing predictions work
 - Suggestion engine rules
@@ -850,18 +853,21 @@ Comprehensive guide covering:
 ## Testing Strategy
 
 ### Unit Tests
+
 - ✅ Timing estimation logic
 - ✅ Suggestion rule engine
 - ✅ Preset matching
 - ✅ Confidence calculations
 
 ### Integration Tests
+
 - ✅ Metadata present in all tool responses
 - ✅ Timing predictions accurate within 20%
 - ✅ Suggestions relevant to context
 - ✅ Learning from actual execution times
 
 ### Manual Testing (AI Agent)
+
 - ✅ Make timeout predictions accurate
 - ✅ Verify suggestions are helpful
 - ✅ Check preset recommendations match workflows
@@ -872,12 +878,14 @@ Comprehensive guide covering:
 ## Success Metrics
 
 ### Quantitative
+
 - **100%** of tool responses include metadata
 - **±20%** timing prediction accuracy after 10 samples
 - **3-5** relevant next-tool suggestions per response
 - **0 regressions** in existing tool functionality
 
 ### Qualitative (AI Agent Feedback)
+
 - Can predict which calls will timeout
 - Discover and use presets effectively
 - Learn optimal tool sequences
@@ -888,11 +896,13 @@ Comprehensive guide covering:
 ## Migration & Backwards Compatibility
 
 ### Non-Breaking Changes
+
 - Metadata is **additive** - existing response fields unchanged
 - Old clients ignore `metadata` field
 - New clients benefit from enhanced responses
 
 ### MCP Tool Schema Updates
+
 - Update JSON schemas to include optional `metadata` field
 - Document in tool descriptions
 - No version bump required (backwards compatible)
@@ -902,6 +912,7 @@ Comprehensive guide covering:
 ## Future Enhancements
 
 ### Phase 6+ (Post-Launch)
+
 1. **Machine learning timing predictions** - Replace heuristics with ML model
 2. **User goal detection** - Infer intent from conversation context
 3. **Workflow validation** - Detect invalid tool sequences before execution
@@ -913,6 +924,7 @@ Comprehensive guide covering:
 ## Implementation Checklist
 
 ### Week 1: Infrastructure
+
 - [ ] Create `src/metadata/` module structure
 - [ ] Implement `ResponseMetadata` types
 - [ ] Build `TimingDatabase` with SQLite backend
@@ -921,6 +933,7 @@ Comprehensive guide covering:
 - [ ] Write unit tests for each component
 
 ### Week 2: Integration
+
 - [ ] Create `MetadataBuilder` orchestrator
 - [ ] Update all 15 tool response types
 - [ ] Integrate metadata into all tool handlers
@@ -929,6 +942,7 @@ Comprehensive guide covering:
 - [ ] Write integration tests
 
 ### Week 3: Calibration
+
 - [ ] Create timing calibration tool
 - [ ] Run benchmarks for baseline data
 - [ ] Populate `timing_defaults.rs`
@@ -937,6 +951,7 @@ Comprehensive guide covering:
 - [ ] Test with real AI agent workflows
 
 ### Week 4: Polish
+
 - [ ] Complete test coverage
 - [ ] Write METADATA.md documentation
 - [ ] Update README with examples
@@ -954,6 +969,7 @@ Comprehensive guide covering:
 - **Total**: ~1 month
 
 **Complexity**: Medium
+
 - Mostly additive changes
 - Clear architecture
 - Minimal risk to existing functionality
@@ -966,6 +982,7 @@ Comprehensive guide covering:
 This implementation prioritizes **AI agent discoverability** over human UX. The metadata format is optimized for programmatic consumption by LLMs and other AI systems.
 
 Key design decisions:
+
 1. **Additive-only** - No breaking changes to existing responses
 2. **Rule-based suggestions** - Simple, predictable, testable (vs ML complexity)
 3. **Learning timing model** - Improves accuracy over time automatically

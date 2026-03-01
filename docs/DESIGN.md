@@ -5,6 +5,7 @@
 MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls.
 
 **Key Differentiators from mcp-langbase-reasoning:**
+
 - Direct Anthropic API (no Langbase middleman)
 - Consolidated tool surface (15 tools vs 40)
 - Anthropic Claude models (user preference)
@@ -2208,18 +2209,21 @@ pub fn get_mode_config(mode: ReasoningMode, overrides: &ConfigOverrides) -> Mode
 ## 12. Core Principles
 
 ### No Optional Features
+
 - Every feature is ALWAYS enabled
 - No `--enable` or `--disable` flags
 - No environment variables to turn features off
 - No conditional compilation for features
 
 ### No Fallbacks
+
 - If something fails, it FAILS LOUDLY
 - No graceful degradation
 - No silent retries that hide problems
 - No "optional" error handling
 
 ### Loud Failures
+
 - Every error propagates up
 - Every failure is logged at ERROR level
 - No swallowing exceptions
@@ -2232,7 +2236,9 @@ pub fn get_mode_config(mode: ReasoningMode, overrides: &ConfigOverrides) -> Mode
 **CRITICAL RULE**: Every phase MUST maintain 100% test coverage. No code merges without passing coverage gate.
 
 ### Phase 0: Coverage Infrastructure (FIRST)
+
 Before any feature code, establish:
+
 1. Coverage tooling setup (cargo-llvm-cov)
 2. CI/CD pipeline with 100% coverage gate
 3. Pre-commit hooks for local coverage checks
@@ -2241,6 +2247,7 @@ Before any feature code, establish:
 **Exit Criteria**: `cargo llvm-cov --fail-under-lines 100` passes on empty project skeleton.
 
 ### Phase 1: Foundation (TDD)
+
 | Step | Component | Tests First | Coverage Target |
 |------|-----------|-------------|-----------------|
 | 1.1 | Project skeleton | Smoke test | 100% |
@@ -2252,6 +2259,7 @@ Before any feature code, establish:
 **Exit Criteria**: `cargo llvm-cov --fail-under-lines 100` passes.
 
 ### Phase 2: Storage & Self-Improvement (TDD)
+
 | Step | Component | Tests First | Coverage Target |
 |------|-----------|-------------|-----------------|
 | 2.1 | Storage trait | Trait method contracts | 100% |
@@ -2267,6 +2275,7 @@ Before any feature code, establish:
 **Exit Criteria**: `cargo llvm-cov --fail-under-lines 100` passes.
 
 ### Phase 3: Core Modes (TDD)
+
 | Step | Component | Tests First | Coverage Target |
 |------|-----------|-------------|-----------------|
 | 3.1 | ModeCore | Shared functionality tests | 100% |
@@ -2279,6 +2288,7 @@ Before any feature code, establish:
 **Exit Criteria**: `cargo llvm-cov --fail-under-lines 100` passes.
 
 ### Phase 4: Advanced Modes (TDD)
+
 | Step | Component | Tests First | Coverage Target |
 |------|-----------|-------------|-----------------|
 | 4.1 | CheckpointMode | All 3 operations, state restoration | 100% |
@@ -2292,6 +2302,7 @@ Before any feature code, establish:
 **Exit Criteria**: `cargo llvm-cov --fail-under-lines 100` passes.
 
 ### Phase 5: Time Machine Modes (TDD)
+
 | Step | Component | Tests First | Coverage Target |
 |------|-----------|-------------|-----------------|
 | 5.1 | TimelineMode | All 4 operations, merge strategies | 100% |
@@ -2302,6 +2313,7 @@ Before any feature code, establish:
 **Exit Criteria**: `cargo llvm-cov --fail-under-lines 100` passes.
 
 ### Phase 6: Server Infrastructure (TDD)
+
 | Step | Component | Tests First | Coverage Target |
 |------|-----------|-------------|-----------------|
 | 6.1 | PresetMode | List, run, step sequencing | 100% |
@@ -2315,6 +2327,7 @@ Before any feature code, establish:
 **Exit Criteria**: `cargo llvm-cov --fail-under-lines 100` passes.
 
 ### Phase 7: Integration & E2E (TDD)
+
 | Step | Component | Tests First | Coverage Target |
 |------|-----------|-------------|-----------------|
 | 7.1 | Full workflow tests | Multi-mode scenarios | 100% |
@@ -2326,6 +2339,7 @@ Before any feature code, establish:
 **Exit Criteria**: `cargo llvm-cov --fail-under-lines 100` passes.
 
 ### Phase 8: Production Hardening
+
 | Step | Component | Tests First | Coverage Target |
 |------|-----------|-------------|-----------------|
 | 8.1 | Fuzz testing | Property-based edge cases | N/A (supplemental) |
@@ -2862,6 +2876,7 @@ pub enum SelfImproveCommands {
 ### 14.12 LLM Calls (`anthropic_calls.rs`)
 
 Replaces langbase pipes with direct Anthropic Claude API calls:
+
 - `generate_diagnosis()` - Root cause analysis
 - `select_action()` - Multi-criteria action selection
 - `validate_decision()` - Bias/fallacy detection
@@ -2953,6 +2968,7 @@ assert_impl_all!(ModeError: Send, Sync);
 ```
 
 Error message conventions:
+
 - Lowercase sentences without trailing punctuation
 - Describe only the error itself, not the source chain
 - Include actionable context (IDs, values, limits)
@@ -3329,6 +3345,7 @@ Before implementation, verify:
 **Primary Tool**: `cargo-llvm-cov` (recommended over tarpaulin for accuracy)
 
 **Rationale**:
+
 - Uses LLVM's instrumentation (same as `cargo test`)
 - More accurate branch coverage than source-based tools
 - Better support for async code and macros
@@ -3336,6 +3353,7 @@ Before implementation, verify:
 - Supports `--fail-under-lines` for CI gates
 
 **Installation**:
+
 ```bash
 # Install llvm-cov
 rustup component add llvm-tools-preview
@@ -3449,6 +3467,7 @@ jobs:
 ```
 
 **Branch Protection Rules**:
+
 - Require status check: `coverage`
 - Require coverage to pass before merge
 - No force pushes to main
@@ -3528,6 +3547,7 @@ fn debug_dump_state(state: &State) {
 
 **Coverage Exclusion Audit**:
 All `#[coverage(off)]` uses MUST be documented with:
+
 ```rust
 /// COVERAGE EXCLUSION: [specific reason]
 /// Added: [date]
@@ -3540,6 +3560,7 @@ fn excluded_function() { ... }
 **Strategy**: Mock all external dependencies to enable deterministic testing.
 
 **Mock Traits**:
+
 ```rust
 // src/traits.rs
 #[cfg_attr(test, mockall::automock)]
@@ -3562,6 +3583,7 @@ pub trait TimeProvider: Send + Sync {
 ```
 
 **Test Utilities Module** (`src/test_utils.rs`):
+
 ```rust
 #![cfg(test)]
 
@@ -3615,6 +3637,7 @@ pub fn mock_time(timestamp: &str) -> MockTimeProvider {
 **Requirement**: Every `Result::Err` and `Option::None` path must have a test.
 
 **Pattern for Error Testing**:
+
 ```rust
 #[cfg(test)]
 mod tests {
@@ -3663,6 +3686,7 @@ mod tests {
 ### 16.9 Coverage Reporting
 
 **Local Development Dashboard**:
+
 ```bash
 # Generate HTML report and open in browser
 cargo llvm-cov --html --open
@@ -3672,6 +3696,7 @@ cargo llvm-cov --html --output-dir coverage/ && open coverage/index.html
 ```
 
 **Codecov Configuration** (`codecov.yml`):
+
 ```yaml
 coverage:
   status:
@@ -3712,11 +3737,13 @@ comment:
 When coverage drops below 100%:
 
 1. **Identify uncovered lines**:
+
    ```bash
    cargo llvm-cov --show-missing-lines
    ```
 
 2. **Generate detailed HTML report**:
+
    ```bash
    cargo llvm-cov --html --output-dir coverage/
    ```
@@ -3731,6 +3758,7 @@ When coverage drops below 100%:
    - Focus on error paths and edge cases
 
 5. **Verify fix**:
+
    ```bash
    cargo llvm-cov --fail-under-lines 100
    ```
@@ -3773,10 +3801,12 @@ This server is designed exclusively for **Claude Code** and **Claude Desktop** a
 ### 17.2 Build & Installation
 
 **Prerequisites**:
+
 - Rust 1.75+ (for async trait stability)
 - Anthropic API key
 
 **Build Commands**:
+
 ```bash
 # Clone repository
 git clone https://github.com/[user]/mcp-reasoning.git
@@ -3791,6 +3821,7 @@ cargo build --release
 ```
 
 **Recommended Installation Path**:
+
 ```bash
 # Windows
 $HOME\.local\bin\mcp-reasoning.exe
@@ -3805,6 +3836,7 @@ C:\Development\Projects\MCP\mcp-servers\mcp-reasoning\target\release\mcp-reasoni
 ### 17.3 Claude Code Configuration
 
 **Add Server (Recommended Method)**:
+
 ```bash
 # Add with environment variable for API key
 claude mcp add mcp-reasoning \
@@ -3819,6 +3851,7 @@ claude mcp add mcp-reasoning \
 ```
 
 **Windows Example**:
+
 ```bash
 claude mcp add mcp-reasoning ^
   --transport stdio ^
@@ -3827,6 +3860,7 @@ claude mcp add mcp-reasoning ^
 ```
 
 **Verify Installation**:
+
 ```bash
 # List all servers and check connection status
 claude mcp list
@@ -3839,6 +3873,7 @@ claude mcp get mcp-reasoning
 ```
 
 **Remove Server**:
+
 ```bash
 claude mcp remove mcp-reasoning
 ```
@@ -3846,10 +3881,12 @@ claude mcp remove mcp-reasoning
 ### 17.4 Claude Desktop Configuration
 
 **Config File Location**:
+
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
 **Configuration Format**:
+
 ```json
 {
   "mcpServers": {
@@ -3867,6 +3904,7 @@ claude mcp remove mcp-reasoning
 ```
 
 **Windows Example**:
+
 ```json
 {
   "mcpServers": {
@@ -3891,11 +3929,13 @@ Environment variables can be set in three ways:
 | Config file | N/A | `"env": {}` block |
 
 **Required Variables**:
+
 ```bash
 ANTHROPIC_API_KEY=sk-ant-xxx  # Required: Anthropic API key
 ```
 
 **Optional Variables**:
+
 ```bash
 DATABASE_PATH=./data/reasoning.db  # SQLite path (default: ./data/reasoning.db)
 LOG_LEVEL=info                      # Logging level (default: info)
@@ -3917,6 +3957,7 @@ The server communicates via JSON-RPC over stdio:
 ```
 
 **Protocol Details**:
+
 - **stdin**: Receives JSON-RPC requests from Claude
 - **stdout**: Sends JSON-RPC responses to Claude
 - **stderr**: Logging output (not read by Claude)
@@ -3926,10 +3967,12 @@ The server communicates via JSON-RPC over stdio:
 ### 17.7 Logging & Debugging
 
 **Log Output**:
+
 - All logs go to **stderr** (never stdout)
 - Uses `tracing` with structured fields
 
 **Log Levels**:
+
 ```bash
 LOG_LEVEL=error  # Only errors
 LOG_LEVEL=warn   # Errors and warnings
@@ -3939,6 +3982,7 @@ LOG_LEVEL=trace  # Maximum verbosity
 ```
 
 **Debugging Tips**:
+
 ```bash
 # Run server standalone to see logs
 ANTHROPIC_API_KEY=xxx LOG_LEVEL=debug ./mcp-reasoning 2>&1
@@ -3950,18 +3994,21 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./mcp-reasoning
 ### 17.8 Verification & Testing
 
 **Step 1: Verify Binary Works**
+
 ```bash
 # Should output JSON-RPC tools list
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | mcp-reasoning
 ```
 
 **Step 2: Verify Claude Code Connection**
+
 ```bash
 claude mcp list
 # Should show: mcp-reasoning: ... -  Connected
 ```
 
 **Step 3: Test Tool Invocation**
+
 ```
 # In Claude Code conversation:
 > Use reasoning_linear to analyze "What causes rain?"
@@ -3981,6 +4028,7 @@ claude mcp list
 | Database errors | Path not writable | Check `DATABASE_PATH` permissions |
 
 **Common Issues on Windows**:
+
 ```bash
 # Path with spaces - use quotes
 claude mcp add mcp-reasoning --transport stdio -- "C:\Program Files\mcp\mcp-reasoning.exe"
@@ -3994,11 +4042,13 @@ claude mcp add mcp-reasoning --transport stdio -- "C:\Program Files\mcp\mcp-reas
 **Startup**: Claude starts the server process when first tool is invoked or on client startup.
 
 **Shutdown**: Server terminates when:
+
 - Claude Code session ends
 - Claude Desktop closes
 - Client explicitly disconnects
 
 **Graceful Shutdown**:
+
 ```rust
 // Server handles SIGTERM/SIGINT
 tokio::select! {
@@ -4013,6 +4063,7 @@ tokio::select! {
 ### 17.11 Multiple Sessions
 
 The server handles multiple concurrent reasoning sessions:
+
 - Each session has unique `session_id`
 - Sessions persist in SQLite
 - Claude can reference previous sessions by ID
@@ -5225,6 +5276,7 @@ cargo fmt
 ## License
 
 MIT
+
 ```
 
 ### 18.20 Stub Module Files
@@ -5242,6 +5294,7 @@ All remaining module files should be created as minimal stubs that compile:
 ```
 
 **Example stub** (`src/modes/linear.rs`):
+
 ```rust
 //! Linear reasoning mode.
 

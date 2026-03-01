@@ -9,6 +9,7 @@
 ## Problem Statement
 
 The `Cargo.toml` enforces strict linting rules:
+
 ```toml
 [lints.clippy]
 unwrap_used = "deny"
@@ -16,6 +17,7 @@ expect_used = "deny"
 ```
 
 This caused 872 clippy errors when running:
+
 ```bash
 cargo clippy --all-targets --all-features -- -D warnings
 ```
@@ -29,6 +31,7 @@ All errors were in test code, which legitimately uses `.unwrap()` and `.expect()
 ### Option A: Allow Test Code Exceptions (Implemented)
 
 Added `#[allow(clippy::unwrap_used, clippy::expect_used)]` to:
+
 - 84 unit test modules in `src/**/*.rs`
 - 5 integration test files in `tests/`
 - 1 test utility file (`src/test_utils.rs`)
@@ -36,6 +39,7 @@ Added `#[allow(clippy::unwrap_used, clippy::expect_used)]` to:
 ### Implementation Details
 
 **Pattern Applied:**
+
 ```rust
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
@@ -46,6 +50,7 @@ mod tests {
 ```
 
 **Files Modified:** 90 files total
+
 - `src/lib.rs` - Updated test module declaration
 - `src/test_utils.rs` - Added file-level allow
 - `src/**/*.rs` - Added to all `#[cfg(test)] mod tests` blocks (82 files)
@@ -58,6 +63,7 @@ mod tests {
 ## Results
 
 ### Before Implementation
+
 ```
 error: used `unwrap()` on a `Result` value
 error: used `expect()` on a `Result` value
@@ -65,6 +71,7 @@ error: used `expect()` on a `Result` value
 ```
 
 ### After Implementation
+
 ```
 All 1,752 tests passing
 Zero unwrap/expect errors in test code
@@ -72,6 +79,7 @@ Production code remains panic-free
 ```
 
 ### Test Results
+
 ```
 test result: ok. 1752 passed (lib tests)
 -----------------------------------------
@@ -83,19 +91,24 @@ Total: 1,752 tests passing (95%+ coverage)
 ## Documentation Updates
 
 ### 1. CLAUDE.md
+
 Added section: "Error Handling in Tests"
+
 - Explains rationale for allowing unwrap/expect in tests
 - Provides code patterns for test vs production code
 - Links to Rust API Guidelines
 
 ### 2. docs/LESSONS_LEARNED.md
+
 Added section: "Test Error Handling Decision"
+
 - Full context and rationale
 - Implementation details
 - Alternatives considered
 - When to use Result<()> in tests
 
 ### 3. docs/TEST_ERROR_HANDLING_PLAN.md
+
 - Analysis of options
 - Phase-by-phase implementation plan
 - Risk assessment and recommendations
@@ -113,6 +126,7 @@ Added section: "Test Error Handling Decision"
 5. Separates concerns: Production code remains panic-free with strict lints
 
 ### Reference
+
 [Rust API Guidelines - Testing](https://rust-lang.github.io/api-guidelines/documentation.html#examples-use-panics-not-try-not-unwrap-c-question-mark)
 
 ---
@@ -135,12 +149,15 @@ Added section: "Test Error Handling Decision"
 ## Future Enhancements (Optional)
 
 ### Hybrid Approach (Phase 3)
+
 For critical integration tests, consider converting to `Result<()>`:
+
 - Better error propagation in CI failures
 - Shows full error context
 - Useful for complex error recovery tests
 
 **Target candidates:**
+
 - `tests/integration/error_recovery.rs`
 - Complex tool handler integration tests
 
@@ -174,6 +191,7 @@ cargo test --test integration_tests
 Resolved all 872 clippy test errors while maintaining code quality standards. Production code remains panic-free with zero `unwrap()`/`expect()` calls, while test code uses pragmatic patterns endorsed by the Rust community.
 
 **Impact:**
+
 - Strict clippy lints for production code
 - Test readability and debuggability maintained
 - All 1,752 tests passing (95%+ coverage)

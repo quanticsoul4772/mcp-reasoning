@@ -11,6 +11,7 @@
 ## Execution Protocol
 
 ### For Each File
+
 ```
 1. Write tests FIRST (in same file or tests/ directory)
 2. Run tests -> MUST FAIL (red)
@@ -22,6 +23,7 @@
 ```
 
 ### Checkpoint Commands
+
 ```bash
 # After each file/step:
 cargo build                           # Must compile
@@ -95,6 +97,7 @@ touch mcp-reasoning/migrations/001_initial_schema.sql
 ### Step 0.2: Create Config Files
 
 **Files to create** (copy from DESIGN.md Section 18):
+
 1. `Cargo.toml` (Section 18.2)
 2. `rust-toolchain.toml` (Section 18.3)
 3. `.cargo/config.toml` (Section 18.4)
@@ -109,61 +112,73 @@ touch mcp-reasoning/migrations/001_initial_schema.sql
 **Order matters** - create in this sequence:
 
 1. **src/error/mod.rs** - Empty module
+
 ```rust
 //! Error types for the MCP Reasoning Server.
 ```
 
 2. **src/config/mod.rs** - Empty module
+
 ```rust
 //! Configuration management.
 ```
 
 3. **src/traits.rs** - Empty module
+
 ```rust
 //! Trait definitions for mockable dependencies.
 ```
 
 4. **src/anthropic/mod.rs** - Empty module
+
 ```rust
 //! Anthropic API client.
 ```
 
 5. **src/storage/mod.rs** - Empty module
+
 ```rust
 //! Storage backend.
 ```
 
 6. **src/modes/mod.rs** - Empty module
+
 ```rust
 //! Reasoning modes.
 ```
 
 7. **src/prompts/mod.rs** - Empty module
+
 ```rust
 //! Prompt templates.
 ```
 
 8. **src/presets/mod.rs** - Empty module
+
 ```rust
 //! Workflow presets.
 ```
 
 9. **src/metrics/mod.rs** - Empty module
+
 ```rust
 //! Metrics collection.
 ```
 
 10. **src/self_improvement/mod.rs** - Empty module
+
 ```rust
 //! Self-improvement system.
 ```
 
 11. **src/server/mod.rs** - Empty module
+
 ```rust
 //! MCP server implementation.
 ```
 
 12. **src/lib.rs** - Declare modules (simplified)
+
 ```rust
 //! MCP Reasoning Server
 #![forbid(unsafe_code)]
@@ -182,6 +197,7 @@ pub mod traits;
 ```
 
 13. **src/main.rs** - Minimal main
+
 ```rust
 //! MCP Reasoning Server binary.
 fn main() {
@@ -201,6 +217,7 @@ cargo clippy             # Should pass
 ### Step 0.5: Rust Best Practices Configuration
 
 **Add lint configuration to lib.rs** (from DESIGN.md Section 15):
+
 ```rust
 //! MCP Reasoning Server
 #![forbid(unsafe_code)]
@@ -211,6 +228,7 @@ cargo clippy             # Should pass
 ```
 
 **Verify Cargo.toml lints section**:
+
 ```toml
 [lints.rust]
 unsafe_code = "forbid"
@@ -226,6 +244,7 @@ panic = "deny"
 ```
 
 **File Size Limits** (from LESSONS_LEARNED.md):
+
 | File Type | Max Lines | Action if Exceeded |
 |-----------|-----------|-------------------|
 | Any .rs file | 500 | Split into submodules |
@@ -236,6 +255,7 @@ panic = "deny"
 **Enforcement**: Run `wc -l src/**/*.rs` periodically and refactor if limits exceeded.
 
 **Structured Logging** (from LESSONS_LEARNED.md):
+
 ```rust
 // Use tracing with structured fields (not println! or log!)
 tracing::info!(
@@ -252,6 +272,7 @@ tracing_subscriber::fmt()
 ```
 
 **Zero Unsafe Code Policy** (from LESSONS_LEARNED.md):
+
 - No `unsafe` blocks anywhere
 - No `.unwrap()` in production paths (use `?` or `.unwrap_or()`)
 - No `.expect()` in handlers (use proper error handling)
@@ -260,12 +281,14 @@ tracing_subscriber::fmt()
 ### Step 0.6: Coverage Infrastructure Setup
 
 **Install coverage tooling**:
+
 ```bash
 rustup component add llvm-tools-preview
 cargo install cargo-llvm-cov
 ```
 
 **Create pre-commit hook** (scripts/pre-commit-coverage.sh):
+
 ```bash
 #!/bin/bash
 set -e
@@ -280,6 +303,7 @@ echo "Coverage: ${COVERAGE}%"
 ```
 
 **Verify coverage commands work**:
+
 ```bash
 cargo llvm-cov --version        # Verify installed
 cargo llvm-cov                  # Should show 100% (no code yet)
@@ -288,6 +312,7 @@ cargo llvm-cov                  # Should show 100% (no code yet)
 ### Step 0.7: Mock Infrastructure Scaffolding
 
 **Create src/test_utils.rs** (from DESIGN.md Section 16.7):
+
 ```rust
 //! Test utilities and mock factories.
 #![cfg(test)]
@@ -296,6 +321,7 @@ cargo llvm-cov                  # Should show 100% (no code yet)
 ```
 
 **Create tests/common/mod.rs**:
+
 ```rust
 //! Shared test utilities and fixtures.
 
@@ -328,12 +354,14 @@ git commit -m "Initial scaffold with coverage infrastructure"
 4. **Run coverage** -> Must be 100%
 
 **File content** (from DESIGN.md Section 18.9):
+
 - `AppError` enum with variants: Anthropic, Storage, Config, Mcp, Mode
 - `StorageError` enum with variants: Connection, Query, SessionNotFound, Migration
 - `ConfigError` enum with variants: MissingEnvVar, Invalid
 - `ModeError` enum with variants: Validation, ApiUnavailable, Timeout, SessionRequired, InvalidOperation
 
 **Tests to write**:
+
 ```rust
 #[cfg(test)]
 mod tests {
@@ -362,6 +390,7 @@ mod tests {
 ```
 
 **Checkpoint**:
+
 ```bash
 cargo test -p mcp-reasoning error
 cargo llvm-cov --fail-under-lines 100
@@ -376,6 +405,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 2.1: Config Validation (src/config/validation.rs)
 
 **Write tests FIRST**:
+
 - `test_valid_config` - all fields valid
 - `test_empty_api_key` - empty key rejected
 - `test_timeout_too_low` - <1000ms rejected
@@ -389,6 +419,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 2.2: Config Loading (src/config/mod.rs)
 
 **Write tests FIRST**:
+
 - `test_config_from_env_with_all_vars`
 - `test_config_from_env_defaults`
 - `test_config_missing_api_key`
@@ -398,6 +429,7 @@ cargo llvm-cov --fail-under-lines 100
 **Then implement** `Config::from_env()`.
 
 **Checkpoint**:
+
 ```bash
 cargo test -p mcp-reasoning config
 cargo llvm-cov --fail-under-lines 100
@@ -412,11 +444,13 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 3.1: Core Traits (src/traits.rs)
 
 Define traits with `#[cfg_attr(test, mockall::automock)]`:
+
 - `AnthropicClientTrait` - async complete method
 - `StorageTrait` - session and thought CRUD
 - `TimeProvider` - time abstraction for testing
 
 Define shared types:
+
 - `Message` (role, content)
 - `CompletionConfig` (max_tokens, temperature)
 - `CompletionResponse` (content, usage)
@@ -425,11 +459,13 @@ Define shared types:
 - `Thought` (id, session_id, content, mode, confidence, created_at)
 
 **Tests**:
+
 - Test `RealTimeProvider::now()` returns current time
 - Test type constructors work
 - Compile-time mock generation verification
 
 **Checkpoint**:
+
 ```bash
 cargo test -p mcp-reasoning traits
 cargo llvm-cov --fail-under-lines 100
@@ -444,6 +480,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 4.1: Storage Types (src/storage/types.rs)
 
 Define all storage-specific types:
+
 - `StoredSession`
 - `StoredThought`
 - `StoredBranch`
@@ -484,6 +521,7 @@ async fn test_get_thoughts_for_session() { ... }
 ```
 
 **Key operations to implement**:
+
 - Connection/pool management
 - Migration execution
 - Session CRUD
@@ -506,6 +544,7 @@ Focused thought operations.
 Graph node and edge operations.
 
 **Checkpoint**:
+
 ```bash
 cargo sqlx prepare --database-url "sqlite:./data/reasoning.db"
 cargo test -p mcp-reasoning storage
@@ -521,6 +560,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 5.1: Anthropic Types (src/anthropic/types.rs)
 
 Request/response types:
+
 - `ApiRequest`
 - `ApiResponse`
 - `ApiError`
@@ -530,6 +570,7 @@ Request/response types:
 ### Step 5.2: Anthropic Config (src/anthropic/config.rs)
 
 **Write tests FIRST**:
+
 - `test_model_config_defaults`
 - `test_thinking_config_standard`
 - `test_thinking_config_deep`
@@ -578,6 +619,7 @@ impl ThinkingConfig {
 ```
 
 **Mode-specific thinking budgets** (from DESIGN.md Section 11.4):
+
 | Mode | Thinking Budget |
 |------|-----------------|
 | Linear, Tree, Auto, Checkpoint | None (fast modes) |
@@ -611,6 +653,7 @@ pub enum ImageSource {
 ```
 
 **Tests**:
+
 - `test_content_part_text_serialization`
 - `test_content_part_image_base64_serialization`
 - `test_content_part_image_url_serialization`
@@ -618,6 +661,7 @@ pub enum ImageSource {
 ### Step 5.3: Anthropic Client (src/anthropic/client.rs)
 
 **Request Size Limits** (from LESSONS_LEARNED.md):
+
 ```rust
 const MAX_REQUEST_BYTES: usize = 100_000;  // 100KB
 const MAX_MESSAGES: usize = 50;
@@ -641,6 +685,7 @@ fn validate_request(req: &ApiRequest) -> Result<(), AnthropicError> {
 ```
 
 **Retry Logic with Exponential Backoff** (from LESSONS_LEARNED.md):
+
 ```rust
 async fn execute_with_retry(&self, request: ApiRequest) -> Result<ApiResponse, AnthropicError> {
     let mut last_error = None;
@@ -671,6 +716,7 @@ async fn execute_with_retry(&self, request: ApiRequest) -> Result<ApiResponse, A
 ```
 
 **Write tests FIRST with mocked HTTP**:
+
 - `test_complete_success`
 - `test_complete_rate_limit_retry`
 - `test_complete_server_error_retry`
@@ -682,6 +728,7 @@ async fn execute_with_retry(&self, request: ApiRequest) -> Result<ApiResponse, A
 - `test_retry_exponential_backoff`
 
 **Implement**:
+
 - `AnthropicClient::new()`
 - `AnthropicClient::complete()` with retry logic
 - `validate_request()` for size limits
@@ -690,15 +737,18 @@ async fn execute_with_retry(&self, request: ApiRequest) -> Result<ApiResponse, A
 ### Step 5.4: Streaming Support (src/anthropic/streaming.rs)
 
 **Write tests FIRST**:
+
 - `test_stream_complete_message`
 - `test_stream_partial_chunks`
 - `test_stream_error_mid_stream`
 
 **Implement**:
+
 - `StreamEvent` enum
 - `complete_streaming()` method
 
 **Checkpoint**:
+
 ```bash
 cargo test -p mcp-reasoning anthropic
 cargo llvm-cov --fail-under-lines 100
@@ -713,6 +763,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 6.1: Prompts (src/prompts/mod.rs, core.rs, advanced.rs)
 
 Define prompt templates for each mode:
+
 - Linear reasoning prompt
 - Tree branching prompt
 - Divergent perspectives prompt
@@ -723,11 +774,13 @@ Define prompt templates for each mode:
 ### Step 6.2: ModeCore (src/modes/core.rs)
 
 Shared mode infrastructure:
+
 - Storage reference
 - Anthropic client reference
 - Common helpers
 
 **JSON Extraction** (from LESSONS_LEARNED.md):
+
 ```rust
 /// Extract JSON from LLM response, handling multiple formats
 pub fn extract_json(text: &str) -> Result<serde_json::Value, ModeError> {
@@ -770,6 +823,7 @@ pub fn serialize_for_log<T: serde::Serialize>(value: &T, max_len: usize) -> Stri
 ```
 
 **Write tests FIRST**:
+
 - `test_extract_json_raw_valid`
 - `test_extract_json_code_block`
 - `test_extract_json_nested_code_block`
@@ -785,6 +839,7 @@ pub fn serialize_for_log<T: serde::Serialize>(value: &T, max_len: usize) -> Stri
 - `FromStr` impl for mode parsing
 
 **Checkpoint**:
+
 ```bash
 cargo test -p mcp-reasoning modes::core
 cargo test -p mcp-reasoning prompts
@@ -802,6 +857,7 @@ cargo llvm-cov --fail-under-lines 100
 **Simplest mode - implement first as pattern for others.**
 
 **Tests FIRST**:
+
 ```rust
 #[tokio::test]
 async fn test_linear_process_success() { ... }
@@ -820,6 +876,7 @@ async fn test_linear_process_creates_session() { ... }
 ```
 
 **Implement**:
+
 - `LinearMode::new()`
 - `LinearMode::process()`
 - `LinearResponse` struct
@@ -827,6 +884,7 @@ async fn test_linear_process_creates_session() { ... }
 ### Step 7.2: Tree Mode (src/modes/tree.rs)
 
 **Tests FIRST for all 4 operations**:
+
 - create: start exploration, generate branches
 - focus: select branch
 - list: show all branches
@@ -835,6 +893,7 @@ async fn test_linear_process_creates_session() { ... }
 ### Step 7.3: Divergent Mode (src/modes/divergent.rs)
 
 **Tests FIRST**:
+
 - Basic perspectives generation
 - challenge_assumptions flag
 - force_rebellion flag
@@ -843,12 +902,14 @@ async fn test_linear_process_creates_session() { ... }
 ### Step 7.4: Reflection Mode (src/modes/reflection.rs)
 
 **Tests FIRST for both operations**:
+
 - process: iterative refinement
 - evaluate: session-wide assessment
 
 ### Step 7.5: Checkpoint Mode (src/modes/checkpoint.rs)
 
 **Tests FIRST for all 3 operations**:
+
 - create: save state
 - list: show checkpoints
 - restore: return to checkpoint
@@ -856,6 +917,7 @@ async fn test_linear_process_creates_session() { ... }
 ### Step 7.6: Auto Mode (src/modes/auto.rs)
 
 **Tests FIRST**:
+
 - Routes to linear for simple content
 - Routes to tree for exploration
 - Routes to divergent for creative
@@ -863,6 +925,7 @@ async fn test_linear_process_creates_session() { ... }
 - Handles hints parameter
 
 **Checkpoint**:
+
 ```bash
 cargo test -p mcp-reasoning modes
 cargo llvm-cov --fail-under-lines 100
@@ -877,6 +940,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 8.1: Graph Mode (src/modes/graph.rs)
 
 **Most complex mode - 8 operations**:
+
 - init: create graph with root node
 - generate: expand k nodes from current
 - score: evaluate node quality
@@ -891,6 +955,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 8.2: Detect Mode (src/modes/detect.rs)
 
 **2 operations**:
+
 - biases: detect cognitive biases
 - fallacies: detect logical fallacies
 
@@ -899,6 +964,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 8.3: Decision Mode (src/modes/decision.rs)
 
 **4 operations**:
+
 - weighted: weighted sum scoring
 - pairwise: direct comparison
 - topsis: ideal-point distance
@@ -909,6 +975,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 8.4: Evidence Mode (src/modes/evidence.rs)
 
 **2 operations**:
+
 - assess: source credibility evaluation
 - probabilistic: Bayesian updates
 
@@ -917,6 +984,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 8.5: Timeline Mode (src/modes/timeline.rs)
 
 **4 operations**:
+
 - create: new timeline
 - branch: fork path
 - compare: analyze divergence
@@ -927,6 +995,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 8.6: MCTS Mode (src/modes/mcts.rs)
 
 **2 operations**:
+
 - explore: UCB1-guided search
 - auto_backtrack: quality-triggered backtracking
 
@@ -935,11 +1004,13 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 8.7: Counterfactual Mode (src/modes/counterfactual.rs)
 
 **Single operation**:
+
 - analyze scenario + intervention -> consequences
 
 **Tests**: Pearl's Ladder levels (association, intervention, counterfactual).
 
 **Checkpoint**:
+
 ```bash
 cargo test -p mcp-reasoning modes
 cargo llvm-cov --fail-under-lines 100
@@ -992,6 +1063,7 @@ impl ReasoningServer {
 ```
 
 **Write tests FIRST**:
+
 - `test_tool_linear_schema_valid`
 - `test_tool_tree_schema_valid`
 - `test_tool_divergent_schema_valid`
@@ -1000,6 +1072,7 @@ impl ReasoningServer {
 - `test_tool_annotations_present`
 
 **All 15 tools to define**:
+
 1. `reasoning_linear` - Single-pass sequential reasoning
 2. `reasoning_tree` - Branching exploration (create/focus/list/complete)
 3. `reasoning_divergent` - Multi-perspective with force_rebellion
@@ -1019,6 +1092,7 @@ impl ReasoningServer {
 ### Step 9.1b: Response Types with JsonSchema (src/server/tools.rs)
 
 **Derive JsonSchema for automatic schema generation**:
+
 ```rust
 use schemars::JsonSchema;
 
@@ -1048,6 +1122,7 @@ pub struct TreeResponse {
 ### Step 9.2: Handler Registry (src/server/handlers.rs)
 
 **Tool Registry Pattern** (from LESSONS_LEARNED.md - avoids 1600+ line match statement):
+
 ```rust
 pub struct HandlerRegistry {
     handlers: HashMap<String, Box<dyn ToolHandler>>,
@@ -1078,6 +1153,7 @@ pub trait ToolHandler: Send + Sync {
 ```
 
 **Parameter Struct Pattern** (from LESSONS_LEARNED.md - avoids 15+ identical structs):
+
 ```rust
 // Common base for all reasoning tools
 #[derive(Debug, Clone, Deserialize)]
@@ -1122,6 +1198,7 @@ impl ModeParams {
 ```
 
 **Tests**:
+
 - `test_handler_registry_routes_correctly`
 - `test_handler_registry_unknown_tool`
 - `test_reasoning_params_deserialize`
@@ -1134,6 +1211,7 @@ impl ModeParams {
 JSON-RPC message parsing and response formatting.
 
 **Tests**:
+
 - Parse valid request
 - Parse invalid request
 - Format success response
@@ -1159,6 +1237,7 @@ impl StdioHandler {
 ```
 
 **Tests**:
+
 - `test_stdio_read_valid_jsonrpc`
 - `test_stdio_read_invalid_json`
 - `test_stdio_write_response`
@@ -1231,6 +1310,7 @@ pub enum TransportError {
 ```
 
 **Tests**:
+
 - `test_http_handle_request_success`
 - `test_http_handle_request_invalid_json`
 - `test_http_session_management`
@@ -1256,6 +1336,7 @@ match std::env::var("MCP_TRANSPORT").as_deref() {
 ```
 
 **Tests**:
+
 - `test_transport_selection_http`
 - `test_transport_selection_stdio_default`
 
@@ -1334,6 +1415,7 @@ async fn shutdown_signal() {
 ```
 
 **Tests**:
+
 - `test_server_new_success`
 - `test_server_new_missing_api_key`
 - `test_server_run_and_shutdown`
@@ -1342,6 +1424,7 @@ async fn shutdown_signal() {
 - `test_shutdown_signal_terminate` (Unix only)
 
 **Checkpoint**:
+
 ```bash
 cargo test -p mcp-reasoning server
 cargo llvm-cov --fail-under-lines 100
@@ -1385,6 +1468,7 @@ pub enum PresetCategory {
 ```
 
 **Preset 1: code-review** (Category: CodeQuality)
+
 ```rust
 PresetStep { mode: Linear, operation: None, config: None },           // Understand code
 PresetStep { mode: Detect, operation: Some("biases"), config: None }, // Check for biases
@@ -1393,6 +1477,7 @@ PresetStep { mode: Reflection, operation: Some("evaluate"), config: None }, // F
 ```
 
 **Preset 2: debug-analysis** (Category: Analysis)
+
 ```rust
 PresetStep { mode: Linear, operation: None, config: None },           // Understand problem
 PresetStep { mode: Tree, operation: Some("create"), config: json!({"num_branches": 3}) }, // Hypotheses
@@ -1401,6 +1486,7 @@ PresetStep { mode: Counterfactual, operation: None, config: None },   // What-if
 ```
 
 **Preset 3: architecture-decision** (Category: Decision)
+
 ```rust
 PresetStep { mode: Divergent, operation: None, config: json!({"challenge_assumptions": true}) }, // Options
 PresetStep { mode: Decision, operation: Some("weighted"), config: None }, // Score options
@@ -1410,6 +1496,7 @@ PresetStep { mode: Reflection, operation: Some("evaluate"), config: None }, // F
 ```
 
 **Preset 4: strategic-decision** (Category: Decision)
+
 ```rust
 PresetStep { mode: Decision, operation: Some("perspectives"), config: None }, // Stakeholder views
 PresetStep { mode: Timeline, operation: Some("create"), config: None }, // Future scenarios
@@ -1419,6 +1506,7 @@ PresetStep { mode: Decision, operation: Some("topsis"), config: None }, // Final
 ```
 
 **Preset 5: evidence-conclusion** (Category: Research)
+
 ```rust
 PresetStep { mode: Evidence, operation: Some("assess"), config: None }, // Evaluate sources
 PresetStep { mode: Detect, operation: Some("fallacies"), config: None }, // Check reasoning
@@ -1428,6 +1516,7 @@ PresetStep { mode: Linear, operation: None, config: None },           // Final c
 ```
 
 **Tests**:
+
 - `test_preset_code_review_steps`
 - `test_preset_debug_analysis_steps`
 - `test_preset_architecture_decision_steps`
@@ -1452,6 +1541,7 @@ PresetStep { mode: Linear, operation: None, config: None },           // Final c
 **Tests**: Metrics recorded, queries return correct data.
 
 **Checkpoint**:
+
 ```bash
 cargo test -p mcp-reasoning presets metrics
 cargo llvm-cov --fail-under-lines 100
@@ -1514,6 +1604,7 @@ Main loop coordinating all phases.
 **Tests**: Full loop execution with mocks.
 
 **Checkpoint**:
+
 ```bash
 cargo test -p mcp-reasoning self_improvement
 cargo llvm-cov --fail-under-lines 100
@@ -1534,6 +1625,7 @@ cargo llvm-cov --fail-under-lines 100
 ### Step 12.2: Main Binary (src/main.rs)
 
 Complete entry point with:
+
 - Logging initialization
 - Config loading
 - Server startup
@@ -1573,6 +1665,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./target/release/mcp-rea
 ### Step 12.5.1: Stdio Protocol Verification
 
 **Protocol behavior** (from DESIGN.md Section 17.6):
+
 ```
 ┌─────────────┐     stdin      ┌─────────────┐
 │ Claude Code │───────────────▶│ MCP Server  │
@@ -1585,6 +1678,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./target/release/mcp-rea
 **Critical requirement**: Server MUST NOT write anything to stdout except valid JSON-RPC messages. All logging goes to stderr.
 
 **Manual verification tests**:
+
 ```bash
 # Test 1: tools/list returns valid response
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./target/release/mcp-reasoning 2>/dev/null
@@ -1599,6 +1693,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"unknown"}' | ./target/release/mcp-reason
 ### Step 12.5.2: Claude Code Integration
 
 **Add server to Claude Code** (from DESIGN.md Section 17.3):
+
 ```bash
 # Windows
 claude mcp add mcp-reasoning ^
@@ -1614,6 +1709,7 @@ claude mcp add mcp-reasoning \
 ```
 
 **Verification steps**:
+
 ```bash
 # Check server is registered
 claude mcp list
@@ -1624,6 +1720,7 @@ claude mcp get mcp-reasoning
 ```
 
 **Test tool invocation in Claude Code**:
+
 ```
 # In Claude Code conversation:
 > Use reasoning_linear to analyze "What makes a good software architecture?"
@@ -1634,10 +1731,12 @@ claude mcp get mcp-reasoning
 ### Step 12.5.3: Claude Desktop Configuration
 
 **Config file locations**:
+
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
 **Configuration format** (from DESIGN.md Section 17.4):
+
 ```json
 {
   "mcpServers": {
@@ -1655,6 +1754,7 @@ claude mcp get mcp-reasoning
 ```
 
 **Windows-specific format**:
+
 ```json
 {
   "mcpServers": {
@@ -1682,6 +1782,7 @@ claude mcp get mcp-reasoning
 ### Step 12.5.5: Multi-Session Testing
 
 **Verify session persistence**:
+
 1. Start Claude Code session
 2. Use `reasoning_linear` with content
 3. Note the `session_id` returned
@@ -1736,6 +1837,7 @@ claude mcp list  # Verify connected
 Before marking implementation complete:
 
 ### Build & Quality
+
 - [ ] `cargo build --release` succeeds
 - [ ] `cargo test` passes (all tests)
 - [ ] `cargo clippy -- -D warnings` passes (with pedantic, nursery lints)
@@ -1745,39 +1847,46 @@ Before marking implementation complete:
 - [ ] No `.unwrap()` or `.expect()` in production code paths
 
 ### Binary Verification
+
 - [ ] Binary responds to `tools/list` request with all 15 tools
 - [ ] Binary outputs logs to stderr only (never stdout)
 - [ ] Binary handles graceful shutdown (SIGTERM/SIGINT)
 - [ ] Binary respects all environment variables
 
 ### rmcp SDK Integration
+
 - [ ] All 15 tools use `#[tool]` macro correctly
 - [ ] `#[tool_router]` generates proper routing
 - [ ] Response types derive `JsonSchema` for automatic schema generation
 - [ ] Tool annotations (read_only_hint, destructive_hint, etc.) present
 
 ### Transport Layer
+
 - [ ] Stdio transport works with JSON-RPC messages
 - [ ] HTTP transport handles requests correctly (if enabled)
 - [ ] Transport selection based on MCP_TRANSPORT env var works
 
 ### Extended Thinking
+
 - [ ] ThinkingConfig with standard/deep/maximum budgets works
 - [ ] Mode-specific thinking budgets applied correctly
 - [ ] Extended thinking responses parsed and returned
 
 ### Claude Code Integration
+
 - [ ] `claude mcp add` succeeds
 - [ ] `claude mcp list` shows connected
 - [ ] Test tool invocation in Claude Code works
 - [ ] Session persistence across Claude Code restarts works
 
 ### Claude Desktop Integration
+
 - [ ] `claude_desktop_config.json` format documented
 - [ ] Server starts correctly from Claude Desktop
 - [ ] Tool invocation works in Claude Desktop
 
 ### Self-Improvement System
+
 - [ ] Monitor collects metrics on every invocation
 - [ ] Analyzer generates diagnoses with LLM
 - [ ] Executor applies actions with rollback capability
@@ -1785,6 +1894,7 @@ Before marking implementation complete:
 - [ ] Circuit breaker trips after consecutive failures
 
 ### Documentation & Release
+
 - [ ] README.md is complete and accurate
 - [ ] Quick Start section works end-to-end
 - [ ] Troubleshooting guide covers common issues
@@ -1794,6 +1904,7 @@ Before marking implementation complete:
 ### Lessons Learned Compliance (from LESSONS_LEARNED.md)
 
 **REPLICATE Items:**
+
 - [ ] Error types designed first (hierarchical with thiserror)
 - [ ] ModeCore composition pattern (not trait inheritance)
 - [ ] Config struct with validation (fail fast on load)
@@ -1803,6 +1914,7 @@ Before marking implementation complete:
 - [ ] Zero unsafe/unwrap/expect/panic policy enforced
 
 **AVOID Items:**
+
 - [ ] No file exceeds 500 lines (run `wc -l src/**/*.rs`)
 - [ ] 15 consolidated tools (not 40 separate tools)
 - [ ] Tool registry pattern (not giant match statement)
