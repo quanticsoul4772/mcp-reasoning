@@ -1059,6 +1059,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_tree_create_storage_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_branch().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "INSERT".to_string(),
+                message: "DB error".to_string(),
+            })
+        });
+
+        let response_json = mock_create_response(3);
+        mock_client.expect_complete().returning(move |_, _| {
+            Ok(CompletionResponse::new(
+                response_json.clone(),
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.create("Test", None, None).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
     async fn test_tree_list_storage_error() {
         let mut mock_storage = MockStorageTrait::new();
         let mock_client = MockAnthropicClientTrait::new();
