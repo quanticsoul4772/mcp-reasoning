@@ -427,6 +427,115 @@ mod tests {
         assert_eq!(all.len(), 1);
     }
 
+    // =========================================================================
+    // StorageTrait on SqliteStorage - checkpoint/branch/graph methods
+    // =========================================================================
+
+    #[tokio::test]
+    #[serial]
+    async fn test_storage_trait_save_and_get_checkpoint() {
+        let storage = test_storage().await;
+        storage
+            .create_session_with_id("sess-cp")
+            .await
+            .expect("create");
+
+        let checkpoint = StoredCheckpoint::new("cp-1", "sess-cp", "Test", "{}");
+        StorageTrait::save_checkpoint(&storage, &checkpoint)
+            .await
+            .expect("save");
+
+        let retrieved = StorageTrait::get_checkpoint(&storage, "cp-1")
+            .await
+            .expect("get");
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().name, "Test");
+
+        let all = StorageTrait::get_checkpoints(&storage, "sess-cp")
+            .await
+            .expect("list");
+        assert_eq!(all.len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_storage_trait_branch_operations() {
+        let storage = test_storage().await;
+        storage
+            .create_session_with_id("sess-br")
+            .await
+            .expect("create");
+
+        let branch = StoredBranch::new("br-1", "sess-br", "Branch");
+        StorageTrait::save_branch(&storage, &branch)
+            .await
+            .expect("save");
+
+        let retrieved = StorageTrait::get_branch(&storage, "br-1")
+            .await
+            .expect("get");
+        assert!(retrieved.is_some());
+
+        let all = StorageTrait::get_branches(&storage, "sess-br")
+            .await
+            .expect("list");
+        assert_eq!(all.len(), 1);
+
+        StorageTrait::update_branch_status(&storage, "br-1", StoredBranchStatus::Completed)
+            .await
+            .expect("update");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_storage_trait_graph_node_operations() {
+        let storage = test_storage().await;
+        storage
+            .create_session_with_id("sess-gn")
+            .await
+            .expect("create");
+
+        let node = StoredGraphNode::new("gn-1", "sess-gn", "Node content");
+        StorageTrait::save_graph_node(&storage, &node)
+            .await
+            .expect("save");
+
+        let retrieved = StorageTrait::get_graph_node(&storage, "gn-1")
+            .await
+            .expect("get");
+        assert!(retrieved.is_some());
+
+        let all = StorageTrait::get_graph_nodes(&storage, "sess-gn")
+            .await
+            .expect("list");
+        assert_eq!(all.len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_storage_trait_graph_edge_operations() {
+        let storage = test_storage().await;
+        storage
+            .create_session_with_id("sess-ge")
+            .await
+            .expect("create");
+
+        let n1 = StoredGraphNode::new("ge-n1", "sess-ge", "N1");
+        let n2 = StoredGraphNode::new("ge-n2", "sess-ge", "N2");
+        storage.save_graph_node(&n1).await.expect("save n1");
+        storage.save_graph_node(&n2).await.expect("save n2");
+
+        let edge = StoredGraphEdge::new("ge-e1", "sess-ge", "ge-n1", "ge-n2");
+        StorageTrait::save_graph_edge(&storage, &edge)
+            .await
+            .expect("save");
+
+        let edges = StorageTrait::get_graph_edges(&storage, "sess-ge")
+            .await
+            .expect("get");
+        assert_eq!(edges.len(), 1);
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_arc_storage_graph_edge_operations() {

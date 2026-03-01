@@ -330,3 +330,335 @@ pub mod doctest_helpers {
             .block_on(f)
     }
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp
+)]
+mod doctest_helpers_tests {
+    use super::doctest_helpers::*;
+    use crate::traits::{
+        AnthropicClientTrait, CompletionConfig, Message, StorageTrait, TimeProvider,
+    };
+
+    // ============================================================================
+    // MockStorage Tests
+    // ============================================================================
+
+    #[test]
+    fn test_mock_storage_new() {
+        let storage = MockStorage::new();
+        let debug = format!("{storage:?}");
+        assert!(debug.contains("MockStorage"));
+    }
+
+    #[test]
+    fn test_mock_storage_default() {
+        let storage = MockStorage::default();
+        let debug = format!("{storage:?}");
+        assert!(debug.contains("MockStorage"));
+    }
+
+    #[test]
+    fn test_mock_storage_clone() {
+        let storage = MockStorage::new();
+        let cloned = storage.clone();
+        let debug = format!("{cloned:?}");
+        assert!(debug.contains("MockStorage"));
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_session() {
+        let storage = MockStorage::new();
+        let session = storage.get_session("test-id").await.unwrap();
+        assert!(session.is_some());
+        assert_eq!(session.unwrap().id, "test-id");
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_or_create_session_with_id() {
+        let storage = MockStorage::new();
+        let session = storage
+            .get_or_create_session(Some("my-session".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(session.id, "my-session");
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_or_create_session_none() {
+        let storage = MockStorage::new();
+        let session = storage.get_or_create_session(None).await.unwrap();
+        assert_eq!(session.id, "mock-session");
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_save_thought() {
+        let storage = MockStorage::new();
+        let thought = crate::traits::Thought::new("t1", "s1", "content", "linear", 0.8);
+        let result = storage.save_thought(&thought).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_thoughts() {
+        let storage = MockStorage::new();
+        let thoughts = storage.get_thoughts("s1").await.unwrap();
+        assert!(thoughts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_save_checkpoint() {
+        let storage = MockStorage::new();
+        let checkpoint = crate::traits::StoredCheckpoint {
+            id: "cp1".to_string(),
+            session_id: "s1".to_string(),
+            name: "test".to_string(),
+            description: None,
+            state: "{}".to_string(),
+            created_at: chrono::Utc::now(),
+        };
+        let result = storage.save_checkpoint(&checkpoint).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_checkpoint() {
+        let storage = MockStorage::new();
+        let result = storage.get_checkpoint("cp1").await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_checkpoints() {
+        let storage = MockStorage::new();
+        let result = storage.get_checkpoints("s1").await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_save_branch() {
+        let storage = MockStorage::new();
+        let branch = crate::traits::StoredBranch {
+            id: "b1".to_string(),
+            session_id: "s1".to_string(),
+            parent_branch_id: None,
+            content: "branch content".to_string(),
+            score: 0.9,
+            status: crate::storage::BranchStatus::default(),
+            created_at: chrono::Utc::now(),
+        };
+        let result = storage.save_branch(&branch).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_branch() {
+        let storage = MockStorage::new();
+        let result = storage.get_branch("b1").await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_branches() {
+        let storage = MockStorage::new();
+        let result = storage.get_branches("s1").await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_update_branch_status() {
+        let storage = MockStorage::new();
+        let result = storage
+            .update_branch_status("b1", crate::storage::BranchStatus::default())
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_save_graph_node() {
+        let storage = MockStorage::new();
+        let node = crate::traits::StoredGraphNode {
+            id: "n1".to_string(),
+            session_id: "s1".to_string(),
+            content: "node content".to_string(),
+            node_type: crate::storage::GraphNodeType::default(),
+            score: Some(0.8),
+            is_terminal: false,
+            metadata: None,
+            created_at: chrono::Utc::now(),
+        };
+        let result = storage.save_graph_node(&node).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_graph_node() {
+        let storage = MockStorage::new();
+        let result = storage.get_graph_node("n1").await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_graph_nodes() {
+        let storage = MockStorage::new();
+        let result = storage.get_graph_nodes("s1").await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_save_graph_edge() {
+        let storage = MockStorage::new();
+        let edge = crate::traits::StoredGraphEdge {
+            id: "e1".to_string(),
+            session_id: "s1".to_string(),
+            from_node_id: "n1".to_string(),
+            to_node_id: "n2".to_string(),
+            edge_type: crate::storage::GraphEdgeType::default(),
+            created_at: chrono::Utc::now(),
+        };
+        let result = storage.save_graph_edge(&edge).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_mock_storage_get_graph_edges() {
+        let storage = MockStorage::new();
+        let result = storage.get_graph_edges("s1").await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    // ============================================================================
+    // MockClient Tests
+    // ============================================================================
+
+    #[test]
+    fn test_mock_client_new() {
+        let client = MockClient::new();
+        let debug = format!("{client:?}");
+        assert!(debug.contains("MockClient"));
+    }
+
+    #[test]
+    fn test_mock_client_default() {
+        let client = MockClient::default();
+        let debug = format!("{client:?}");
+        assert!(debug.contains("mock response"));
+    }
+
+    #[test]
+    fn test_mock_client_with_response() {
+        let client = MockClient::with_response("custom response");
+        let debug = format!("{client:?}");
+        assert!(debug.contains("custom response"));
+    }
+
+    #[test]
+    fn test_mock_client_clone() {
+        let client = MockClient::new();
+        let cloned = client.clone();
+        let debug = format!("{cloned:?}");
+        assert!(debug.contains("MockClient"));
+    }
+
+    #[tokio::test]
+    async fn test_mock_client_complete() {
+        let client = MockClient::new();
+        let messages = vec![Message::user("Hello")];
+        let config = CompletionConfig::new();
+        let result = client.complete(messages, config).await.unwrap();
+        assert_eq!(result.usage.input_tokens, 100);
+        assert_eq!(result.usage.output_tokens, 50);
+    }
+
+    #[tokio::test]
+    async fn test_mock_client_complete_with_custom_response() {
+        let client = MockClient::with_response("custom");
+        let messages = vec![Message::user("Hello")];
+        let config = CompletionConfig::new();
+        let result = client.complete(messages, config).await.unwrap();
+        assert_eq!(result.content, "custom");
+    }
+
+    #[tokio::test]
+    async fn test_mock_client_complete_streaming() {
+        let client = MockClient::new();
+        let messages = vec![Message::user("Hello")];
+        let config = CompletionConfig::new();
+        let mut rx = client.complete_streaming(messages, config).await.unwrap();
+
+        // Receive the streaming events
+        let event1 = rx.recv().await.unwrap().unwrap();
+        assert!(matches!(
+            event1,
+            crate::anthropic::StreamEvent::MessageStart { .. }
+        ));
+
+        let event2 = rx.recv().await.unwrap().unwrap();
+        assert!(matches!(
+            event2,
+            crate::anthropic::StreamEvent::TextDelta { .. }
+        ));
+
+        let event3 = rx.recv().await.unwrap().unwrap();
+        assert!(matches!(
+            event3,
+            crate::anthropic::StreamEvent::MessageStop { .. }
+        ));
+    }
+
+    // ============================================================================
+    // MockTime Tests
+    // ============================================================================
+
+    #[test]
+    fn test_mock_time_new() {
+        let time = MockTime::new();
+        let debug = format!("{time:?}");
+        assert!(debug.contains("MockTime"));
+    }
+
+    #[test]
+    fn test_mock_time_default() {
+        let time = MockTime::default();
+        let debug = format!("{time:?}");
+        assert!(debug.contains("MockTime"));
+    }
+
+    #[test]
+    fn test_mock_time_clone() {
+        let time = MockTime::new();
+        let cloned = time.clone();
+        let _ = format!("{cloned:?}");
+    }
+
+    #[test]
+    fn test_mock_time_now() {
+        let time = MockTime::new();
+        let now = time.now();
+        let diff = chrono::Utc::now() - now;
+        assert!(diff.num_seconds().abs() < 2);
+    }
+
+    // ============================================================================
+    // block_on Tests
+    // ============================================================================
+
+    #[test]
+    fn test_block_on_sync_value() {
+        let result = block_on(async { 42 });
+        assert_eq!(result, 42);
+    }
+
+    #[test]
+    fn test_block_on_async_operation() {
+        let result = block_on(async {
+            let storage = MockStorage::new();
+            storage.get_session("test").await.unwrap()
+        });
+        assert!(result.is_some());
+    }
+}

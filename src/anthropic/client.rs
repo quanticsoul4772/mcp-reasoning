@@ -1431,4 +1431,24 @@ data: {"type": "message_stop", "usage": {"input_tokens": 15, "output_tokens": 25
         assert_eq!(thinking_text, "Let me think...");
         assert_eq!(response_text, "The answer is 42.");
     }
+
+    #[test]
+    fn test_client_with_api_key() {
+        let client = AnthropicClient::with_api_key("test-key").unwrap();
+        assert!(client.base_url().contains("anthropic"));
+    }
+
+    #[test]
+    fn test_client_base_url() {
+        let config = ClientConfig::default().with_base_url("https://custom.api.example.com");
+        let client = AnthropicClient::new("test-key", config).unwrap();
+        assert_eq!(client.base_url(), "https://custom.api.example.com");
+    }
+
+    #[test]
+    fn test_client_config_getter() {
+        let config = ClientConfig::default().with_timeout_ms(5000);
+        let client = AnthropicClient::new("test-key", config).unwrap();
+        assert_eq!(client.config().timeout_ms, 5000);
+    }
 }

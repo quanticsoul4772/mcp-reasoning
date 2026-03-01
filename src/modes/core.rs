@@ -788,4 +788,73 @@ That's all!"#;
         let result = find_json_in_text(text);
         assert_eq!(result, Some("{\"obj\": true}".to_string()));
     }
+
+    // =========================================================================
+    // ModeCore Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_mode_core_new() {
+        let storage = crate::storage::SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
+        let client_config = crate::anthropic::ClientConfig::default();
+        let client = crate::anthropic::AnthropicClient::new("test-key", client_config)
+            .expect("create client");
+        let core = ModeCore::new(Arc::new(storage), Arc::new(client));
+        let debug = format!("{core:?}");
+        assert!(debug.contains("ModeCore"));
+    }
+
+    #[tokio::test]
+    async fn test_mode_core_storage_getter() {
+        let storage = crate::storage::SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
+        let client_config = crate::anthropic::ClientConfig::default();
+        let client = crate::anthropic::AnthropicClient::new("test-key", client_config)
+            .expect("create client");
+        let core = ModeCore::new(Arc::new(storage), Arc::new(client));
+        let _ = core.storage();
+    }
+
+    #[tokio::test]
+    async fn test_mode_core_client_getter() {
+        let storage = crate::storage::SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
+        let client_config = crate::anthropic::ClientConfig::default();
+        let client = crate::anthropic::AnthropicClient::new("test-key", client_config)
+            .expect("create client");
+        let core = ModeCore::new(Arc::new(storage), Arc::new(client));
+        let _ = core.client();
+    }
+
+    #[tokio::test]
+    async fn test_mode_core_storage_arc() {
+        let storage = crate::storage::SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
+        let client_config = crate::anthropic::ClientConfig::default();
+        let client = crate::anthropic::AnthropicClient::new("test-key", client_config)
+            .expect("create client");
+        let storage_arc = Arc::new(storage);
+        let core = ModeCore::new(Arc::clone(&storage_arc), Arc::new(client));
+        let cloned = core.storage_arc();
+        assert!(Arc::ptr_eq(&storage_arc, &cloned));
+    }
+
+    #[tokio::test]
+    async fn test_mode_core_client_arc() {
+        let storage = crate::storage::SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
+        let client_config = crate::anthropic::ClientConfig::default();
+        let client = crate::anthropic::AnthropicClient::new("test-key", client_config)
+            .expect("create client");
+        let client_arc = Arc::new(client);
+        let core = ModeCore::new(Arc::new(storage), Arc::clone(&client_arc));
+        let cloned = core.client_arc();
+        assert!(Arc::ptr_eq(&client_arc, &cloned));
+    }
 }
