@@ -1164,6 +1164,24 @@ mod tests {
     }
 
     #[test]
+    fn test_branch_new_with_all_fields() {
+        let branch = Branch::new("b-1", "Title", "Content", 0.85);
+        assert_eq!(branch.id, "b-1");
+        assert_eq!(branch.title, "Title");
+        assert_eq!(branch.content, "Content");
+        assert_eq!(branch.score, 0.85);
+        assert_eq!(branch.status, BranchStatus::Active);
+    }
+
+    #[test]
+    fn test_tree_response_new_with_session() {
+        let response = TreeResponse::new("session-1");
+        assert_eq!(response.session_id, "session-1");
+        assert!(response.branches.is_none());
+        assert!(response.branch_id.is_none());
+    }
+
+    #[test]
     fn test_branch_from_stored_with_json_content() {
         let stored = StoredBranch::new(
             "b-1",
