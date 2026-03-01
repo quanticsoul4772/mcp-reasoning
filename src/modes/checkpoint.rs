@@ -820,4 +820,16 @@ mod tests {
         let debug = format!("{mode:?}");
         assert!(debug.contains("CheckpointMode"));
     }
+
+    #[test]
+    fn test_checkpoint_context_with_open_questions() {
+        let context = CheckpointContext::new(
+            vec!["Finding 1".to_string()],
+            "Current focus",
+            vec!["Question 1?".to_string(), "Question 2?".to_string()],
+        );
+        assert_eq!(context.key_findings.len(), 1);
+        assert_eq!(context.open_questions.len(), 2);
+        assert_eq!(context.current_focus, "Current focus");
+    }
 }
