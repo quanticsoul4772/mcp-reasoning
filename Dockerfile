@@ -2,7 +2,7 @@
 FROM rust:1.75-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev sqlite-dev
+RUN apk add --no-cache musl-dev sqlite-dev openssl-dev openssl-libs-static pkgconfig
 
 WORKDIR /build
 
