@@ -572,6 +572,7 @@ where
 )]
 mod tests {
     use super::*;
+    use crate::error::StorageError;
     use crate::traits::{CompletionResponse, MockAnthropicClientTrait, MockStorageTrait, Usage};
 
     fn mock_create_response(num_branches: usize) -> String {
@@ -607,6 +608,31 @@ mod tests {
         assert_eq!(format!("{}", BranchStatus::Active), "active");
         assert_eq!(format!("{}", BranchStatus::Completed), "completed");
         assert_eq!(format!("{}", BranchStatus::Abandoned), "abandoned");
+    }
+
+    #[test]
+    fn test_branch_new_with_defaults() {
+        let branch = Branch::new("b-1", "Test Title", "Test Content", 0.75);
+        assert_eq!(branch.id, "b-1");
+        assert_eq!(branch.title, "Test Title");
+        assert_eq!(branch.content, "Test Content");
+        assert_eq!(branch.status, BranchStatus::Active);
+        assert!((branch.score - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_tree_response_builder() {
+        let branch = Branch::new("b-1", "Title", "Content", 0.8);
+        let response = TreeResponse::new("session-1")
+            .with_branches(vec![branch])
+            .with_recommendation("Test recommendation");
+
+        assert_eq!(response.session_id, "session-1");
+        assert_eq!(response.branches.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            response.recommendation.as_ref().unwrap(),
+            "Test recommendation"
+        );
     }
 
     #[test]
@@ -1029,6 +1055,73 @@ mod tests {
         assert!(matches!(
             result,
             Err(ModeError::InvalidValue { field, .. }) if field == "branch_id"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_tree_list_storage_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_branches().returning(|_| {
+            Err(StorageError::ConnectionFailed {
+                message: "Database error".to_string(),
+            })
+        });
+
+        let mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.list("test-session").await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_tree_focus_session_mismatch() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        // Branch belongs to different session
+        mock_storage.expect_get_branch().returning(|_| {
+            Ok(Some(StoredBranch::new(
+                "b-1",
+                "other-session",
+                r#"{"title":"Branch","content":"Test"}"#,
+            )))
+        });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.focus("test-session", "b-1").await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ModeError::InvalidValue { field, reason })
+            if field == "branch_id" && reason.contains("not found in session")
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_tree_complete_session_mismatch() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        // Branch belongs to different session
+        mock_storage.expect_get_branch().returning(|_| {
+            Ok(Some(StoredBranch::new(
+                "b-1",
+                "other-session",
+                r#"{"title":"Branch","content":"Test"}"#,
+            )))
+        });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.complete("test-session", "b-1", true).await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ModeError::InvalidValue { field, reason })
+            if field == "session_id" && reason.contains("No branches found")
         ));
     }
 
