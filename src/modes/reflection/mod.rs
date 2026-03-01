@@ -890,4 +890,170 @@ mod tests {
         let debug = format!("{mode:?}");
         assert!(debug.contains("ReflectionMode"));
     }
+
+    #[tokio::test]
+    async fn test_reflection_process_streaming_success() {
+        use crate::anthropic::{ApiUsage, StreamEvent};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_process_response();
+        mock_client
+            .expect_complete_streaming()
+            .returning(move |_, _| {
+                let response_text = response_json.clone();
+                let (tx, rx) = tokio::sync::mpsc::channel(32);
+
+                tokio::spawn(async move {
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStart {
+                            message_id: "msg_123".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStart {
+                            index: 0,
+                            block_type: "text".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::TextDelta {
+                            index: 0,
+                            text: response_text,
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStop { index: 0 }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStop {
+                            stop_reason: "end_turn".to_string(),
+                            usage: ApiUsage::new(100, 200),
+                        }))
+                        .await;
+                });
+                Ok(rx)
+            });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode.process_streaming("Test content", None, None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.session_id, "test-session");
+        assert!(!response.refined_reasoning.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reflection_evaluate_streaming_success() {
+        use crate::anthropic::{ApiUsage, StreamEvent};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_session()
+            .returning(|_| Ok(Some(Session::new("test-session"))));
+        mock_storage.expect_get_thoughts().returning(|_| {
+            Ok(vec![Thought::new(
+                "t-1",
+                "test-session",
+                "Test thought",
+                "linear",
+                0.8,
+            )])
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_evaluate_response();
+        mock_client
+            .expect_complete_streaming()
+            .returning(move |_, _| {
+                let response_text = response_json.clone();
+                let (tx, rx) = tokio::sync::mpsc::channel(32);
+
+                tokio::spawn(async move {
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStart {
+                            message_id: "msg_123".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStart {
+                            index: 0,
+                            block_type: "text".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::TextDelta {
+                            index: 0,
+                            text: response_text,
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStop { index: 0 }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStop {
+                            stop_reason: "end_turn".to_string(),
+                            usage: ApiUsage::new(100, 200),
+                        }))
+                        .await;
+                });
+                Ok(rx)
+            });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode.evaluate_streaming("test-session", None, None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.session_id, "test-session");
+        assert!(!response.key_insights.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reflection_process_streaming_api_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete_streaming().returning(|_, _| {
+            Err(ModeError::ApiUnavailable {
+                message: "Streaming API error".to_string(),
+            })
+        });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode.process_streaming("Test content", None, None).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_reflection_evaluate_streaming_empty_session() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_session()
+            .returning(|_| Ok(Some(Session::new("test-session"))));
+        mock_storage.expect_get_thoughts().returning(|_| Ok(vec![]));
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode.evaluate_streaming("test-session", None, None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(response.key_insights.is_empty());
+    }
 }

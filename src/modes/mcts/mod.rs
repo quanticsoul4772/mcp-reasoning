@@ -668,4 +668,210 @@ mod tests {
         let debug = format!("{mode:?}");
         assert!(debug.contains("MctsMode"));
     }
+
+    #[tokio::test]
+    async fn test_explore_streaming_success() {
+        use crate::anthropic::{ApiUsage, StreamEvent};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_explore_response();
+        mock_client
+            .expect_complete_streaming()
+            .returning(move |_, _| {
+                let response_text = response_json.clone();
+                let (tx, rx) = tokio::sync::mpsc::channel(32);
+
+                tokio::spawn(async move {
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStart {
+                            message_id: "msg_123".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStart {
+                            index: 0,
+                            block_type: "text".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::TextDelta {
+                            index: 0,
+                            text: response_text,
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStop { index: 0 }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStop {
+                            stop_reason: "end_turn".to_string(),
+                            usage: ApiUsage::new(100, 200),
+                        }))
+                        .await;
+                });
+                Ok(rx)
+            });
+
+        let mode = MctsMode::new(mock_storage, mock_client);
+        let result = mode
+            .explore_streaming("Test search state", None, None)
+            .await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.session_id, "test-session");
+        assert!(!response.frontier_evaluation.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_auto_backtrack_streaming_success() {
+        use crate::anthropic::{ApiUsage, StreamEvent};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_backtrack_response();
+        mock_client
+            .expect_complete_streaming()
+            .returning(move |_, _| {
+                let response_text = response_json.clone();
+                let (tx, rx) = tokio::sync::mpsc::channel(32);
+
+                tokio::spawn(async move {
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStart {
+                            message_id: "msg_123".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStart {
+                            index: 0,
+                            block_type: "text".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::TextDelta {
+                            index: 0,
+                            text: response_text,
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStop { index: 0 }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStop {
+                            stop_reason: "end_turn".to_string(),
+                            usage: ApiUsage::new(100, 200),
+                        }))
+                        .await;
+                });
+                Ok(rx)
+            });
+
+        let mode = MctsMode::new(mock_storage, mock_client);
+        let result = mode.auto_backtrack_streaming("node_5", None, None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.session_id, "test-session");
+        assert!(response.backtrack_decision.should_backtrack);
+    }
+
+    #[tokio::test]
+    async fn test_explore_streaming_api_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete_streaming().returning(|_, _| {
+            Err(ModeError::ApiUnavailable {
+                message: "Streaming API error".to_string(),
+            })
+        });
+
+        let mode = MctsMode::new(mock_storage, mock_client);
+        let result = mode.explore_streaming("Test content", None, None).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_auto_backtrack_streaming_with_progress() {
+        use crate::anthropic::{ApiUsage, StreamEvent};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_backtrack_response();
+        mock_client
+            .expect_complete_streaming()
+            .returning(move |_, _| {
+                let response_text = response_json.clone();
+                let (tx, rx) = tokio::sync::mpsc::channel(32);
+
+                tokio::spawn(async move {
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStart {
+                            message_id: "msg_123".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStart {
+                            index: 0,
+                            block_type: "text".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::TextDelta {
+                            index: 0,
+                            text: response_text,
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ContentBlockStop { index: 0 }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::MessageStop {
+                            stop_reason: "end_turn".to_string(),
+                            usage: ApiUsage::new(100, 200),
+                        }))
+                        .await;
+                });
+                Ok(rx)
+            });
+
+        let (progress_tx, _progress_rx) = tokio::sync::broadcast::channel(10);
+        let progress_reporter = ProgressReporter::new("test-progress", progress_tx);
+
+        let mode = MctsMode::new(mock_storage, mock_client);
+        let result = mode
+            .auto_backtrack_streaming("node_5", None, Some(&progress_reporter))
+            .await;
+
+        assert!(result.is_ok());
+    }
 }
