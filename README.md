@@ -44,7 +44,7 @@ Each tool includes intelligent metadata: execution time predictions, next-step s
 
 Choose the method that works best for you:
 
-#### 🚀 Option 1: One-Command Install (Recommended)
+#### Option 1: One-Command Install (Recommended)
 
 **macOS/Linux:**
 
@@ -60,7 +60,7 @@ irm https://raw.githubusercontent.com/quanticsoul4772/mcp-reasoning/main/install
 
 This downloads the pre-built binary, installs it to your PATH, and offers to configure Claude Desktop automatically.
 
-#### 📦 Option 2: npm (Easiest for Developers)
+#### Option 2: npm
 
 ```bash
 # Global install
@@ -72,7 +72,7 @@ npx @mcp-reasoning/server --version
 
 **Why npm?** Cross-platform, auto-updates, works with `npx` (no install needed).
 
-#### 🍺 Option 3: Homebrew (macOS/Linux)
+#### Option 3: Homebrew (macOS/Linux)
 
 ```bash
 brew tap quanticsoul4772/mcp
@@ -81,7 +81,7 @@ brew install mcp-reasoning
 
 Auto-updates with `brew upgrade`.
 
-#### 🍫 Option 4: Chocolatey (Windows)
+#### Option 4: Chocolatey (Windows)
 
 ```powershell
 choco install mcp-reasoning
@@ -89,7 +89,7 @@ choco install mcp-reasoning
 
 Auto-updates with `choco upgrade`.
 
-#### 🐳 Option 5: Docker
+#### Option 5: Docker
 
 ```bash
 docker pull ghcr.io/quanticsoul4772/mcp-reasoning:latest
@@ -100,7 +100,7 @@ curl -O https://raw.githubusercontent.com/quanticsoul4772/mcp-reasoning/main/doc
 docker-compose up -d
 ```
 
-#### 🔨 Option 6: Build from Source
+#### Option 6: Build from Source
 
 ```bash
 git clone https://github.com/quanticsoul4772/mcp-reasoning.git
