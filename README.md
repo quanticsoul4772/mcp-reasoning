@@ -1,17 +1,15 @@
 # MCP Reasoning Server
 
-A high-performance MCP server that provides 15 structured reasoning tools for Claude Code and Claude Desktop. Built in Rust for speed and reliability.
+A Rust MCP server providing 15 structured reasoning tools for Claude Code and Claude Desktop.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-![Tests](https://img.shields.io/badge/Tests-2020%20passing-brightgreen.svg)
-![Coverage](https://img.shields.io/badge/Coverage-95%25-brightgreen.svg)
 
 ---
 
 ## What It Does
 
-Enables Claude to reason systematically through complex problems using specialized reasoning modes:
+Provides Claude with structured reasoning modes:
 
 - **Linear** - Step-by-step sequential reasoning
 - **Tree** - Explore multiple solution paths in parallel
@@ -29,7 +27,7 @@ Enables Claude to reason systematically through complex problems using specializ
 - **Preset** - Pre-configured multi-step workflows
 - **Metrics** - Track usage and performance
 
-Each tool includes intelligent metadata: execution time predictions, next-step suggestions, and workflow recommendations that improve with use.
+Each tool returns metadata: execution time estimates, next-step suggestions, and workflow recommendations.
 
 ---
 
@@ -38,13 +36,11 @@ Each tool includes intelligent metadata: execution time predictions, next-step s
 ### Prerequisites
 
 - [Anthropic API key](https://console.anthropic.com/) (required)
-- Choose one installation method below (no Rust required!)
+- Choose one installation method below
 
 ### Installation
 
-Choose the method that works best for you:
-
-#### Option 1: One-Command Install (Recommended)
+#### Option 1: One-Command Install
 
 **macOS/Linux:**
 
@@ -58,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/quanticsoul4772/mcp-reasoning/main/
 irm https://raw.githubusercontent.com/quanticsoul4772/mcp-reasoning/main/install.ps1 | iex
 ```
 
-This downloads the pre-built binary, installs it to your PATH, and offers to configure Claude Desktop automatically.
+Downloads a pre-built binary to your PATH and optionally configures Claude Desktop.
 
 #### Option 2: npm
 
@@ -70,7 +66,7 @@ npm install -g @mcp-reasoning/server
 npx @mcp-reasoning/server --version
 ```
 
-**Why npm?** Cross-platform, auto-updates, works with `npx` (no install needed).
+Works with `npx` without a global install.
 
 #### Option 3: Homebrew (macOS/Linux)
 
@@ -79,15 +75,11 @@ brew tap quanticsoul4772/mcp
 brew install mcp-reasoning
 ```
 
-Auto-updates with `brew upgrade`.
-
 #### Option 4: Chocolatey (Windows)
 
 ```powershell
 choco install mcp-reasoning
 ```
-
-Auto-updates with `choco upgrade`.
 
 #### Option 5: Docker
 
@@ -115,12 +107,9 @@ Requires [Rust 1.75+](https://www.rust-lang.org/tools/install).
 
 ### Configuration
 
-#### Automatic Configuration (Easiest)
-
-After installing the binary, run:
+#### Automatic Configuration
 
 ```bash
-# Interactive wizard guides you through setup
 curl -fsSL https://raw.githubusercontent.com/quanticsoul4772/mcp-reasoning/main/configure.sh | bash
 ```
 
@@ -228,7 +217,7 @@ Response includes:
 
 ### Built-in Workflows
 
-Five pre-configured workflows orchestrate multiple tools:
+Five pre-configured workflows that chain multiple tools:
 
 - `code-review` - Analyze code with bias detection
 - `debug-analysis` - Hypothesis-driven debugging
@@ -244,26 +233,25 @@ Ask Claude: *"Run the architecture-decision preset to evaluate switching to Kube
 
 ### Session Persistence
 
-All reasoning is saved to SQLite. Continue complex analyses across multiple conversations using checkpoints.
+Reasoning state is stored in SQLite. Sessions can be resumed across conversations using checkpoints.
 
 ### Self-Improvement
 
-The server monitors its own performance and automatically optimizes:
+The server tracks its own performance metrics:
 
-- Learns from actual execution times to improve predictions
+- Records execution times to calibrate duration estimates
 - Detects anomalies and suggests corrections
-- Includes circuit breaker and safety mechanisms
+- Circuit breaker halts changes after consecutive failures
 
 ### Streaming
 
-Long-running operations send progress updates in real-time.
+Long-running operations send progress updates via MCP notifications.
 
-### Performance Optimized
+### Implementation
 
-- ~45% fewer memory allocations than previous version
-- Const SQL queries eliminate repeated parsing
-- Pre-allocated buffers and vectors
-- Zero unsafe code, 95%+ test coverage
+- Zero `unsafe` code (`#![forbid(unsafe_code)]`)
+- Const SQL queries, pre-allocated buffers
+- 2,000+ tests
 
 ---
 
@@ -310,7 +298,7 @@ Anthropic API        SQLite DB
 # Build
 cargo build
 
-# Run all 2,020 tests
+# Run tests
 cargo test
 
 # Check code quality
@@ -323,17 +311,14 @@ cargo llvm-cov
 
 ### Code Quality
 
-- Zero `unsafe` code (enforced)
+- Zero `unsafe` code (enforced via `#![forbid(unsafe_code)]`)
 - No `.unwrap()` or `.expect()` in production paths
-- 2,020 tests with 95%+ coverage
 - Max 500 lines per file
-- Strict clippy lints
+- `clippy -- -D warnings`
 
 ### Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](docs/guides/CONTRIBUTING.md) for guidelines.
-
-**Quick setup:**
+See [CONTRIBUTING.md](docs/guides/CONTRIBUTING.md).
 
 ```bash
 # Install pre-commit hooks
@@ -408,4 +393,4 @@ Built with:
 
 ---
 
-**Questions?** See [docs/README.md](docs/README.md) or [open an issue](https://github.com/quanticsoul4772/mcp-reasoning/issues).
+[docs/README.md](docs/README.md) | [Issues](https://github.com/quanticsoul4772/mcp-reasoning/issues)
