@@ -43,6 +43,7 @@
 //! ```
 
 mod actions;
+mod agent_metrics;
 mod branch;
 mod checkpoint;
 mod core;
@@ -55,7 +56,7 @@ mod types;
 
 pub use self::core::SqliteStorage;
 pub use types::{
-    ActionStatus, BranchStatus, GraphEdgeType, GraphNodeType, StoredBranch, StoredCheckpoint,
-    StoredGraphEdge, StoredGraphNode, StoredMetric, StoredSelfImprovementAction, StoredSession,
-    StoredThought,
+    ActionStatus, BranchStatus, GraphEdgeType, GraphNodeType, StoredAgentInvocation,
+    StoredAgentMessage, StoredBranch, StoredCheckpoint, StoredDiscoveredSkill, StoredGraphEdge,
+    StoredGraphNode, StoredMetric, StoredSelfImprovementAction, StoredSession, StoredThought,
 };

@@ -368,3 +368,63 @@ pub struct RelateSessionsRequest {
     /// Minimum relationship strength (0.0-1.0).
     pub min_strength: Option<f32>,
 }
+
+// ============================================================================
+// Agent & Skill Requests
+// ============================================================================
+
+/// Request to invoke an agent on a task.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentInvokeRequest {
+    /// The agent ID to invoke (e.g., "analyst", "strategist", "explorer").
+    pub agent_id: String,
+    /// The task for the agent to work on.
+    pub task: String,
+    /// Session ID for context continuity.
+    pub session_id: Option<String>,
+}
+
+/// Request to list available agents.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentListRequest {
+    /// Filter by role (e.g., "analyst", "strategist").
+    pub role: Option<String>,
+}
+
+/// Request to run a composable skill.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SkillRunRequest {
+    /// The skill ID to run.
+    pub skill_id: String,
+    /// Input for the skill.
+    pub input: String,
+    /// Session ID for context continuity.
+    pub session_id: Option<String>,
+}
+
+/// Request to run an agent team on a task.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TeamRunRequest {
+    /// The team ID to run.
+    pub team_id: String,
+    /// The task for the team.
+    pub task: String,
+    /// Session ID for context continuity.
+    pub session_id: Option<String>,
+}
+
+/// Request to list available teams.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TeamListRequest {
+    /// Optional filter.
+    pub topology: Option<String>,
+}
+
+/// Request to query agent metrics.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentMetricsRequest {
+    /// Query type: "summary", "by_agent", "discovered_skills".
+    pub query: String,
+    /// Optional agent ID filter.
+    pub agent_id: Option<String>,
+}

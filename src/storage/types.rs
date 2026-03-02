@@ -614,6 +614,71 @@ impl StoredSelfImprovementAction {
     }
 }
 
+/// Agent invocation stored in database.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StoredAgentInvocation {
+    /// Unique invocation ID.
+    pub id: String,
+    /// Agent ID.
+    pub agent_id: String,
+    /// Session ID.
+    pub session_id: String,
+    /// Operation type (invoke, skill_run, team_run, decompose).
+    pub operation: String,
+    /// Task description.
+    pub task: String,
+    /// Skill ID if applicable.
+    pub skill_id: Option<String>,
+    /// Team ID if applicable.
+    pub team_id: Option<String>,
+    /// Latency in milliseconds.
+    pub latency_ms: i64,
+    /// Whether the operation succeeded.
+    pub success: bool,
+    /// Confidence score if applicable.
+    pub confidence: Option<f64>,
+    /// Creation timestamp (set by database).
+    pub created_at: String,
+}
+
+/// Agent message stored in database.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredAgentMessage {
+    /// Unique message ID.
+    pub id: String,
+    /// Session ID.
+    pub session_id: String,
+    /// Sending agent ID.
+    pub from_agent: String,
+    /// Receiving agent ID (None = broadcast).
+    pub to_agent: Option<String>,
+    /// Message content.
+    pub content: String,
+    /// Message type (request, response, info, challenge, synthesis).
+    pub message_type: String,
+    /// Creation timestamp (set by database).
+    pub created_at: String,
+}
+
+/// Discovered skill pattern stored in database.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StoredDiscoveredSkill {
+    /// Unique ID.
+    pub id: String,
+    /// Tool chain (ordered list of modes).
+    pub tool_chain: Vec<String>,
+    /// Number of times this pattern was observed.
+    pub occurrences: i64,
+    /// Average success rate.
+    pub avg_success_rate: f64,
+    /// Whether this has been materialized into a skill.
+    pub materialized: bool,
+    /// The skill ID if materialized.
+    pub skill_id: Option<String>,
+    /// Discovery timestamp (set by database).
+    pub discovered_at: String,
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

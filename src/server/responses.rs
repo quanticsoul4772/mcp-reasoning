@@ -870,6 +870,95 @@ pub struct RelationshipEdge {
     pub strength: f64,
 }
 
+// ============================================================================
+// Agent & Skill Responses
+// ============================================================================
+
+/// Response from agent invocation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentInvokeResponse {
+    /// Agent that was invoked.
+    pub agent_id: String,
+    /// Session used.
+    pub session_id: String,
+    /// Number of steps executed.
+    pub steps_executed: usize,
+    /// Final synthesis.
+    pub synthesis: String,
+    /// Overall success.
+    pub success: bool,
+    /// Agent status.
+    pub status: String,
+    /// Response metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ResponseMetadata>,
+}
+
+/// Response from listing agents.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentListResponse {
+    /// Available agents.
+    pub agents: Vec<crate::agents::types::AgentInfo>,
+    /// Total count.
+    pub total: usize,
+}
+
+/// Response from running a skill.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SkillRunResponse {
+    /// Skill that was run.
+    pub skill_id: String,
+    /// Session used.
+    pub session_id: String,
+    /// Number of steps executed.
+    pub steps_executed: usize,
+    /// Number of steps skipped.
+    pub steps_skipped: usize,
+    /// Final context values.
+    pub context: serde_json::Value,
+    /// Overall success.
+    pub success: bool,
+    /// Response metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ResponseMetadata>,
+}
+
+/// Response from running an agent team.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TeamRunResponse {
+    /// Team that executed.
+    pub team_id: String,
+    /// Session used.
+    pub session_id: String,
+    /// Number of subtasks executed.
+    pub subtasks_executed: usize,
+    /// Final synthesis.
+    pub synthesis: String,
+    /// Overall success.
+    pub success: bool,
+    /// Response metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ResponseMetadata>,
+}
+
+/// Response from listing teams.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TeamListResponse {
+    /// Available teams.
+    pub teams: Vec<crate::agents::team::TeamInfo>,
+    /// Total count.
+    pub total: usize,
+}
+
+/// Response from querying agent metrics.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentMetricsResponse {
+    /// Query type.
+    pub query: String,
+    /// Metrics data.
+    pub data: serde_json::Value,
+}
+
 impl_into_contents!(
     LinearResponse,
     TreeResponse,
@@ -896,6 +985,12 @@ impl_into_contents!(
     ResumeSessionResponse,
     SearchSessionsResponse,
     RelateSessionsResponse,
+    AgentInvokeResponse,
+    AgentListResponse,
+    SkillRunResponse,
+    TeamRunResponse,
+    TeamListResponse,
+    AgentMetricsResponse,
 );
 
 #[cfg(test)]

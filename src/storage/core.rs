@@ -140,6 +140,16 @@ impl SqliteStorage {
                 message: format!("Failed to run migration 004: {e}"),
             })?;
 
+        // Migration 005: Agent system (invocations, messages, discovered skills)
+        let schema_005 = include_str!("../../migrations/005_agents.sql");
+        sqlx::query(schema_005)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::MigrationFailed {
+                version: "005".to_string(),
+                message: format!("Failed to run migration 005: {e}"),
+            })?;
+
         Ok(())
     }
 

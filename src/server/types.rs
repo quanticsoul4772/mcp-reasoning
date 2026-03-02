@@ -8,12 +8,15 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 
 use super::progress::ProgressEvent;
+use crate::agents::metrics::AgentMetricsCollector;
+use crate::agents::{AgentRegistry, TeamRegistry};
 use crate::anthropic::AnthropicClient;
 use crate::config::Config;
 use crate::metadata::MetadataBuilder;
 use crate::metrics::MetricsCollector;
 use crate::presets::PresetRegistry;
 use crate::self_improvement::ManagerHandle;
+use crate::skills::SkillRegistry;
 use crate::storage::SqliteStorage;
 
 /// Shared application state for all tool handlers.
@@ -37,6 +40,14 @@ pub struct AppState {
     pub metrics: Arc<MetricsCollector>,
     /// Preset registry for workflow presets.
     pub presets: Arc<PresetRegistry>,
+    /// Agent registry for available agents.
+    pub agents: Arc<AgentRegistry>,
+    /// Skill registry for composable skills.
+    pub skills: Arc<SkillRegistry>,
+    /// Team registry for agent team configurations.
+    pub teams: Arc<TeamRegistry>,
+    /// Agent metrics collector.
+    pub agent_metrics: Arc<AgentMetricsCollector>,
     /// Self-improvement manager handle.
     ///
     /// This handle allows MCP tools to interact with the self-improvement system.
@@ -73,12 +84,18 @@ impl AppState {
         metadata_builder: MetadataBuilder,
         progress_tx: broadcast::Sender<ProgressEvent>,
     ) -> Self {
+        let preset_registry = PresetRegistry::new();
+        let skill_registry = SkillRegistry::with_presets(&preset_registry);
         Self {
             storage: Arc::new(storage),
             client: Arc::new(client),
             config: Arc::new(config),
             metrics,
-            presets: Arc::new(PresetRegistry::new()),
+            presets: Arc::new(preset_registry),
+            agents: Arc::new(AgentRegistry::new()),
+            skills: Arc::new(skill_registry),
+            teams: Arc::new(TeamRegistry::new()),
+            agent_metrics: Arc::new(AgentMetricsCollector::new()),
             self_improvement: Arc::new(self_improvement),
             metadata_builder: Arc::new(metadata_builder),
             progress_tx,

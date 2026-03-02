@@ -53,6 +53,7 @@
 #![allow(clippy::suboptimal_flops)] // Readable math over optimal
 #![allow(clippy::assigning_clones)] // clone() is often clearer than clone_from()
 
+pub mod agents;
 pub mod anthropic;
 pub mod config;
 pub mod error;
@@ -63,6 +64,7 @@ pub mod presets;
 pub mod prompts;
 pub mod self_improvement;
 pub mod server;
+pub mod skills;
 pub mod storage;
 pub mod traits;
 
