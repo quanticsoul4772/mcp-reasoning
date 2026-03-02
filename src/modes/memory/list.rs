@@ -6,7 +6,7 @@ use crate::storage::SqliteStorage;
 use sqlx::Row;
 
 const SQL_LIST_SESSIONS: &str = r"
-SELECT 
+SELECT
     s.id,
     s.created_at,
     s.updated_at,
@@ -107,7 +107,7 @@ pub async fn list_sessions(
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::storage::SqliteStorage;
+    use crate::storage::{SqliteStorage, StoredThought};
 
     #[tokio::test]
     async fn test_list_empty_sessions() {
@@ -131,16 +131,30 @@ mod tests {
 
         // Create test sessions
         let session1 = storage.create_session().await.expect("create session");
+        let t1 = StoredThought::new(
+            uuid::Uuid::new_v4().to_string(),
+            &session1.id,
+            "linear",
+            "Test thought 1",
+            0.8,
+        );
         storage
-            .create_thought(&session1.id, None, "linear", "Test thought 1", 0.8, None)
+            .save_stored_thought(&t1)
             .await
-            .expect("create thought");
+            .expect("save thought");
 
         let session2 = storage.create_session().await.expect("create session");
+        let t2 = StoredThought::new(
+            uuid::Uuid::new_v4().to_string(),
+            &session2.id,
+            "tree",
+            "Test thought 2",
+            0.9,
+        );
         storage
-            .create_thought(&session2.id, None, "tree", "Test thought 2", 0.9, None)
+            .save_stored_thought(&t2)
             .await
-            .expect("create thought");
+            .expect("save thought");
 
         let (sessions, total, has_more) = list_sessions(&storage, None, None, None)
             .await
@@ -161,17 +175,17 @@ mod tests {
         // Create 5 test sessions
         for i in 0..5 {
             let session = storage.create_session().await.expect("create session");
+            let thought = StoredThought::new(
+                uuid::Uuid::new_v4().to_string(),
+                &session.id,
+                "linear",
+                &format!("Test thought {i}"),
+                0.8,
+            );
             storage
-                .create_thought(
-                    &session.id,
-                    None,
-                    "linear",
-                    &format!("Test thought {i}"),
-                    0.8,
-                    None,
-                )
+                .save_stored_thought(&thought)
                 .await
-                .expect("create thought");
+                .expect("save thought");
         }
 
         let (sessions, total, has_more) = list_sessions(&storage, Some(2), Some(0), None)
@@ -197,16 +211,30 @@ mod tests {
             .expect("create storage");
 
         let session1 = storage.create_session().await.expect("create session");
+        let t1 = StoredThought::new(
+            uuid::Uuid::new_v4().to_string(),
+            &session1.id,
+            "linear",
+            "Linear thought",
+            0.8,
+        );
         storage
-            .create_thought(&session1.id, None, "linear", "Linear thought", 0.8, None)
+            .save_stored_thought(&t1)
             .await
-            .expect("create thought");
+            .expect("save thought");
 
         let session2 = storage.create_session().await.expect("create session");
+        let t2 = StoredThought::new(
+            uuid::Uuid::new_v4().to_string(),
+            &session2.id,
+            "tree",
+            "Tree thought",
+            0.9,
+        );
         storage
-            .create_thought(&session2.id, None, "tree", "Tree thought", 0.9, None)
+            .save_stored_thought(&t2)
             .await
-            .expect("create thought");
+            .expect("save thought");
 
         let (sessions, _, _) = list_sessions(&storage, None, None, Some("linear".to_string()))
             .await

@@ -79,7 +79,7 @@ async fn load_search_result(
 ) -> Result<Option<SearchResult>, ModeError> {
     let row = sqlx::query(
         r"
-        SELECT 
+        SELECT
             s.id,
             s.created_at,
             (SELECT content FROM thoughts WHERE session_id = s.id ORDER BY created_at LIMIT 1) as preview,
@@ -116,15 +116,15 @@ async fn load_search_result(
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::storage::SqliteStorage;
-    use crate::test_utils::create_mock_client;
+    use crate::storage::{SqliteStorage, StoredThought};
+    use crate::test_utils::mock_anthropic_success;
 
     #[tokio::test]
     async fn test_search_empty() {
         let storage = SqliteStorage::new_in_memory()
             .await
             .expect("create storage");
-        let client = create_mock_client();
+        let client = mock_anthropic_success("", 0, 0);
 
         let results = search_sessions(&storage, &client, "test query", 5, 0.7, None)
             .await
@@ -138,26 +138,26 @@ mod tests {
         let storage = SqliteStorage::new_in_memory()
             .await
             .expect("create storage");
-        let client = create_mock_client();
+        let client = mock_anthropic_success("", 0, 0);
 
         // Create test session
         let session = storage.create_session().await.expect("create session");
+        let thought = StoredThought::new(
+            uuid::Uuid::new_v4().to_string(),
+            &session.id,
+            "linear",
+            "Test thought about reasoning",
+            0.8,
+        );
         storage
-            .create_thought(
-                &session.id,
-                None,
-                "linear",
-                "Test thought about reasoning",
-                0.8,
-                None,
-            )
+            .save_stored_thought(&thought)
             .await
-            .expect("create thought");
+            .expect("save thought");
 
         let results = search_sessions(&storage, &client, "reasoning", 5, 0.0, None)
             .await
             .expect("search sessions");
 
-        assert!(results.len() > 0);
+        assert!(!results.is_empty());
     }
 }

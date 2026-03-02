@@ -13,7 +13,7 @@ macro_rules! impl_into_contents {
         $(
             impl IntoContents for $ty {
                 fn into_contents(self) -> Vec<Content> {
-                    match serde_json::to_string(&self) {
+                    match serde_json::to_string_pretty(&self) {
                         Ok(json) => vec![Content::text(json)],
                         Err(e) => vec![Content::text(format!("{{\"error\": \"{}\"}}", e))],
                     }

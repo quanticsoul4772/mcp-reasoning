@@ -120,6 +120,26 @@ impl SqliteStorage {
                 message: format!("Failed to run migration 002: {e}"),
             })?;
 
+        // Migration 003: Tool timing history
+        let schema_003 = include_str!("../../migrations/003_tool_timing_history.sql");
+        sqlx::query(schema_003)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::MigrationFailed {
+                version: "003".to_string(),
+                message: format!("Failed to run migration 003: {e}"),
+            })?;
+
+        // Migration 004: Memory tools (session embeddings, relationships)
+        let schema_004 = include_str!("../../migrations/004_memory_tools.sql");
+        sqlx::query(schema_004)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::MigrationFailed {
+                version: "004".to_string(),
+                message: format!("Failed to run migration 004: {e}"),
+            })?;
+
         Ok(())
     }
 

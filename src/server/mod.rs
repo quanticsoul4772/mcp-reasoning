@@ -69,9 +69,10 @@ pub use params::{
     CheckpointParams, CounterfactualParams, DecisionCriterion, DecisionParams, DecisionType,
     DetectParams, DetectType, DivergentParams, EvidenceParams, EvidencePieceDef,
     EvidenceSourceType, EvidenceType, GraphConfig, GraphOperation, GraphParams, LinearParams,
-    MctsOperation, MctsParams, MergeStrategy, MetricsParams, MetricsQuery, PresetOperation,
-    PresetParams, ReflectionOperation, ReflectionParams, StakeholderDef, TimelineOperation,
-    TimelineParams, TreeOperation, TreeParams,
+    ListSessionsParams, MctsOperation, MctsParams, MergeStrategy, MetricsParams, MetricsQuery,
+    PresetOperation, PresetParams, ReflectionOperation, ReflectionParams, RelateParams,
+    ResumeParams, SearchParams, StakeholderDef, TimelineOperation, TimelineParams, TreeOperation,
+    TreeParams,
 };
 pub use progress::{create_progress_channel, ProgressEvent, ProgressMilestone, ProgressReporter};
 pub use requests::{

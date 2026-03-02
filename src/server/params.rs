@@ -841,6 +841,76 @@ const fn default_limit() -> u32 {
     100
 }
 
+/// Parameters for listing reasoning sessions.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListSessionsParams {
+    /// Maximum number of sessions to return.
+    #[schemars(description = "Maximum number of sessions to return")]
+    pub limit: Option<u32>,
+
+    /// Number of sessions to skip.
+    #[schemars(description = "Number of sessions to skip")]
+    pub offset: Option<u32>,
+
+    /// Filter by reasoning mode.
+    #[schemars(description = "Filter by reasoning mode")]
+    pub mode_filter: Option<String>,
+}
+
+/// Parameters for resuming a reasoning session.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ResumeParams {
+    /// Session ID to resume.
+    #[schemars(description = "Session ID to resume")]
+    pub session_id: String,
+
+    /// Include checkpoints in the response.
+    #[schemars(description = "Include checkpoints in the response")]
+    pub include_checkpoints: Option<bool>,
+
+    /// Compress long content using Claude.
+    #[schemars(description = "Compress long content using Claude")]
+    pub compress: Option<bool>,
+}
+
+/// Parameters for searching reasoning sessions.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SearchParams {
+    /// Search query.
+    #[schemars(description = "Search query")]
+    pub query: String,
+
+    /// Maximum number of results.
+    #[schemars(description = "Maximum number of results")]
+    pub limit: Option<u32>,
+
+    /// Minimum similarity score (0.0-1.0).
+    #[schemars(range(min = 0.0, max = 1.0))]
+    #[schemars(description = "Minimum similarity score (0.0-1.0)")]
+    pub min_similarity: Option<f64>,
+
+    /// Filter by reasoning mode.
+    #[schemars(description = "Filter by reasoning mode")]
+    pub mode_filter: Option<String>,
+}
+
+/// Parameters for analyzing session relationships.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RelateParams {
+    /// Session ID to analyze (if None, analyzes all sessions).
+    #[schemars(description = "Session ID to analyze (if None, analyzes all sessions)")]
+    pub session_id: Option<String>,
+
+    /// Maximum graph depth.
+    #[schemars(description = "Maximum graph depth")]
+    pub depth: Option<u32>,
+
+    /// Minimum relationship strength (0.0-1.0).
+    #[schemars(range(min = 0.0, max = 1.0))]
+    #[schemars(description = "Minimum relationship strength (0.0-1.0)")]
+    pub min_strength: Option<f32>,
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

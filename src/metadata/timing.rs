@@ -93,7 +93,7 @@ impl TimingDatabase {
         tool: &str,
         mode: Option<&str>,
     ) -> Result<Option<(u64, usize)>, AppError> {
-        let result: Option<(i64, i64)> = sqlx::query_as(
+        let result: Option<(Option<i64>, i64)> = sqlx::query_as(
             "SELECT AVG(duration_ms), COUNT(*)
              FROM tool_timing_history
              WHERE tool_name = ? AND (mode_name = ? OR ? IS NULL)
@@ -112,7 +112,10 @@ impl TimingDatabase {
             })
         })?;
 
-        Ok(result.map(|(avg, count)| (avg as u64, count as usize)))
+        match result {
+            Some((Some(avg), count)) if count > 0 => Ok(Some((avg as u64, count as usize))),
+            _ => Ok(None),
+        }
     }
 }
 

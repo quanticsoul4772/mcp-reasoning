@@ -191,15 +191,15 @@ fn generate_suggestions(thoughts: &[ThoughtSummary], last_mode: &Option<String>)
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::storage::SqliteStorage;
-    use crate::test_utils::create_mock_client;
+    use crate::storage::{SqliteStorage, StoredCheckpoint, StoredThought};
+    use crate::test_utils::mock_anthropic_success;
 
     #[tokio::test]
     async fn test_resume_nonexistent_session() {
         let storage = SqliteStorage::new_in_memory()
             .await
             .expect("create storage");
-        let client = create_mock_client();
+        let client = mock_anthropic_success("", 0, 0);
 
         let result = resume_session(&storage, &client, "nonexistent", false, false).await;
         assert!(result.is_err());
@@ -210,7 +210,7 @@ mod tests {
         let storage = SqliteStorage::new_in_memory()
             .await
             .expect("create storage");
-        let client = create_mock_client();
+        let client = mock_anthropic_success("", 0, 0);
 
         let session = storage.create_session().await.expect("create session");
 
@@ -227,17 +227,31 @@ mod tests {
         let storage = SqliteStorage::new_in_memory()
             .await
             .expect("create storage");
-        let client = create_mock_client();
+        let client = mock_anthropic_success("", 0, 0);
 
         let session = storage.create_session().await.expect("create session");
+        let t1 = StoredThought::new(
+            uuid::Uuid::new_v4().to_string(),
+            &session.id,
+            "linear",
+            "Thought 1",
+            0.8,
+        );
         storage
-            .create_thought(&session.id, None, "linear", "Thought 1", 0.8, None)
+            .save_stored_thought(&t1)
             .await
-            .expect("create thought");
+            .expect("save thought");
+        let t2 = StoredThought::new(
+            uuid::Uuid::new_v4().to_string(),
+            &session.id,
+            "linear",
+            "Thought 2",
+            0.9,
+        );
         storage
-            .create_thought(&session.id, None, "linear", "Thought 2", 0.9, None)
+            .save_stored_thought(&t2)
             .await
-            .expect("create thought");
+            .expect("save thought");
 
         let context = resume_session(&storage, &client, &session.id, false, false)
             .await
@@ -253,13 +267,16 @@ mod tests {
         let storage = SqliteStorage::new_in_memory()
             .await
             .expect("create storage");
-        let client = create_mock_client();
+        let client = mock_anthropic_success("", 0, 0);
 
         let session = storage.create_session().await.expect("create session");
+        let checkpoint =
+            StoredCheckpoint::new(uuid::Uuid::new_v4().to_string(), &session.id, "test", "{}")
+                .with_description("Test checkpoint");
         storage
-            .create_checkpoint(&session.id, "test", Some("Test checkpoint"), "{}")
+            .save_checkpoint(&checkpoint)
             .await
-            .expect("create checkpoint");
+            .expect("save checkpoint");
 
         let context = resume_session(&storage, &client, &session.id, true, false)
             .await
