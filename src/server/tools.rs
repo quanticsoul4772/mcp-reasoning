@@ -20,21 +20,25 @@ use rmcp::{tool, tool_handler, tool_router};
 use super::metadata_builders;
 use super::requests::{
     AutoRequest, CheckpointRequest, CounterfactualRequest, DecisionRequest, DetectRequest,
-    DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, MctsRequest, MetricsRequest,
-    PresetRequest, ReflectionRequest, SiApproveRequest, SiDiagnosesRequest, SiRejectRequest,
-    SiRollbackRequest, SiStatusRequest, SiTriggerRequest, TimelineRequest, TreeRequest,
+    DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, ListSessionsRequest,
+    MctsRequest, MetricsRequest, PresetRequest, ReflectionRequest, RelateSessionsRequest,
+    ResumeSessionRequest, SearchSessionsRequest, SiApproveRequest, SiDiagnosesRequest,
+    SiRejectRequest, SiRollbackRequest, SiStatusRequest, SiTriggerRequest, TimelineRequest,
+    TreeRequest,
 };
 #[cfg(test)]
 use super::responses::ConfidenceInterval;
 use super::responses::{
     AutoResponse, BacktrackSuggestion, Branch, BranchComparison, CausalStep, Checkpoint,
-    CheckpointResponse, CounterfactualResponse, DecisionResponse, DetectResponse, Detection,
-    DivergentResponse, EvidenceAssessment, EvidenceResponse, GraphNode, GraphResponse, GraphState,
-    Invocation, LinearResponse, MctsNode, MctsResponse, MetricsResponse, MetricsSummary, ModeStats,
-    Perspective, PresetExecution, PresetInfo, PresetResponse, RankedOption, ReflectionResponse,
+    CheckpointInfo, CheckpointResponse, CounterfactualResponse, DecisionResponse, DetectResponse,
+    Detection, DivergentResponse, EvidenceAssessment, EvidenceResponse, GraphNode, GraphResponse,
+    GraphState, Invocation, LinearResponse, ListSessionsResponse, MctsNode, MctsResponse,
+    MetricsResponse, MetricsSummary, ModeStats, Perspective, PresetExecution, PresetInfo,
+    PresetResponse, RankedOption, ReflectionResponse, RelateSessionsResponse, RelationshipEdge,
+    ResumeSessionResponse, SearchResult, SearchSessionsResponse, SessionNode, SessionSummary,
     SiApproveResponse, SiDiagnosesResponse, SiExecutionSummary, SiLearningSummary,
     SiPendingDiagnosis, SiRejectResponse, SiRollbackResponse, SiStatusResponse, SiTriggerResponse,
-    StakeholderMap, TimelineBranch, TimelineResponse, TreeResponse,
+    StakeholderMap, ThoughtSummary, TimelineBranch, TimelineResponse, TreeResponse,
 };
 use super::types::AppState;
 use crate::error::ModeError;
@@ -2905,6 +2909,305 @@ impl ReasoningServer {
             .record(MetricEvent::new("si_rollback", timer.elapsed_ms(), success));
 
         response
+    }
+
+    // ============================================================================
+    // Memory Tools
+    // ============================================================================
+
+    #[tool(
+        name = "reasoning_list_sessions",
+        description = "List reasoning sessions with pagination and filtering."
+    )]
+    async fn reasoning_list_sessions(
+        &self,
+        req: Parameters<ListSessionsRequest>,
+    ) -> ListSessionsResponse {
+        let req = req.0;
+        let timer = Timer::start();
+
+        tracing::info!(
+            tool = "reasoning_list_sessions",
+            limit = ?req.limit,
+            offset = ?req.offset,
+            mode_filter = ?req.mode_filter,
+            "Listing reasoning sessions"
+        );
+
+        // Call memory::list function
+        let result = crate::modes::memory::list_sessions(
+            &self.state.storage,
+            req.limit,
+            req.offset,
+            req.mode_filter,
+        )
+        .await;
+
+        let elapsed_ms = timer.elapsed_ms();
+        let success = result.is_ok();
+
+        self.state
+            .metrics
+            .record(MetricEvent::new(
+                "list_sessions",
+                elapsed_ms,
+                success,
+            ));
+
+        match result {
+            Ok((sessions, total, has_more)) => ListSessionsResponse {
+                sessions: sessions
+                    .into_iter()
+                    .map(|s| SessionSummary {
+                        session_id: s.session_id,
+                        created_at: s.created_at,
+                        updated_at: s.updated_at,
+                        thought_count: s.thought_count,
+                        preview: s.preview,
+                        primary_mode: s.primary_mode,
+                    })
+                    .collect(),
+                total,
+                has_more,
+                metadata: None,
+            },
+            Err(e) => {
+                tracing::error!(
+                    tool = "reasoning_list_sessions",
+                    error = %e,
+                    "Failed to list sessions"
+                );
+                ListSessionsResponse {
+                    sessions: vec![],
+                    total: 0,
+                    has_more: false,
+                    metadata: None,
+                }
+            }
+        }
+    }
+
+    #[tool(
+        name = "reasoning_resume",
+        description = "Resume a reasoning session with full context."
+    )]
+    async fn reasoning_resume(
+        &self,
+        req: Parameters<ResumeSessionRequest>,
+    ) -> ResumeSessionResponse {
+        let req = req.0;
+        let timer = Timer::start();
+
+        tracing::info!(
+            tool = "reasoning_resume",
+            session_id = %req.session_id,
+            include_checkpoints = ?req.include_checkpoints,
+            compress = ?req.compress,
+            "Resuming reasoning session"
+        );
+
+        // Call memory::resume function
+        let result = crate::modes::memory::resume_session(
+            &self.state.storage,
+            &self.state.client,
+            &req.session_id,
+            req.include_checkpoints.unwrap_or(false),
+            req.compress.unwrap_or(false),
+        )
+        .await;
+
+        let elapsed_ms = timer.elapsed_ms();
+        let success = result.is_ok();
+
+        self.state
+            .metrics
+            .record(MetricEvent::new("resume_session", elapsed_ms, success));
+
+        match result {
+            Ok(context) => ResumeSessionResponse {
+                session_id: context.session_id,
+                created_at: context.created_at,
+                summary: context.summary,
+                thought_chain: context
+                    .thought_chain
+                    .into_iter()
+                    .map(|t| ThoughtSummary {
+                        id: t.id,
+                        mode: t.mode,
+                        content: t.content,
+                        confidence: t.confidence,
+                    })
+                    .collect(),
+                key_conclusions: context.key_conclusions,
+                last_mode: context.last_mode,
+                checkpoint: context.checkpoint.map(|c| CheckpointInfo {
+                    id: c.id,
+                    name: c.name,
+                    description: c.description,
+                }),
+                continuation_suggestions: context.continuation_suggestions,
+                metadata: None,
+            },
+            Err(e) => {
+                tracing::error!(
+                    tool = "reasoning_resume",
+                    error = %e,
+                    "Failed to resume session"
+                );
+                ResumeSessionResponse {
+                    session_id: req.session_id,
+                    created_at: String::new(),
+                    summary: format!("Error: {e}"),
+                    thought_chain: vec![],
+                    key_conclusions: vec![],
+                    last_mode: None,
+                    checkpoint: None,
+                    continuation_suggestions: vec![],
+                    metadata: None,
+                }
+            }
+        }
+    }
+
+    #[tool(
+        name = "reasoning_search",
+        description = "Search reasoning sessions by semantic similarity."
+    )]
+    async fn reasoning_search(
+        &self,
+        req: Parameters<SearchSessionsRequest>,
+    ) -> SearchSessionsResponse {
+        let req = req.0;
+        let timer = Timer::start();
+
+        tracing::info!(
+            tool = "reasoning_search",
+            query = %req.query,
+            limit = ?req.limit,
+            min_similarity = ?req.min_similarity,
+            "Searching reasoning sessions"
+        );
+
+        // Call memory::search function
+        let result = crate::modes::memory::search_sessions(
+            &self.state.storage,
+            &self.state.client,
+            &req.query,
+            req.limit.unwrap_or(10),
+            req.min_similarity.unwrap_or(0.5),
+            req.mode_filter,
+        )
+        .await;
+
+        let elapsed_ms = timer.elapsed_ms();
+        let success = result.is_ok();
+
+        self.state
+            .metrics
+            .record(MetricEvent::new("search_sessions", elapsed_ms, success));
+
+        match result {
+            Ok(results) => SearchSessionsResponse {
+                count: results.len() as u32,
+                results: results
+                    .into_iter()
+                    .map(|r| SearchResult {
+                        session_id: r.session_id,
+                        similarity_score: r.similarity_score,
+                        preview: r.preview,
+                        created_at: r.created_at,
+                        primary_mode: r.primary_mode,
+                    })
+                    .collect(),
+                metadata: None,
+            },
+            Err(e) => {
+                tracing::error!(
+                    tool = "reasoning_search",
+                    error = %e,
+                    "Failed to search sessions"
+                );
+                SearchSessionsResponse {
+                    results: vec![],
+                    count: 0,
+                    metadata: None,
+                }
+            }
+        }
+    }
+
+    #[tool(
+        name = "reasoning_relate",
+        description = "Analyze relationships between reasoning sessions."
+    )]
+    async fn reasoning_relate(
+        &self,
+        req: Parameters<RelateSessionsRequest>,
+    ) -> RelateSessionsResponse {
+        let req = req.0;
+        let timer = Timer::start();
+
+        tracing::info!(
+            tool = "reasoning_relate",
+            session_id = ?req.session_id,
+            depth = ?req.depth,
+            min_strength = ?req.min_strength,
+            "Analyzing session relationships"
+        );
+
+        // Call memory::relate function
+        let result = crate::modes::memory::relate_sessions(
+            &self.state.storage,
+            &self.state.client,
+            req.session_id,
+            req.depth.unwrap_or(2),
+            req.min_strength.unwrap_or(0.5),
+        )
+        .await;
+
+        let elapsed_ms = timer.elapsed_ms();
+        let success = result.is_ok();
+
+        self.state
+            .metrics
+            .record(MetricEvent::new("relate_sessions", elapsed_ms, success));
+
+        match result {
+            Ok(graph) => RelateSessionsResponse {
+                nodes: graph
+                    .nodes
+                    .into_iter()
+                    .map(|n| SessionNode {
+                        session_id: n.session_id,
+                        preview: n.preview,
+                        created_at: n.created_at,
+                    })
+                    .collect(),
+                edges: graph
+                    .edges
+                    .into_iter()
+                    .map(|e| RelationshipEdge {
+                        from_session: e.from_session,
+                        to_session: e.to_session,
+                        relationship_type: format!("{:?}", e.relationship_type),
+                        strength: e.strength,
+                    })
+                    .collect(),
+                metadata: None,
+            },
+            Err(e) => {
+                tracing::error!(
+                    tool = "reasoning_relate",
+                    error = %e,
+                    "Failed to analyze relationships"
+                );
+                RelateSessionsResponse {
+                    nodes: vec![],
+                    edges: vec![],
+                    metadata: None,
+                }
+            }
+        }
     }
 
     // ============================================================================

@@ -724,6 +724,152 @@ pub struct SiRollbackResponse {
 }
 
 // Apply IntoContents to all response types
+// ============================================================================
+// Memory Tools Responses
+// ============================================================================
+
+/// Response from listing reasoning sessions.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListSessionsResponse {
+    /// List of session summaries.
+    pub sessions: Vec<SessionSummary>,
+    /// Total number of sessions.
+    pub total: u32,
+    /// Whether there are more results.
+    pub has_more: bool,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ResponseMetadata>,
+}
+
+/// Summary of a reasoning session.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SessionSummary {
+    /// Session ID.
+    pub session_id: String,
+    /// Session creation timestamp.
+    pub created_at: String,
+    /// Last update timestamp.
+    pub updated_at: String,
+    /// Number of thoughts in session.
+    pub thought_count: u32,
+    /// Preview of first thought.
+    pub preview: String,
+    /// Primary reasoning mode used.
+    pub primary_mode: Option<String>,
+}
+
+/// Response from resuming a reasoning session.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ResumeSessionResponse {
+    /// Session ID.
+    pub session_id: String,
+    /// Session creation timestamp.
+    pub created_at: String,
+    /// Session summary.
+    pub summary: String,
+    /// Full thought chain.
+    pub thought_chain: Vec<ThoughtSummary>,
+    /// Key conclusions from the session.
+    pub key_conclusions: Vec<String>,
+    /// Last reasoning mode used.
+    pub last_mode: Option<String>,
+    /// Latest checkpoint if any.
+    pub checkpoint: Option<CheckpointInfo>,
+    /// Continuation suggestions.
+    pub continuation_suggestions: Vec<String>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ResponseMetadata>,
+}
+
+/// Summary of a thought in a session.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ThoughtSummary {
+    /// Thought ID.
+    pub id: String,
+    /// Reasoning mode used.
+    pub mode: String,
+    /// Thought content.
+    pub content: String,
+    /// Confidence score.
+    pub confidence: f64,
+}
+
+/// Checkpoint information.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CheckpointInfo {
+    /// Checkpoint ID.
+    pub id: String,
+    /// Checkpoint name.
+    pub name: String,
+    /// Description.
+    pub description: Option<String>,
+}
+
+/// Response from semantic search.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SearchSessionsResponse {
+    /// Search results.
+    pub results: Vec<SearchResult>,
+    /// Number of results returned.
+    pub count: u32,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ResponseMetadata>,
+}
+
+/// A single search result.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SearchResult {
+    /// Session ID.
+    pub session_id: String,
+    /// Similarity score (0.0-1.0).
+    pub similarity_score: f64,
+    /// Content preview.
+    pub preview: String,
+    /// Session creation timestamp.
+    pub created_at: String,
+    /// Primary reasoning mode.
+    pub primary_mode: Option<String>,
+}
+
+/// Response from relationship analysis.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RelateSessionsResponse {
+    /// Session nodes in the graph.
+    pub nodes: Vec<SessionNode>,
+    /// Relationship edges.
+    pub edges: Vec<RelationshipEdge>,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ResponseMetadata>,
+}
+
+/// A session node in the relationship graph.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SessionNode {
+    /// Session ID.
+    pub session_id: String,
+    /// Content preview.
+    pub preview: String,
+    /// Creation timestamp.
+    pub created_at: String,
+}
+
+/// A relationship edge between sessions.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RelationshipEdge {
+    /// Source session ID.
+    pub from_session: String,
+    /// Target session ID.
+    pub to_session: String,
+    /// Relationship type.
+    pub relationship_type: String,
+    /// Relationship strength (0.0-1.0).
+    pub strength: f64,
+}
+
 impl_into_contents!(
     LinearResponse,
     TreeResponse,
@@ -746,6 +892,10 @@ impl_into_contents!(
     SiRejectResponse,
     SiTriggerResponse,
     SiRollbackResponse,
+    ListSessionsResponse,
+    ResumeSessionResponse,
+    SearchSessionsResponse,
+    RelateSessionsResponse,
 );
 
 #[cfg(test)]

@@ -318,3 +318,53 @@ pub struct SiRollbackRequest {
     /// The action ID to rollback.
     pub action_id: String,
 }
+
+// ============================================================================
+// Memory Tools Requests
+// ============================================================================
+
+/// Request for listing reasoning sessions.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListSessionsRequest {
+    /// Maximum number of sessions to return.
+    pub limit: Option<u32>,
+    /// Number of sessions to skip.
+    pub offset: Option<u32>,
+    /// Filter by reasoning mode.
+    pub mode_filter: Option<String>,
+}
+
+/// Request for resuming a reasoning session.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ResumeSessionRequest {
+    /// Session ID to resume.
+    pub session_id: String,
+    /// Include checkpoints in the response.
+    pub include_checkpoints: Option<bool>,
+    /// Compress long content using Claude.
+    pub compress: Option<bool>,
+}
+
+/// Request for semantic search over reasoning sessions.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SearchSessionsRequest {
+    /// Search query.
+    pub query: String,
+    /// Maximum number of results.
+    pub limit: Option<u32>,
+    /// Minimum similarity score (0.0-1.0).
+    pub min_similarity: Option<f32>,
+    /// Filter by reasoning mode.
+    pub mode_filter: Option<String>,
+}
+
+/// Request for analyzing session relationships.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RelateSessionsRequest {
+    /// Session ID to analyze (if None, analyzes all sessions).
+    pub session_id: Option<String>,
+    /// Maximum graph depth.
+    pub depth: Option<u32>,
+    /// Minimum relationship strength (0.0-1.0).
+    pub min_strength: Option<f32>,
+}
