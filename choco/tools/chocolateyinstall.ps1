@@ -8,7 +8,7 @@ $packageArgs = @{
   packageName   = $packageName
   unzipLocation = $toolsDir
   url64bit      = $url64
-  checksum64    = 'PLACEHOLDER_SHA256'  # Will be filled after first release
+  checksum64    = '014da2f50ca4651930a8fc8a3ed0db30ef725a87a1d619bdc1f3171686b58bdb'
   checksumType64= 'sha256'
 }
 

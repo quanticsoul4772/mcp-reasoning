@@ -12,16 +12,16 @@ class McpReasoning < Formula
   on_macos do
     if Hardware::CPU.intel?
       url "https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.1.0/x86_64-apple-darwin.tar.gz"
-      sha256 "PLACEHOLDER_INTEL_SHA256"  # Will be filled after first release
+      sha256 "b0329f6030befba49b028918549d9e480aa0f8ff8344ed77bf77dbaef7afd367"
     elsif Hardware::CPU.arm?
       url "https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.1.0/aarch64-apple-darwin.tar.gz"
-      sha256 "PLACEHOLDER_ARM_SHA256"  # Will be filled after first release
+      sha256 "9925679c4f327aba3fbeacc497cc14ecece3b5095ca1a32f06b9502e9edda9ef"
     end
   end
 
   on_linux do
     url "https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.1.0/x86_64-unknown-linux-gnu.tar.gz"
-    sha256 "PLACEHOLDER_LINUX_SHA256"  # Will be filled after first release
+    sha256 "ad0a3d62b1300691ff150b938ba2c82a6681b29b05a1fbaaa42f4b520596fd8a"
   end
 
   def install
