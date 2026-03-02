@@ -17,12 +17,12 @@ def send_mcp_request(tool_name, params):
             "arguments": params
         }
     }
-    
+
     print(f"\n{'='*60}")
     print(f"Testing: {tool_name}")
     print(f"{'='*60}")
     print(f"Request: {json.dumps(params, indent=2)}")
-    
+
     # Note: In a real test, we'd pipe this to the server
     # For now, we'll just show what we'd send
     print(f"\nWould send to server:")
@@ -31,11 +31,11 @@ def send_mcp_request(tool_name, params):
 
 def main():
     """Test all 4 new memory tools."""
-    
+
     print("=" * 60)
     print("MEMORY TOOLS DEMONSTRATION")
     print("=" * 60)
-    
+
     # Test 1: List sessions
     print("\n\n1. LIST SESSIONS")
     print("-" * 60)
@@ -44,7 +44,7 @@ def main():
         "offset": 0,
         "mode_filter": None
     })
-    
+
     # Test 2: Search sessions
     print("\n\n2. SEARCH SESSIONS")
     print("-" * 60)
@@ -54,7 +54,7 @@ def main():
         "min_similarity": 0.7,
         "mode_filter": None
     })
-    
+
     # Test 3: Resume session
     print("\n\n3. RESUME SESSION")
     print("-" * 60)
@@ -63,7 +63,7 @@ def main():
         "include_checkpoints": True,
         "compress": False
     })
-    
+
     # Test 4: Relate sessions
     print("\n\n4. RELATE SESSIONS")
     print("-" * 60)
@@ -72,7 +72,7 @@ def main():
         "depth": 2,
         "min_strength": 0.5
     })
-    
+
     print("\n\n" + "=" * 60)
     print("SUMMARY")
     print("=" * 60)
@@ -80,7 +80,7 @@ def main():
 All 4 memory tools are now available via MCP:
 
 ✅ reasoning_list_sessions - Browse past sessions with pagination
-✅ reasoning_search - Semantic search over history  
+✅ reasoning_search - Semantic search over history
 ✅ reasoning_resume - Resume sessions with full context
 ✅ reasoning_relate - Discover relationship patterns
 

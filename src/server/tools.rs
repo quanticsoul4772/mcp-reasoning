@@ -2948,11 +2948,7 @@ impl ReasoningServer {
 
         self.state
             .metrics
-            .record(MetricEvent::new(
-                "list_sessions",
-                elapsed_ms,
-                success,
-            ));
+            .record(MetricEvent::new("list_sessions", elapsed_ms, success));
 
         match result {
             Ok((sessions, total, has_more)) => ListSessionsResponse {
