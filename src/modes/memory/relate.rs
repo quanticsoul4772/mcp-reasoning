@@ -75,7 +75,7 @@ async fn analyze_session_relationships<C: AnthropicClientTrait>(
                 from_session: current_id.clone(),
                 to_session: related_id.clone(),
                 relationship_type,
-                strength: strength as f64,
+                strength: f64::from(strength),
             });
 
             // Queue for traversal
@@ -119,7 +119,7 @@ async fn analyze_all_relationships<C: AnthropicClientTrait>(
                 from_session: session_id.clone(),
                 to_session: related_id,
                 relationship_type,
-                strength: strength as f64,
+                strength: f64::from(strength),
             });
         }
     }
@@ -132,19 +132,20 @@ async fn analyze_all_relationships<C: AnthropicClientTrait>(
 }
 
 /// Load session node data.
+#[allow(clippy::option_if_let_else)]
 async fn load_session_node(
     storage: &SqliteStorage,
     session_id: &str,
 ) -> Result<Option<SessionNode>, ModeError> {
     let row = sqlx::query(
-        r#"
+        r"
         SELECT 
             s.id,
             s.created_at,
             (SELECT content FROM thoughts WHERE session_id = s.id ORDER BY created_at LIMIT 1) as preview
         FROM sessions s
         WHERE s.id = ?
-        "#,
+        ",
     )
     .bind(session_id)
     .fetch_optional(&storage.get_pool())
@@ -241,12 +242,12 @@ async fn find_mode_related(
     let mut results = Vec::new();
     for mode in modes {
         let related: Vec<String> = sqlx::query_scalar(
-            r#"
+            r"
             SELECT DISTINCT session_id 
             FROM thoughts 
             WHERE mode = ? AND session_id != ?
             LIMIT 10
-            "#,
+            ",
         )
         .bind(&mode)
         .bind(session_id)
@@ -271,12 +272,12 @@ async fn find_temporal_neighbors(
     min_strength: f32,
 ) -> Result<Vec<(String, RelationshipType, f32)>, ModeError> {
     let neighbors: Vec<String> = sqlx::query_scalar(
-        r#"
+        r"
         SELECT id FROM sessions
         WHERE id != ?
         AND ABS(julianday(created_at) - julianday((SELECT created_at FROM sessions WHERE id = ?))) < 1
         LIMIT 5
-        "#,
+        ",
     )
     .bind(session_id)
     .bind(session_id)

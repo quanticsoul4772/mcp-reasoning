@@ -5,7 +5,7 @@ use crate::modes::memory::types::SessionSummary;
 use crate::storage::SqliteStorage;
 use sqlx::Row;
 
-const SQL_LIST_SESSIONS: &str = r#"
+const SQL_LIST_SESSIONS: &str = r"
 SELECT 
     s.id,
     s.created_at,
@@ -18,7 +18,7 @@ LEFT JOIN thoughts t ON s.id = t.session_id
 GROUP BY s.id
 ORDER BY s.updated_at DESC
 LIMIT ? OFFSET ?
-"#;
+";
 
 const SQL_COUNT_SESSIONS: &str = "SELECT COUNT(*) FROM sessions";
 
@@ -91,7 +91,8 @@ pub async fn list_sessions(
             session_id,
             created_at,
             updated_at,
-            thought_count: thought_count as u32,
+            #[allow(clippy::cast_sign_loss)]
+            thought_count: thought_count.max(0) as u32,
             preview,
             primary_mode,
         });

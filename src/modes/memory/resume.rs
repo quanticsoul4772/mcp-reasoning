@@ -8,20 +8,20 @@ use sqlx::Row;
 
 const SQL_GET_SESSION: &str = "SELECT id, created_at, updated_at FROM sessions WHERE id = ?";
 
-const SQL_GET_THOUGHTS: &str = r#"
+const SQL_GET_THOUGHTS: &str = r"
 SELECT id, mode, content, confidence, created_at
 FROM thoughts
 WHERE session_id = ?
 ORDER BY created_at
-"#;
+";
 
-const SQL_GET_LATEST_CHECKPOINT: &str = r#"
+const SQL_GET_LATEST_CHECKPOINT: &str = r"
 SELECT id, name, description
 FROM checkpoints
 WHERE session_id = ?
 ORDER BY created_at DESC
 LIMIT 1
-"#;
+";
 
 /// Resume a reasoning session with full context.
 ///
@@ -141,6 +141,7 @@ pub async fn resume_session<C: AnthropicClientTrait>(
 }
 
 /// Compress session content (placeholder for future Claude API compression).
+#[allow(clippy::unused_async)]
 async fn compress_session<C: AnthropicClientTrait>(
     _client: &C,
     thoughts: &[String],
@@ -156,6 +157,7 @@ async fn compress_session<C: AnthropicClientTrait>(
 }
 
 /// Generate continuation suggestions based on the reasoning chain.
+#[allow(clippy::ref_option)]
 fn generate_suggestions(thoughts: &[ThoughtSummary], last_mode: &Option<String>) -> Vec<String> {
     let mut suggestions = Vec::new();
 

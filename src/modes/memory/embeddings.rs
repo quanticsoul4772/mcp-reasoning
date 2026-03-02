@@ -8,25 +8,25 @@ use sqlx::Row;
 const SQL_GET_EMBEDDING: &str =
     "SELECT embedding_json FROM session_embeddings WHERE session_id = ?";
 
-const SQL_STORE_EMBEDDING: &str = r#"
+const SQL_STORE_EMBEDDING: &str = r"
 INSERT INTO session_embeddings (session_id, embedding_json, content_hash)
 VALUES (?, ?, ?)
 ON CONFLICT(session_id) DO UPDATE SET
     embedding_json = excluded.embedding_json,
     content_hash = excluded.content_hash,
     created_at = datetime('now')
-"#;
+";
 
-const SQL_GET_SESSIONS_WITHOUT_EMBEDDINGS: &str = r#"
+const SQL_GET_SESSIONS_WITHOUT_EMBEDDINGS: &str = r"
 SELECT s.id
 FROM sessions s
 LEFT JOIN session_embeddings se ON s.id = se.session_id
 WHERE se.session_id IS NULL
 LIMIT 10
-"#;
+";
 
 /// Get embedding for a session, generating if not cached.
-pub(crate) async fn get_session_embedding<C: AnthropicClientTrait>(
+pub async fn get_session_embedding<C: AnthropicClientTrait>(
     storage: &SqliteStorage,
     client: &C,
     session_id: &str,
@@ -47,7 +47,7 @@ pub(crate) async fn get_session_embedding<C: AnthropicClientTrait>(
 }
 
 /// Get all session embeddings (generating missing ones).
-pub(crate) async fn get_all_embeddings<C: AnthropicClientTrait>(
+pub async fn get_all_embeddings<C: AnthropicClientTrait>(
     storage: &SqliteStorage,
     client: &C,
 ) -> Result<Vec<(String, Vec<f32>)>, ModeError> {
@@ -170,7 +170,7 @@ async fn get_session_content(
 }
 
 /// Generate embedding for content (MVP: simple hash-based embedding).
-pub(crate) async fn generate_embedding<C: AnthropicClientTrait>(
+pub async fn generate_embedding<C: AnthropicClientTrait>(
     _client: &C,
     content: &str,
 ) -> Result<Vec<f32>, ModeError> {
@@ -186,6 +186,7 @@ pub(crate) async fn generate_embedding<C: AnthropicClientTrait>(
 }
 
 /// Create a simple embedding (placeholder for proper embedding model).
+#[allow(clippy::unnecessary_wraps)]
 fn create_simple_embedding(content: &str) -> Result<Vec<f32>, ModeError> {
     // Simple hash-based embedding for MVP
     // In production, use proper embedding model

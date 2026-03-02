@@ -71,13 +71,14 @@ pub async fn search_sessions<C: AnthropicClientTrait>(
 }
 
 /// Load search result data for a session.
+#[allow(clippy::option_if_let_else)]
 async fn load_search_result(
     storage: &SqliteStorage,
     session_id: &str,
     similarity_score: f32,
 ) -> Result<Option<SearchResult>, ModeError> {
     let row = sqlx::query(
-        r#"
+        r"
         SELECT 
             s.id,
             s.created_at,
@@ -85,7 +86,7 @@ async fn load_search_result(
             (SELECT mode FROM thoughts WHERE session_id = s.id GROUP BY mode ORDER BY COUNT(*) DESC LIMIT 1) as primary_mode
         FROM sessions s
         WHERE s.id = ?
-        "#,
+        ",
     )
     .bind(session_id)
     .fetch_optional(&storage.get_pool())
@@ -101,7 +102,7 @@ async fn load_search_result(
 
         Ok(Some(SearchResult {
             session_id: session_id.to_string(),
-            similarity_score: similarity_score as f64,
+            similarity_score: f64::from(similarity_score),
             preview: preview.unwrap_or_default().chars().take(200).collect(),
             created_at,
             primary_mode,
