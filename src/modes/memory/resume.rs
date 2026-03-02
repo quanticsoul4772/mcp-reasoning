@@ -1,10 +1,10 @@
 //! Resume reasoning sessions.
 
 use crate::error::ModeError;
+use crate::modes::memory::types::{CheckpointInfo, SessionContext, ThoughtSummary};
 use crate::storage::SqliteStorage;
 use crate::traits::AnthropicClientTrait;
-
-use super::types::{CheckpointInfo, SessionContext, ThoughtSummary};
+use sqlx::Row;
 
 const SQL_GET_SESSION: &str = "SELECT id, created_at, updated_at FROM sessions WHERE id = ?";
 
@@ -140,31 +140,23 @@ pub async fn resume_session<C: AnthropicClientTrait>(
     })
 }
 
-/// Compress session content using Claude.
+/// Compress session content (placeholder for future Claude API compression).
 async fn compress_session<C: AnthropicClientTrait>(
-    client: &C,
+    _client: &C,
     thoughts: &[String],
 ) -> Result<String, ModeError> {
     let combined = thoughts.join("\n\n");
-    let prompt = format!(
-        "Compress this reasoning chain into a concise summary:\n\n{combined}\n\nSummary:"
-    );
 
-    let response = client
-        .complete(&prompt, None, None, None)
-        .await
-        .map_err(|e| ModeError::ApiError {
-            message: format!("Failed to compress: {e}"),
-        })?;
-
-    Ok(response.content)
+    // MVP: Simple truncation. Future: Use Claude API for intelligent summarization.
+    if combined.len() > 1000 {
+        Ok(combined.chars().take(1000).collect::<String>() + "...")
+    } else {
+        Ok(combined)
+    }
 }
 
 /// Generate continuation suggestions based on the reasoning chain.
-fn generate_suggestions(
-    thoughts: &[ThoughtSummary],
-    last_mode: &Option<String>,
-) -> Vec<String> {
+fn generate_suggestions(thoughts: &[ThoughtSummary], last_mode: &Option<String>) -> Vec<String> {
     let mut suggestions = Vec::new();
 
     if thoughts.is_empty() {
@@ -202,7 +194,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resume_nonexistent_session() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
         let client = create_mock_client();
 
         let result = resume_session(&storage, &client, "nonexistent", false, false).await;
@@ -211,7 +205,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resume_empty_session() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
         let client = create_mock_client();
 
         let session = storage.create_session().await.expect("create session");
@@ -226,7 +222,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resume_session_with_thoughts() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
         let client = create_mock_client();
 
         let session = storage.create_session().await.expect("create session");
@@ -250,7 +248,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resume_with_checkpoint() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
         let client = create_mock_client();
 
         let session = storage.create_session().await.expect("create session");

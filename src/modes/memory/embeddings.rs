@@ -3,6 +3,7 @@
 use crate::error::ModeError;
 use crate::storage::SqliteStorage;
 use crate::traits::AnthropicClientTrait;
+use sqlx::Row;
 
 const SQL_GET_EMBEDDING: &str =
     "SELECT embedding_json FROM session_embeddings WHERE session_id = ?";
@@ -55,9 +56,11 @@ pub(crate) async fn get_all_embeddings<C: AnthropicClientTrait>(
 
     // Get all sessions
     let sessions: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
-        .fetch_all(storage.get_pool())
+        .fetch_all(&storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError { message: format!("Failed to get sessions: {e}")))?;
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to get sessions: {e}"),
+        })?;
 
     let mut embeddings = Vec::new();
     for session_id in sessions {
@@ -75,9 +78,11 @@ async fn ensure_embeddings<C: AnthropicClientTrait>(
     client: &C,
 ) -> Result<(), ModeError> {
     let missing: Vec<String> = sqlx::query_scalar(SQL_GET_SESSIONS_WITHOUT_EMBEDDINGS)
-        .fetch_all(storage.get_pool())
+        .fetch_all(&storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError { message: format!("Failed to get missing: {e}")))?;
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to get missing: {e}"),
+        })?;
 
     for session_id in missing {
         let content = get_session_content(storage, &session_id).await?;
@@ -95,14 +100,16 @@ async fn get_cached_embedding(
 ) -> Result<Option<Vec<f32>>, ModeError> {
     let row = sqlx::query(SQL_GET_EMBEDDING)
         .bind(session_id)
-        .fetch_optional(storage.get_pool())
+        .fetch_optional(&storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError { message: format!("Failed to get embedding: {e}")))?;
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to get embedding: {e}"),
+        })?;
 
     if let Some(row) = row {
         let json: String = row.get("embedding_json");
-        let embedding: Vec<f32> = serde_json::from_str(&json)
-            .map_err(|e| ModeError::ParseError {
+        let embedding: Vec<f32> =
+            serde_json::from_str(&json).map_err(|e| ModeError::ParseError {
                 message: format!("Invalid embedding JSON: {e}"),
             })?;
         Ok(Some(embedding))
@@ -118,8 +125,8 @@ async fn store_embedding(
     embedding: &[f32],
     content: &str,
 ) -> Result<(), ModeError> {
-    let embedding_json = serde_json::to_string(embedding)
-        .map_err(|e| ModeError::SerializationError {
+    let embedding_json =
+        serde_json::to_string(embedding).map_err(|e| ModeError::SerializationError {
             message: format!("Failed to serialize: {e}"),
         })?;
 
@@ -129,9 +136,11 @@ async fn store_embedding(
         .bind(session_id)
         .bind(&embedding_json)
         .bind(&content_hash)
-        .execute(storage.get_pool())
+        .execute(&storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError { message: format!("Failed to store embedding: {e}")))?;
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to store embedding: {e}"),
+        })?;
 
     Ok(())
 }
@@ -145,9 +154,11 @@ async fn get_session_content(
         "SELECT content FROM thoughts WHERE session_id = ? ORDER BY created_at LIMIT 10",
     )
     .bind(session_id)
-    .fetch_all(storage.get_pool())
+    .fetch_all(&storage.get_pool())
     .await
-    .map_err(|e| ModeError::StorageError { message: format!("Failed to get thoughts: {e}")))?;
+    .map_err(|e| ModeError::StorageError {
+        message: format!("Failed to get thoughts: {e}"),
+    })?;
 
     if thoughts.is_empty() {
         return Ok(String::new());
@@ -158,9 +169,9 @@ async fn get_session_content(
     Ok(combined.chars().take(2000).collect())
 }
 
-/// Generate embedding using Claude API.
+/// Generate embedding for content (MVP: simple hash-based embedding).
 pub(crate) async fn generate_embedding<C: AnthropicClientTrait>(
-    client: &C,
+    _client: &C,
     content: &str,
 ) -> Result<Vec<f32>, ModeError> {
     if content.is_empty() {

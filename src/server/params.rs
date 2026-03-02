@@ -1053,4 +1053,37 @@ mod tests {
         assert_eq!(rel.effect, "Y");
         assert_eq!(rel.strength, Some(0.7));
     }
+
+    #[test]
+    fn test_list_sessions_params_deserialize() {
+        let json = r#"{"limit": 10, "offset": 5}"#;
+        let params: ListSessionsParams = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(params.limit, Some(10));
+        assert_eq!(params.offset, Some(5));
+    }
+
+    #[test]
+    fn test_resume_params_deserialize() {
+        let json = r#"{"session_id": "sess_123", "compress": true}"#;
+        let params: ResumeParams = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(params.session_id, "sess_123");
+        assert_eq!(params.compress, Some(true));
+    }
+
+    #[test]
+    fn test_search_params_deserialize() {
+        let json = r#"{"query": "test query", "limit": 5, "min_similarity": 0.7}"#;
+        let params: SearchParams = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(params.query, "test query");
+        assert_eq!(params.limit, Some(5));
+        assert_eq!(params.min_similarity, Some(0.7));
+    }
+
+    #[test]
+    fn test_relate_params_deserialize() {
+        let json = r#"{"session_id": "sess_123", "depth": 3}"#;
+        let params: RelateParams = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(params.session_id, Some("sess_123".to_string()));
+        assert_eq!(params.depth, Some(3));
+    }
 }

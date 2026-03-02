@@ -1,11 +1,11 @@
 //! Semantic search over reasoning sessions.
 
 use crate::error::ModeError;
+use crate::modes::memory::embeddings::{cosine_similarity, generate_embedding, get_all_embeddings};
+use crate::modes::memory::types::SearchResult;
 use crate::storage::SqliteStorage;
 use crate::traits::AnthropicClientTrait;
-
-use super::embeddings::{cosine_similarity, generate_embedding, get_all_embeddings};
-use super::types::SearchResult;
+use sqlx::Row;
 
 /// Search reasoning sessions by semantic similarity.
 ///
@@ -88,9 +88,11 @@ async fn load_search_result(
         "#,
     )
     .bind(session_id)
-    .fetch_optional(storage.get_pool())
+    .fetch_optional(&storage.get_pool())
     .await
-    .map_err(|e| ModeError::StorageError { message: format!("Failed to load search result: {e}")))?;
+    .map_err(|e| ModeError::StorageError {
+        message: format!("Failed to load search result: {e}"),
+    })?;
 
     if let Some(row) = row {
         let preview: Option<String> = row.get("preview");
@@ -118,7 +120,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_empty() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
         let client = create_mock_client();
 
         let results = search_sessions(&storage, &client, "test query", 5, 0.7, None)
@@ -130,7 +134,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_with_sessions() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
         let client = create_mock_client();
 
         // Create test session

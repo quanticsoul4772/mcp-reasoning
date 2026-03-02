@@ -1,9 +1,9 @@
 //! List reasoning sessions.
 
 use crate::error::ModeError;
+use crate::modes::memory::types::SessionSummary;
 use crate::storage::SqliteStorage;
-
-use super::types::SessionSummary;
+use sqlx::Row;
 
 const SQL_LIST_SESSIONS: &str = r#"
 SELECT 
@@ -110,7 +110,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_empty_sessions() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
         let (sessions, total, has_more) = list_sessions(&storage, None, None, None)
             .await
             .expect("list sessions");
@@ -122,32 +124,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_with_sessions() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
 
         // Create test sessions
         let session1 = storage.create_session().await.expect("create session");
         storage
-            .create_thought(
-                &session1.id,
-                None,
-                "linear",
-                "Test thought 1",
-                0.8,
-                None,
-            )
+            .create_thought(&session1.id, None, "linear", "Test thought 1", 0.8, None)
             .await
             .expect("create thought");
 
         let session2 = storage.create_session().await.expect("create session");
         storage
-            .create_thought(
-                &session2.id,
-                None,
-                "tree",
-                "Test thought 2",
-                0.9,
-                None,
-            )
+            .create_thought(&session2.id, None, "tree", "Test thought 2", 0.9, None)
             .await
             .expect("create thought");
 
@@ -163,7 +153,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_with_pagination() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
 
         // Create 5 test sessions
         for i in 0..5 {
@@ -199,7 +191,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_with_mode_filter() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
 
         let session1 = storage.create_session().await.expect("create session");
         storage

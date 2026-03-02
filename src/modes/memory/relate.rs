@@ -3,11 +3,13 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::error::ModeError;
+use crate::modes::memory::embeddings::{cosine_similarity, get_session_embedding};
+use crate::modes::memory::types::{
+    RelationshipEdge, RelationshipGraph, RelationshipType, SessionNode,
+};
 use crate::storage::SqliteStorage;
 use crate::traits::AnthropicClientTrait;
-
-use super::embeddings::{cosine_similarity, get_session_embedding};
-use super::types::{RelationshipEdge, RelationshipGraph, RelationshipType, SessionNode};
+use sqlx::Row;
 
 /// Analyze relationships between reasoning sessions.
 ///
@@ -97,9 +99,11 @@ async fn analyze_all_relationships<C: AnthropicClientTrait>(
     min_strength: f32,
 ) -> Result<RelationshipGraph, ModeError> {
     let session_ids: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
-        .fetch_all(storage.get_pool())
+        .fetch_all(&storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError { message: format!("Failed to get sessions: {e}")))?;
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to get sessions: {e}"),
+        })?;
 
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
@@ -143,9 +147,11 @@ async fn load_session_node(
         "#,
     )
     .bind(session_id)
-    .fetch_optional(storage.get_pool())
+    .fetch_optional(&storage.get_pool())
     .await
-    .map_err(|e| ModeError::StorageError { message: format!("Failed to load node: {e}")))?;
+    .map_err(|e| ModeError::StorageError {
+        message: format!("Failed to load node: {e}"),
+    })?;
 
     if let Some(row) = row {
         let preview: Option<String> = row.get("preview");
@@ -192,12 +198,13 @@ async fn find_similar_sessions<C: AnthropicClientTrait>(
 ) -> Result<Vec<(String, RelationshipType, f32)>, ModeError> {
     let embedding = get_session_embedding(storage, client, session_id).await?;
 
-    let other_sessions: Vec<String> =
-        sqlx::query_scalar("SELECT id FROM sessions WHERE id != ?")
-            .bind(session_id)
-            .fetch_all(storage.get_pool())
-            .await
-            .map_err(|e| ModeError::StorageError { message: format!("Failed to get sessions: {e}")))?;
+    let other_sessions: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions WHERE id != ?")
+        .bind(session_id)
+        .fetch_all(&storage.get_pool())
+        .await
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to get sessions: {e}"),
+        })?;
 
     let mut results = Vec::new();
     for other_id in other_sessions {
@@ -218,13 +225,14 @@ async fn find_mode_related(
     session_id: &str,
     min_strength: f32,
 ) -> Result<Vec<(String, RelationshipType, f32)>, ModeError> {
-    let modes: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT mode FROM thoughts WHERE session_id = ?",
-    )
-    .bind(session_id)
-    .fetch_all(storage.get_pool())
-    .await
-    .map_err(|e| ModeError::StorageError { message: format!("Failed to get modes: {e}")))?;
+    let modes: Vec<String> =
+        sqlx::query_scalar("SELECT DISTINCT mode FROM thoughts WHERE session_id = ?")
+            .bind(session_id)
+            .fetch_all(&storage.get_pool())
+            .await
+            .map_err(|e| ModeError::StorageError {
+                message: format!("Failed to get modes: {e}"),
+            })?;
 
     if modes.is_empty() {
         return Ok(Vec::new());
@@ -242,9 +250,11 @@ async fn find_mode_related(
         )
         .bind(&mode)
         .bind(session_id)
-        .fetch_all(storage.get_pool())
+        .fetch_all(&storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError { message: format!("Failed to find mode related: {e}")))?;
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to find mode related: {e}"),
+        })?;
 
         for related_id in related {
             results.push((related_id, RelationshipType::SharedMode, min_strength));
@@ -270,9 +280,11 @@ async fn find_temporal_neighbors(
     )
     .bind(session_id)
     .bind(session_id)
-    .fetch_all(storage.get_pool())
+    .fetch_all(&storage.get_pool())
     .await
-    .map_err(|e| ModeError::StorageError { message: format!("Failed to find temporal: {e}")))?;
+    .map_err(|e| ModeError::StorageError {
+        message: format!("Failed to find temporal: {e}"),
+    })?;
 
     Ok(neighbors
         .into_iter()
@@ -289,7 +301,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_relate_empty() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
         let client = create_mock_client();
 
         let graph = relate_sessions(&storage, &client, None, 2, 0.5)
@@ -302,7 +316,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_relate_single_session() {
-        let storage = SqliteStorage::new_in_memory().await.expect("create storage");
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
         let client = create_mock_client();
 
         let session = storage.create_session().await.expect("create session");
