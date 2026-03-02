@@ -39,6 +39,7 @@ mod evidence;
 mod graph;
 mod linear;
 mod mcts;
+pub mod memory;
 mod reflection;
 mod timeline;
 mod tree;
