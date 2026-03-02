@@ -45,17 +45,21 @@ pub async fn list_sessions(
 
     // Get total count
     let total: u32 = sqlx::query_scalar(SQL_COUNT_SESSIONS)
-        .fetch_one(storage.pool())
+        .fetch_one(&storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError(format!("Failed to count sessions: {e}")))?;
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to count sessions: {e}"),
+        })?;
 
     // Get sessions
     let rows = sqlx::query(SQL_LIST_SESSIONS)
         .bind(limit)
         .bind(offset)
-        .fetch_all(storage.pool())
+        .fetch_all(&storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError(format!("Failed to list sessions: {e}")))?;
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to list sessions: {e}"),
+        })?;
 
     let mut sessions = Vec::new();
     for row in rows {

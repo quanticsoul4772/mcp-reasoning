@@ -97,9 +97,9 @@ async fn analyze_all_relationships<C: AnthropicClientTrait>(
     min_strength: f32,
 ) -> Result<RelationshipGraph, ModeError> {
     let session_ids: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
-        .fetch_all(storage.pool())
+        .fetch_all(storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError(format!("Failed to get sessions: {e}")))?;
+        .map_err(|e| ModeError::StorageError { message: format!("Failed to get sessions: {e}")))?;
 
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
@@ -143,9 +143,9 @@ async fn load_session_node(
         "#,
     )
     .bind(session_id)
-    .fetch_optional(storage.pool())
+    .fetch_optional(storage.get_pool())
     .await
-    .map_err(|e| ModeError::StorageError(format!("Failed to load node: {e}")))?;
+    .map_err(|e| ModeError::StorageError { message: format!("Failed to load node: {e}")))?;
 
     if let Some(row) = row {
         let preview: Option<String> = row.get("preview");
@@ -195,9 +195,9 @@ async fn find_similar_sessions<C: AnthropicClientTrait>(
     let other_sessions: Vec<String> =
         sqlx::query_scalar("SELECT id FROM sessions WHERE id != ?")
             .bind(session_id)
-            .fetch_all(storage.pool())
+            .fetch_all(storage.get_pool())
             .await
-            .map_err(|e| ModeError::StorageError(format!("Failed to get sessions: {e}")))?;
+            .map_err(|e| ModeError::StorageError { message: format!("Failed to get sessions: {e}")))?;
 
     let mut results = Vec::new();
     for other_id in other_sessions {
@@ -222,9 +222,9 @@ async fn find_mode_related(
         "SELECT DISTINCT mode FROM thoughts WHERE session_id = ?",
     )
     .bind(session_id)
-    .fetch_all(storage.pool())
+    .fetch_all(storage.get_pool())
     .await
-    .map_err(|e| ModeError::StorageError(format!("Failed to get modes: {e}")))?;
+    .map_err(|e| ModeError::StorageError { message: format!("Failed to get modes: {e}")))?;
 
     if modes.is_empty() {
         return Ok(Vec::new());
@@ -242,9 +242,9 @@ async fn find_mode_related(
         )
         .bind(&mode)
         .bind(session_id)
-        .fetch_all(storage.pool())
+        .fetch_all(storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError(format!("Failed to find mode related: {e}")))?;
+        .map_err(|e| ModeError::StorageError { message: format!("Failed to find mode related: {e}")))?;
 
         for related_id in related {
             results.push((related_id, RelationshipType::SharedMode, min_strength));
@@ -270,9 +270,9 @@ async fn find_temporal_neighbors(
     )
     .bind(session_id)
     .bind(session_id)
-    .fetch_all(storage.pool())
+    .fetch_all(storage.get_pool())
     .await
-    .map_err(|e| ModeError::StorageError(format!("Failed to find temporal: {e}")))?;
+    .map_err(|e| ModeError::StorageError { message: format!("Failed to find temporal: {e}")))?;
 
     Ok(neighbors
         .into_iter()

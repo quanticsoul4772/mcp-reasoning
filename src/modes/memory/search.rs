@@ -88,9 +88,9 @@ async fn load_search_result(
         "#,
     )
     .bind(session_id)
-    .fetch_optional(storage.pool())
+    .fetch_optional(storage.get_pool())
     .await
-    .map_err(|e| ModeError::StorageError(format!("Failed to load search result: {e}")))?;
+    .map_err(|e| ModeError::StorageError { message: format!("Failed to load search result: {e}")))?;
 
     if let Some(row) = row {
         let preview: Option<String> = row.get("preview");

@@ -25,7 +25,7 @@ LIMIT 10
 "#;
 
 /// Get embedding for a session, generating if not cached.
-pub async fn get_session_embedding<C: AnthropicClientTrait>(
+pub(crate) async fn get_session_embedding<C: AnthropicClientTrait>(
     storage: &SqliteStorage,
     client: &C,
     session_id: &str,
@@ -46,7 +46,7 @@ pub async fn get_session_embedding<C: AnthropicClientTrait>(
 }
 
 /// Get all session embeddings (generating missing ones).
-pub async fn get_all_embeddings<C: AnthropicClientTrait>(
+pub(crate) async fn get_all_embeddings<C: AnthropicClientTrait>(
     storage: &SqliteStorage,
     client: &C,
 ) -> Result<Vec<(String, Vec<f32>)>, ModeError> {
@@ -55,9 +55,9 @@ pub async fn get_all_embeddings<C: AnthropicClientTrait>(
 
     // Get all sessions
     let sessions: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
-        .fetch_all(storage.pool())
+        .fetch_all(storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError(format!("Failed to get sessions: {e}")))?;
+        .map_err(|e| ModeError::StorageError { message: format!("Failed to get sessions: {e}")))?;
 
     let mut embeddings = Vec::new();
     for session_id in sessions {
@@ -75,9 +75,9 @@ async fn ensure_embeddings<C: AnthropicClientTrait>(
     client: &C,
 ) -> Result<(), ModeError> {
     let missing: Vec<String> = sqlx::query_scalar(SQL_GET_SESSIONS_WITHOUT_EMBEDDINGS)
-        .fetch_all(storage.pool())
+        .fetch_all(storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError(format!("Failed to get missing: {e}")))?;
+        .map_err(|e| ModeError::StorageError { message: format!("Failed to get missing: {e}")))?;
 
     for session_id in missing {
         let content = get_session_content(storage, &session_id).await?;
@@ -95,14 +95,16 @@ async fn get_cached_embedding(
 ) -> Result<Option<Vec<f32>>, ModeError> {
     let row = sqlx::query(SQL_GET_EMBEDDING)
         .bind(session_id)
-        .fetch_optional(storage.pool())
+        .fetch_optional(storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError(format!("Failed to get embedding: {e}")))?;
+        .map_err(|e| ModeError::StorageError { message: format!("Failed to get embedding: {e}")))?;
 
     if let Some(row) = row {
         let json: String = row.get("embedding_json");
         let embedding: Vec<f32> = serde_json::from_str(&json)
-            .map_err(|e| ModeError::ParseError(format!("Invalid embedding JSON: {e}")))?;
+            .map_err(|e| ModeError::ParseError {
+                message: format!("Invalid embedding JSON: {e}"),
+            })?;
         Ok(Some(embedding))
     } else {
         Ok(None)
@@ -117,7 +119,9 @@ async fn store_embedding(
     content: &str,
 ) -> Result<(), ModeError> {
     let embedding_json = serde_json::to_string(embedding)
-        .map_err(|e| ModeError::SerializationError(format!("Failed to serialize: {e}")))?;
+        .map_err(|e| ModeError::SerializationError {
+            message: format!("Failed to serialize: {e}"),
+        })?;
 
     let content_hash = format!("{:x}", md5::compute(content));
 
@@ -125,9 +129,9 @@ async fn store_embedding(
         .bind(session_id)
         .bind(&embedding_json)
         .bind(&content_hash)
-        .execute(storage.pool())
+        .execute(storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError(format!("Failed to store embedding: {e}")))?;
+        .map_err(|e| ModeError::StorageError { message: format!("Failed to store embedding: {e}")))?;
 
     Ok(())
 }
@@ -141,9 +145,9 @@ async fn get_session_content(
         "SELECT content FROM thoughts WHERE session_id = ? ORDER BY created_at LIMIT 10",
     )
     .bind(session_id)
-    .fetch_all(storage.pool())
+    .fetch_all(storage.get_pool())
     .await
-    .map_err(|e| ModeError::StorageError(format!("Failed to get thoughts: {e}")))?;
+    .map_err(|e| ModeError::StorageError { message: format!("Failed to get thoughts: {e}")))?;
 
     if thoughts.is_empty() {
         return Ok(String::new());
@@ -155,7 +159,7 @@ async fn get_session_content(
 }
 
 /// Generate embedding using Claude API.
-async fn generate_embedding<C: AnthropicClientTrait>(
+pub(crate) async fn generate_embedding<C: AnthropicClientTrait>(
     client: &C,
     content: &str,
 ) -> Result<Vec<f32>, ModeError> {

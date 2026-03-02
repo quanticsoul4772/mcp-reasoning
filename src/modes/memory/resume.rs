@@ -46,19 +46,25 @@ pub async fn resume_session<C: AnthropicClientTrait>(
     // Get session metadata
     let session_row = sqlx::query(SQL_GET_SESSION)
         .bind(session_id)
-        .fetch_optional(storage.pool())
+        .fetch_optional(&storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError(format!("Failed to get session: {e}")))?
-        .ok_or_else(|| ModeError::NotFound(format!("Session not found: {session_id}")))?;
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to get session: {e}"),
+        })?
+        .ok_or_else(|| ModeError::NotFound {
+            message: format!("Session not found: {session_id}"),
+        })?;
 
     let created_at: String = session_row.get("created_at");
 
     // Get all thoughts
     let thought_rows = sqlx::query(SQL_GET_THOUGHTS)
         .bind(session_id)
-        .fetch_all(storage.pool())
+        .fetch_all(&storage.get_pool())
         .await
-        .map_err(|e| ModeError::StorageError(format!("Failed to get thoughts: {e}")))?;
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to get thoughts: {e}"),
+        })?;
 
     let mut thought_chain = Vec::new();
     let mut last_mode = None;
@@ -85,9 +91,11 @@ pub async fn resume_session<C: AnthropicClientTrait>(
     let checkpoint = if include_checkpoints {
         let checkpoint_row = sqlx::query(SQL_GET_LATEST_CHECKPOINT)
             .bind(session_id)
-            .fetch_optional(storage.pool())
+            .fetch_optional(&storage.get_pool())
             .await
-            .map_err(|e| ModeError::StorageError(format!("Failed to get checkpoint: {e}")))?;
+            .map_err(|e| ModeError::StorageError {
+                message: format!("Failed to get checkpoint: {e}"),
+            })?;
 
         checkpoint_row.map(|row| CheckpointInfo {
             id: row.get("id"),
@@ -145,7 +153,9 @@ async fn compress_session<C: AnthropicClientTrait>(
     let response = client
         .complete(&prompt, None, None, None)
         .await
-        .map_err(|e| ModeError::ApiError(format!("Failed to compress: {e}")))?;
+        .map_err(|e| ModeError::ApiError {
+            message: format!("Failed to compress: {e}"),
+        })?;
 
     Ok(response.content)
 }

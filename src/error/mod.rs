@@ -272,6 +272,41 @@ pub enum ModeError {
         /// Elapsed time in milliseconds.
         elapsed_ms: u64,
     },
+
+    /// Storage operation failed.
+    #[error("Storage error: {message}")]
+    StorageError {
+        /// Description of the storage error.
+        message: String,
+    },
+
+    /// JSON parsing error.
+    #[error("Parse error: {message}")]
+    ParseError {
+        /// Description of the parsing error.
+        message: String,
+    },
+
+    /// Serialization error.
+    #[error("Serialization error: {message}")]
+    SerializationError {
+        /// Description of the serialization error.
+        message: String,
+    },
+
+    /// Resource not found.
+    #[error("Not found: {message}")]
+    NotFound {
+        /// Description of what was not found.
+        message: String,
+    },
+
+    /// API error.
+    #[error("API error: {message}")]
+    ApiError {
+        /// Description of the API error.
+        message: String,
+    },
 }
 
 /// Configuration errors.
