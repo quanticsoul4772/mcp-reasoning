@@ -238,3 +238,238 @@ async fn test_reasoning_metrics_tool() {
     // summary may or may not be present
     let _ = resp.summary;
 }
+
+// ============================================================================
+// Self-Improvement Tool Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_reasoning_si_status_tool() {
+    let server = create_test_server().await;
+    let req = SiStatusRequest {};
+    let resp = server.reasoning_si_status(Parameters(req)).await;
+    // Status should report circuit state
+    assert!(!resp.circuit_state.is_empty());
+}
+
+#[tokio::test]
+async fn test_reasoning_si_diagnoses_tool() {
+    let server = create_test_server().await;
+    let req = SiDiagnosesRequest { limit: Some(5) };
+    let resp = server.reasoning_si_diagnoses(Parameters(req)).await;
+    // May or may not have pending diagnoses
+    let _ = resp.diagnoses;
+}
+
+#[tokio::test]
+async fn test_reasoning_si_approve_tool() {
+    let server = create_test_server().await;
+    let req = SiApproveRequest {
+        diagnosis_id: "nonexistent".to_string(),
+    };
+    let resp = server.reasoning_si_approve(Parameters(req)).await;
+    // Should fail for nonexistent diagnosis
+    assert!(!resp.success);
+}
+
+#[tokio::test]
+async fn test_reasoning_si_reject_tool() {
+    let server = create_test_server().await;
+    let req = SiRejectRequest {
+        diagnosis_id: "nonexistent".to_string(),
+        reason: Some("test rejection".to_string()),
+    };
+    let resp = server.reasoning_si_reject(Parameters(req)).await;
+    assert!(!resp.success);
+}
+
+#[tokio::test]
+async fn test_reasoning_si_trigger_tool() {
+    let server = create_test_server().await;
+    let req = SiTriggerRequest {};
+    let resp = server.reasoning_si_trigger(Parameters(req)).await;
+    // Trigger should complete (may or may not succeed depending on state)
+    let _ = resp.success;
+}
+
+#[tokio::test]
+async fn test_reasoning_si_rollback_tool() {
+    let server = create_test_server().await;
+    let req = SiRollbackRequest {
+        action_id: "nonexistent".to_string(),
+    };
+    let resp = server.reasoning_si_rollback(Parameters(req)).await;
+    assert!(!resp.success);
+}
+
+// ============================================================================
+// Session Tool Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_reasoning_list_sessions_tool() {
+    let server = create_test_server().await;
+    let req = ListSessionsRequest {
+        limit: Some(10),
+        offset: Some(0),
+        mode_filter: None,
+    };
+    let resp = server.reasoning_list_sessions(Parameters(req)).await;
+    // May or may not have sessions
+    let _ = resp.sessions;
+}
+
+#[tokio::test]
+async fn test_reasoning_resume_tool() {
+    let server = create_test_server().await;
+    let req = ResumeSessionRequest {
+        session_id: "nonexistent".to_string(),
+        compress: Some(false),
+        include_checkpoints: Some(true),
+    };
+    let resp = server.reasoning_resume(Parameters(req)).await;
+    // Should handle nonexistent session gracefully
+    let _ = resp.session_id;
+}
+
+#[tokio::test]
+async fn test_reasoning_search_tool() {
+    let server = create_test_server().await;
+    let req = SearchSessionsRequest {
+        query: "test query".to_string(),
+        limit: Some(5),
+        min_similarity: Some(0.5),
+        mode_filter: None,
+    };
+    let resp = server.reasoning_search(Parameters(req)).await;
+    let _ = resp.results;
+}
+
+#[tokio::test]
+async fn test_reasoning_relate_tool() {
+    let server = create_test_server().await;
+    let req = RelateSessionsRequest {
+        session_id: None,
+        min_strength: Some(0.5),
+        depth: Some(2),
+    };
+    let resp = server.reasoning_relate(Parameters(req)).await;
+    let _ = resp.nodes;
+}
+
+// ============================================================================
+// Agent & Skill Tool Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_reasoning_agent_invoke_tool() {
+    let server = create_test_server().await;
+    let req = AgentInvokeRequest {
+        agent_id: "analyst".to_string(),
+        task: "Test task".to_string(),
+        session_id: None,
+    };
+    let resp = server.reasoning_agent_invoke(Parameters(req)).await;
+    assert!(resp.success);
+    assert_eq!(resp.agent_id, "analyst");
+}
+
+#[tokio::test]
+async fn test_reasoning_agent_invoke_not_found() {
+    let server = create_test_server().await;
+    let req = AgentInvokeRequest {
+        agent_id: "nonexistent".to_string(),
+        task: "Test task".to_string(),
+        session_id: None,
+    };
+    let resp = server.reasoning_agent_invoke(Parameters(req)).await;
+    assert!(!resp.success);
+    assert_eq!(resp.status, "error");
+}
+
+#[tokio::test]
+async fn test_reasoning_agent_list_tool() {
+    let server = create_test_server().await;
+    let req = AgentListRequest { role: None };
+    let resp = server.reasoning_agent_list(Parameters(req)).await;
+    assert_eq!(resp.total, 4);
+}
+
+#[tokio::test]
+async fn test_reasoning_agent_list_filtered() {
+    let server = create_test_server().await;
+    let req = AgentListRequest {
+        role: Some("analyst".to_string()),
+    };
+    let resp = server.reasoning_agent_list(Parameters(req)).await;
+    assert_eq!(resp.total, 1);
+    assert_eq!(resp.agents[0].id, "analyst");
+}
+
+#[tokio::test]
+async fn test_reasoning_skill_run_tool() {
+    let server = create_test_server().await;
+    let req = SkillRunRequest {
+        skill_id: "code-review".to_string(),
+        input: "test input".to_string(),
+        session_id: None,
+    };
+    let resp = server.reasoning_skill_run(Parameters(req)).await;
+    assert!(resp.success);
+    assert!(resp.steps_executed > 0);
+}
+
+#[tokio::test]
+async fn test_reasoning_skill_run_not_found() {
+    let server = create_test_server().await;
+    let req = SkillRunRequest {
+        skill_id: "nonexistent".to_string(),
+        input: "test".to_string(),
+        session_id: None,
+    };
+    let resp = server.reasoning_skill_run(Parameters(req)).await;
+    assert!(!resp.success);
+}
+
+#[tokio::test]
+async fn test_reasoning_team_run_tool() {
+    let server = create_test_server().await;
+    let req = TeamRunRequest {
+        team_id: "debug-investigation".to_string(),
+        task: "Test task".to_string(),
+        session_id: None,
+    };
+    let resp = server.reasoning_team_run(Parameters(req)).await;
+    assert!(resp.success);
+    assert!(resp.subtasks_executed > 0);
+}
+
+#[tokio::test]
+async fn test_reasoning_team_run_not_found() {
+    let server = create_test_server().await;
+    let req = TeamRunRequest {
+        team_id: "nonexistent".to_string(),
+        task: "Test task".to_string(),
+        session_id: None,
+    };
+    let resp = server.reasoning_team_run(Parameters(req)).await;
+    assert!(!resp.success);
+}
+
+#[tokio::test]
+async fn test_reasoning_team_list_tool() {
+    let server = create_test_server().await;
+    let req = TeamListRequest { topology: None };
+    let resp = server.reasoning_team_list(Parameters(req)).await;
+    assert_eq!(resp.total, 5);
+}
+
+#[tokio::test]
+async fn test_reasoning_team_list_filtered() {
+    let server = create_test_server().await;
+    let req = TeamListRequest {
+        topology: Some("sequential".to_string()),
+    };
+    let resp = server.reasoning_team_list(Parameters(req)).await;
+    assert_eq!(resp.total, 2);
+}

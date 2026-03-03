@@ -11,7 +11,9 @@ use crate::server::types::AppState;
 
 mod into_contents;
 mod request_deser;
+mod tool_coverage;
 mod tool_methods;
+mod tool_operations;
 mod wiremock_tests;
 
 // ============================================================================
