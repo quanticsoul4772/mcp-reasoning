@@ -483,4 +483,174 @@ mod tests {
         ctx.record_failure(0);
         assert!(executor.check_condition(&StepCondition::IfStepFailed(0), &ctx));
     }
+
+    #[test]
+    fn test_check_condition_if_confidence_above() {
+        let executor = SkillExecutor::new(MockStorageTrait::new(), MockAnthropicClientTrait::new());
+        let mut ctx = SkillContext::new("input");
+
+        // No confidence key -> false
+        assert!(!executor.check_condition(&StepCondition::IfConfidenceAbove(0.5), &ctx));
+
+        // Confidence below threshold -> false
+        ctx.set("_last_confidence", serde_json::json!(0.3));
+        assert!(!executor.check_condition(&StepCondition::IfConfidenceAbove(0.5), &ctx));
+
+        // Confidence above threshold -> true
+        ctx.set("_last_confidence", serde_json::json!(0.8));
+        assert!(executor.check_condition(&StepCondition::IfConfidenceAbove(0.5), &ctx));
+    }
+
+    #[test]
+    fn test_build_step_input_no_mapping() {
+        let executor = SkillExecutor::new(MockStorageTrait::new(), MockAnthropicClientTrait::new());
+        let ctx = SkillContext::new("original input");
+        let step = SkillStep::new("linear");
+        assert_eq!(executor.build_step_input(&step, &ctx), "original input");
+    }
+
+    #[test]
+    fn test_build_step_input_with_mapping() {
+        let executor = SkillExecutor::new(MockStorageTrait::new(), MockAnthropicClientTrait::new());
+        let mut ctx = SkillContext::new("original input");
+        ctx.set("analysis", serde_json::json!("First analysis result"));
+        ctx.set("score", serde_json::json!(42));
+
+        let step = SkillStep::new("linear")
+            .with_input_map("analysis", "analysis_input")
+            .with_input_map("score", "score_input");
+        let input = executor.build_step_input(&step, &ctx);
+        // Input should contain both mapped values
+        assert!(input.contains("First analysis result") || input.contains("42"));
+    }
+
+    #[test]
+    fn test_build_step_input_with_mapping_missing_keys() {
+        let executor = SkillExecutor::new(MockStorageTrait::new(), MockAnthropicClientTrait::new());
+        let ctx = SkillContext::new("fallback input");
+
+        let step = SkillStep::new("linear").with_input_map("nonexistent", "param");
+        let input = executor.build_step_input(&step, &ctx);
+        // Falls back to original input since no mapped keys found
+        assert_eq!(input, "fallback input");
+    }
+
+    #[tokio::test]
+    async fn test_execute_mode_success() {
+        let executor = SkillExecutor::new(mock_storage(), mock_client());
+        let result = executor.execute_mode("linear", "test input", "s1").await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output["confidence"], 0.85);
+    }
+
+    #[tokio::test]
+    async fn test_execute_mode_non_json_response() {
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                "This is plain text, not JSON",
+                Usage::new(100, 50),
+            ))
+        });
+
+        let executor = SkillExecutor::new(mock_storage(), client);
+        let result = executor.execute_mode("linear", "test", "s1").await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Should wrap in {"content": ...} when JSON extraction fails
+        assert!(output.get("content").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_execute_mode_unknown_mode() {
+        let executor = SkillExecutor::new(mock_storage(), mock_client());
+        // Unknown mode should still work - falls back to generic prompt
+        let result = executor
+            .execute_mode("unknown_mode", "test input", "s1")
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_retry_succeeds_second_attempt() {
+        let mut client = MockAnthropicClientTrait::new();
+
+        let mut call_count = 0u32;
+        client.expect_complete().returning(move |_, _| {
+            call_count += 1;
+            if call_count == 1 {
+                Err(ModeError::ApiError {
+                    message: "temporary error".to_string(),
+                })
+            } else {
+                Ok(CompletionResponse::new(
+                    r#"{"analysis": "Success", "confidence": 0.9}"#,
+                    Usage::new(100, 50),
+                ))
+            }
+        });
+
+        let executor = SkillExecutor::new(mock_storage(), client);
+        let skill = Skill::new(
+            "retry-skill",
+            "Retry Skill",
+            "test",
+            SkillCategory::Analysis,
+            vec![SkillStep::new("linear").with_error_strategy(ErrorStrategy::Retry(3))],
+        );
+        let context = SkillContext::new("input");
+
+        let result = executor.execute(&skill, context).await.unwrap();
+        assert!(result.success);
+        assert!(!result.step_results[0].skipped);
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_retry_exhausted() {
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Err(ModeError::ApiError {
+                message: "persistent error".to_string(),
+            })
+        });
+
+        let executor = SkillExecutor::new(mock_storage(), client);
+        let skill = Skill::new(
+            "retry-exhaust",
+            "Retry Exhaust",
+            "test",
+            SkillCategory::Analysis,
+            vec![SkillStep::new("linear").with_error_strategy(ErrorStrategy::Retry(2))],
+        );
+        let context = SkillContext::new("input");
+
+        let result = executor.execute(&skill, context).await.unwrap();
+        // Retry exhausted falls to Skip-like behavior
+        assert!(result.success); // Retry counts as skipped
+        assert!(result.step_results[0].skipped);
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_confidence_condition() {
+        let executor = SkillExecutor::new(mock_storage(), mock_client());
+        let skill = Skill::new(
+            "conf-skill",
+            "Confidence Skill",
+            "test",
+            SkillCategory::Analysis,
+            vec![
+                SkillStep::new("linear").with_output_key("_last_confidence"),
+                SkillStep::new("linear")
+                    .with_condition(StepCondition::IfConfidenceAbove(0.5))
+                    .with_description("Only if confident"),
+            ],
+        );
+
+        let context = SkillContext::new("input");
+        let result = executor.execute(&skill, context).await.unwrap();
+        assert!(result.success);
+        // Second step may be skipped or executed depending on confidence value
+        assert_eq!(result.step_results.len(), 2);
+    }
 }

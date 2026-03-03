@@ -589,4 +589,181 @@ mod tests {
         assert!(!result.planned_steps.is_empty());
         assert!(!result.synthesis.is_empty());
     }
+
+    #[tokio::test]
+    async fn test_execute_step_non_linear_mode() {
+        let mut mock_client = MockAnthropicClientTrait::new();
+        mock_client
+            .expect_complete()
+            .returning(|_, _| Ok(linear_response()));
+
+        let mut mock_storage = MockStorageTrait::new();
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+        mock_storage.expect_get_thoughts().returning(|_| Ok(vec![]));
+
+        let executor = AgentExecutor::new(mock_storage, mock_client);
+
+        let step = PlannedStep {
+            mode: "tree".to_string(),
+            operation: Some("create".to_string()),
+            input: "Explore branches".to_string(),
+            rationale: Some("Need branching".to_string()),
+        };
+
+        let result = executor.execute_step(&step, 0, "s1").await;
+        assert!(result.success);
+        assert_eq!(result.mode, "tree");
+        assert!(result.output.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_execute_step_failure() {
+        let mut mock_client = MockAnthropicClientTrait::new();
+        mock_client.expect_complete().returning(|_, _| {
+            Err(ModeError::ApiError {
+                message: "API failure".to_string(),
+            })
+        });
+
+        let mock_storage = MockStorageTrait::new();
+        let executor = AgentExecutor::new(mock_storage, mock_client);
+
+        let step = PlannedStep {
+            mode: "linear".to_string(),
+            operation: None,
+            input: "test".to_string(),
+            rationale: None,
+        };
+
+        let result = executor.execute_step(&step, 0, "s1").await;
+        assert!(!result.success);
+        assert!(result.error.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_invoke_with_step_failure() {
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        // Call 1: plan_steps succeeds
+        // Call 2: execute_step fails
+        // Call 3: synthesize succeeds
+        let mut call_count = 0u32;
+        mock_client.expect_complete().returning(move |_, _| {
+            call_count += 1;
+            match call_count {
+                1 => Ok(plan_response()),
+                2 => Err(ModeError::ApiError {
+                    message: "step failed".to_string(),
+                }),
+                _ => Ok(synthesis_response()),
+            }
+        });
+
+        let mut mock_storage = MockStorageTrait::new();
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            use crate::traits::Session;
+            Ok(Session::new(id.unwrap_or_else(|| "s1".to_string())))
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+        mock_storage.expect_get_thoughts().returning(|_| Ok(vec![]));
+
+        let executor = AgentExecutor::new(mock_storage, mock_client);
+        let agent = mock_agent();
+
+        let result = executor.invoke(&agent, "Failing task", "s1").await.unwrap();
+        assert!(!result.success);
+        assert_eq!(result.status, AgentStatus::Failed);
+        // Should stop after first failing step
+        assert_eq!(result.step_results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_complete_prompt() {
+        let mut mock_client = MockAnthropicClientTrait::new();
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                "Prompt completed successfully.",
+                Usage::new(100, 50),
+            ))
+        });
+
+        let mock_storage = MockStorageTrait::new();
+        let executor = AgentExecutor::new(mock_storage, mock_client);
+
+        let result = executor.complete_prompt("Test prompt").await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("successfully"));
+    }
+
+    #[tokio::test]
+    async fn test_synthesize_with_mixed_results() {
+        let mut mock_client = MockAnthropicClientTrait::new();
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                "Synthesis of mixed results: partial success noted.",
+                Usage::new(100, 50),
+            ))
+        });
+
+        let mock_storage = MockStorageTrait::new();
+        let executor = AgentExecutor::new(mock_storage, mock_client);
+        let agent = mock_agent();
+
+        let results = vec![
+            StepResult {
+                step_index: 0,
+                mode: "linear".to_string(),
+                operation: None,
+                success: true,
+                output: Some(serde_json::json!({"content": "Analysis done"})),
+                error: None,
+            },
+            StepResult {
+                step_index: 1,
+                mode: "tree".to_string(),
+                operation: Some("create".to_string()),
+                success: false,
+                output: None,
+                error: Some("timeout".to_string()),
+            },
+        ];
+
+        let synthesis = executor.synthesize(&agent, "Complex task", &results).await;
+        assert!(synthesis.is_ok());
+        assert!(synthesis.unwrap().contains("partial success"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_reasoning_saves_thought() {
+        let mut mock_client = MockAnthropicClientTrait::new();
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"analysis": "Deep analysis", "confidence": 0.92}"#,
+                Usage::new(100, 50),
+            ))
+        });
+
+        let mut mock_storage = MockStorageTrait::new();
+        mock_storage
+            .expect_save_thought()
+            .times(1)
+            .returning(|thought| {
+                assert_eq!(thought.mode, "linear");
+                assert!((thought.confidence - 0.92).abs() < 0.01);
+                Ok(())
+            });
+        mock_storage.expect_get_thoughts().returning(|_| Ok(vec![]));
+
+        let executor = AgentExecutor::new(mock_storage, mock_client);
+
+        let step = PlannedStep {
+            mode: "linear".to_string(),
+            operation: None,
+            input: "test".to_string(),
+            rationale: None,
+        };
+
+        let result = executor.execute_step(&step, 0, "s1").await;
+        assert!(result.success);
+    }
 }

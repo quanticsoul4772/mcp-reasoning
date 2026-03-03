@@ -13,6 +13,7 @@ mod analysis;
 mod core_tools;
 mod detect_extra;
 mod extended;
+mod handler_success;
 mod more_tests;
 mod temporal;
 
