@@ -321,7 +321,7 @@ impl super::ReasoningServer {
             let iterations = response.iterations_used.unwrap_or(1) as usize;
             let quality = response.quality_score;
 
-            if let Ok(metadata) = metadata_builders::build_metadata_for_reflection(
+            match metadata_builders::build_metadata_for_reflection(
                 &self.state.metadata_builder,
                 req.content.as_deref().unwrap_or("").len(),
                 operation,
@@ -332,7 +332,17 @@ impl super::ReasoningServer {
             )
             .await
             {
-                response.metadata = Some(metadata);
+                Ok(metadata) => {
+                    response.metadata = Some(metadata);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        tool = "reasoning_reflection",
+                        operation = %operation,
+                        error = %e,
+                        "Metadata enrichment failed, returning response without metadata"
+                    );
+                }
             }
         }
 

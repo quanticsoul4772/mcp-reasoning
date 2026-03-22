@@ -216,7 +216,7 @@ impl super::ReasoningServer {
                 .or_else(|| response.conclusions.as_ref().map(std::vec::Vec::len))
                 .unwrap_or(1);
 
-            if let Ok(metadata) = metadata_builders::build_metadata_for_graph(
+            match metadata_builders::build_metadata_for_graph(
                 &self.state.metadata_builder,
                 content.len(),
                 &operation,
@@ -226,7 +226,17 @@ impl super::ReasoningServer {
             )
             .await
             {
-                response.metadata = Some(metadata);
+                Ok(metadata) => {
+                    response.metadata = Some(metadata);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        tool = "reasoning_graph",
+                        operation = %operation,
+                        error = %e,
+                        "Metadata enrichment failed, returning response without metadata"
+                    );
+                }
             }
         }
 
