@@ -20,20 +20,20 @@ use rmcp::{tool, tool_handler, tool_router};
 use super::requests::{
     AgentInvokeRequest, AgentListRequest, AgentMetricsRequest, AutoRequest, CheckpointRequest,
     CounterfactualRequest, DecisionRequest, DetectRequest, DivergentRequest, EvidenceRequest,
-    GraphRequest, LinearRequest, ListSessionsRequest, MctsRequest, MetricsRequest, PresetRequest,
-    ReflectionRequest, RelateSessionsRequest, ResumeSessionRequest, SearchSessionsRequest,
-    SiApproveRequest, SiDiagnosesRequest, SiRejectRequest, SiRollbackRequest, SiStatusRequest,
-    SiTriggerRequest, SkillRunRequest, TeamListRequest, TeamRunRequest, TimelineRequest,
-    TreeRequest,
+    GraphRequest, LinearRequest, ListSessionsRequest, MctsRequest, MetaRequest, MetricsRequest,
+    PresetRequest, ReflectionRequest, RelateSessionsRequest, ResumeSessionRequest,
+    SearchSessionsRequest, SiApproveRequest, SiDiagnosesRequest, SiRejectRequest,
+    SiRollbackRequest, SiStatusRequest, SiTriggerRequest, SkillRunRequest, TeamListRequest,
+    TeamRunRequest, TimelineRequest, TreeRequest,
 };
 use super::responses::{
     AgentInvokeResponse, AgentListResponse, AgentMetricsResponse, AutoResponse, CheckpointResponse,
     CounterfactualResponse, DecisionResponse, DetectResponse, DivergentResponse, EvidenceResponse,
-    GraphResponse, LinearResponse, ListSessionsResponse, MctsResponse, MetricsResponse,
-    PresetResponse, ReflectionResponse, RelateSessionsResponse, ResumeSessionResponse,
-    SearchSessionsResponse, SiApproveResponse, SiDiagnosesResponse, SiRejectResponse,
-    SiRollbackResponse, SiStatusResponse, SiTriggerResponse, SkillRunResponse, TeamListResponse,
-    TeamRunResponse, TimelineResponse, TreeResponse,
+    GraphResponse, LinearResponse, ListSessionsResponse, MctsResponse, MetaResponse,
+    MetricsResponse, PresetResponse, ReflectionResponse, RelateSessionsResponse,
+    ResumeSessionResponse, SearchSessionsResponse, SiApproveResponse, SiDiagnosesResponse,
+    SiRejectResponse, SiRollbackResponse, SiStatusResponse, SiTriggerResponse, SkillRunResponse,
+    TeamListResponse, TeamRunResponse, TimelineResponse, TreeResponse,
 };
 use super::types::AppState;
 
@@ -115,6 +115,14 @@ impl ReasoningServer {
     )]
     async fn reasoning_auto(&self, req: Parameters<AutoRequest>) -> AutoResponse {
         self.handle_auto(req.0).await
+    }
+
+    #[tool(
+        name = "reasoning_meta",
+        description = "Select the best reasoning tool based on historical effectiveness data. Classifies the problem type and recommends the most effective tool from empirical success rates. Falls back to reasoning_auto when no data exists."
+    )]
+    async fn reasoning_meta(&self, req: Parameters<MetaRequest>) -> MetaResponse {
+        self.handle_meta(req.0).await
     }
 
     // -- Cognitive tools --
@@ -389,13 +397,8 @@ impl ReasoningServer {
 #[tool_handler]
 impl ServerHandler for ReasoningServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            instructions: Some(
-                "MCP Reasoning Server providing 15 structured reasoning tools.".to_string(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_instructions("MCP Reasoning Server providing 15 structured reasoning tools.")
     }
 }
 

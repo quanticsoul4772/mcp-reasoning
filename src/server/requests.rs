@@ -97,6 +97,18 @@ pub struct AutoRequest {
     pub session_id: Option<String>,
 }
 
+/// Request for meta-reasoning (empirical tool selection).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MetaRequest {
+    /// Content/problem to analyze for routing.
+    pub content: String,
+    /// Manual problem type hint (skips classification if provided).
+    /// Categories: math, code_review, planning, brainstorming, summarization, research, evaluation, causal, temporal, other.
+    pub problem_type_hint: Option<String>,
+    /// Minimum confidence threshold for recommendation (0.0-1.0, default 0.4).
+    pub min_confidence: Option<f64>,
+}
+
 /// Request for graph reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GraphRequest {

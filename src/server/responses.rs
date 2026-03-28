@@ -176,6 +176,26 @@ pub struct AutoResponse {
     pub metadata: Option<crate::metadata::ResponseMetadata>,
 }
 
+/// Response from meta-reasoning tool selection.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MetaResponse {
+    /// Recommended reasoning tool to use next.
+    pub selected_tool: String,
+    /// Classified problem type.
+    pub problem_type: String,
+    /// Confidence in recommendation (0.0-1.0).
+    pub confidence: f64,
+    /// Reasoning for the selection.
+    pub reasoning: String,
+    /// Whether the selection fell back to auto mode (no effectiveness data).
+    pub fallback_to_auto: bool,
+    /// Number of candidate tools considered.
+    pub candidates_evaluated: usize,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
+}
+
 // ============================================================================
 // Graph Reasoning Responses
 // ============================================================================
@@ -991,6 +1011,7 @@ impl_into_contents!(
     TeamRunResponse,
     TeamListResponse,
     AgentMetricsResponse,
+    MetaResponse,
 );
 
 #[cfg(test)]

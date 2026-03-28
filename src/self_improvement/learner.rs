@@ -147,6 +147,12 @@ impl Learner {
         .clamp(-1.0, 1.0)
     }
 
+    /// Record a lesson directly (e.g., from a rejection or external feedback).
+    pub fn record_lesson(&mut self, lesson: Lesson) {
+        self.lessons.push(lesson);
+        self.trim_lessons();
+    }
+
     /// Get all lessons.
     pub fn lessons(&self) -> &[Lesson] {
         &self.lessons

@@ -171,6 +171,8 @@ pub struct ManagerStatus {
     pub total_actions_executed: u64,
     /// Total actions rolled back.
     pub total_actions_rolled_back: u64,
+    /// Total actions rejected.
+    pub total_actions_rejected: u64,
     /// Last cycle time (Unix epoch milliseconds).
     pub last_cycle_at: Option<u64>,
     /// Learning summary.
@@ -188,6 +190,7 @@ impl Default for ManagerStatus {
             pending_diagnoses: 0,
             total_actions_executed: 0,
             total_actions_rolled_back: 0,
+            total_actions_rejected: 0,
             last_cycle_at: None,
             learning_summary: LearningSummaryData::default(),
         }
@@ -379,6 +382,7 @@ struct ManagerState {
     failed_cycles: u64,
     total_actions_executed: u64,
     total_actions_rolled_back: u64,
+    total_actions_rejected: u64,
     last_cycle_at: Option<u64>,
 }
 
@@ -391,6 +395,7 @@ impl Default for ManagerState {
             failed_cycles: 0,
             total_actions_executed: 0,
             total_actions_rolled_back: 0,
+            total_actions_rejected: 0,
             last_cycle_at: None,
         }
     }
@@ -439,6 +444,7 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             pending_diagnoses: 0,
             total_actions_executed: 0,
             total_actions_rolled_back: 0,
+            total_actions_rejected: 0,
             last_cycle_at: None,
             learning_summary: LearningSummaryData::default(),
         });
@@ -625,24 +631,9 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
         })
     }
 
-    fn handle_reject(&self, diagnosis_id: &str, reason: Option<&str>) -> Result<(), String> {
-        let pending = self.system.pending_actions();
-        if !pending.iter().any(|a| a.id == diagnosis_id) {
-            return Err(format!("Diagnosis not found: {diagnosis_id}"));
-        }
-
-        tracing::info!(
-            diagnosis_id = diagnosis_id,
-            reason = reason,
-            "Diagnosis rejected"
-        );
-
-        // Remove the rejected diagnosis from pending
-        // Note: The current system doesn't have a method to reject specific actions,
-        // so we approve an empty list which effectively leaves it pending.
-        // For now, we just log the rejection.
-        // TODO: Add proper rejection handling to SelfImprovementSystem
-
+    fn handle_reject(&mut self, diagnosis_id: &str, reason: Option<&str>) -> Result<(), String> {
+        self.system.reject_action(diagnosis_id, reason)?;
+        self.state.total_actions_rejected += 1;
         self.update_status();
         Ok(())
     }
@@ -682,6 +673,7 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             pending_diagnoses: self.system.pending_actions().len(),
             total_actions_executed: self.state.total_actions_executed,
             total_actions_rolled_back: self.state.total_actions_rolled_back,
+            total_actions_rejected: self.state.total_actions_rejected,
             last_cycle_at: self.state.last_cycle_at,
             learning_summary: self.system.learning_summary().into(),
         }
@@ -1039,7 +1031,7 @@ mod tests {
         let metrics = Arc::new(MetricsCollector::new());
         let storage = create_test_storage().await;
 
-        let (manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
+        let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
 
         let result = manager.handle_reject("nonexistent", Some("reason"));
         assert!(result.is_err());
@@ -1312,6 +1304,8 @@ mod tests {
                 latency_ms: 100,
                 success: true,
                 timestamp: 1234567890,
+                problem_type: None,
+                quality_rating: None,
             });
         }
 
@@ -1391,6 +1385,7 @@ mod tests {
             pending_diagnoses: 2,
             total_actions_executed: 10,
             total_actions_rolled_back: 1,
+            total_actions_rejected: 0,
             last_cycle_at: Some(1234567890),
             learning_summary: LearningSummaryData {
                 total_lessons: 3,

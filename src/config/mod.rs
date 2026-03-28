@@ -19,6 +19,7 @@
 //!     request_timeout_ms: 30000,
 //!     request_timeout_deep_ms: 60000,
 //!     request_timeout_maximum_ms: 120000,
+//!     factory_timeout_ms: 30000,
 //!     max_retries: 3,
 //!     model: DEFAULT_MODEL.to_string(),
 //! };
@@ -56,6 +57,9 @@ pub const DEFAULT_REQUEST_TIMEOUT_DEEP_MS: u64 = 60_000;
 /// Default request timeout for maximum thinking modes (16K tokens).
 pub const DEFAULT_REQUEST_TIMEOUT_MAXIMUM_MS: u64 = 120_000;
 
+/// Default factory timeout in milliseconds.
+pub const DEFAULT_FACTORY_TIMEOUT_MS: u64 = 30_000;
+
 /// Default maximum retry attempts.
 pub const DEFAULT_MAX_RETRIES: u32 = 3;
 
@@ -89,6 +93,8 @@ pub struct Config {
     pub request_timeout_deep_ms: u64,
     /// Request timeout for maximum thinking modes (16K tokens).
     pub request_timeout_maximum_ms: u64,
+    /// Factory timeout in milliseconds for metadata builder.
+    pub factory_timeout_ms: u64,
     /// Maximum retry attempts.
     pub max_retries: u32,
     /// Anthropic model to use.
@@ -107,6 +113,7 @@ impl Config {
     /// - `REQUEST_TIMEOUT_MS`: Request timeout for fast/standard modes (default: `30000`)
     /// - `REQUEST_TIMEOUT_DEEP_MS`: Request timeout for deep modes (default: `60000`)
     /// - `REQUEST_TIMEOUT_MAXIMUM_MS`: Request timeout for maximum modes (default: `120000`)
+    /// - `FACTORY_TIMEOUT_MS`: Factory timeout for metadata builder (default: `30000`)
     /// - `MAX_RETRIES`: Maximum retry attempts (default: `3`)
     /// - `ANTHROPIC_MODEL`: Model to use (default: `claude-sonnet-4-20250514`)
     ///
@@ -140,6 +147,8 @@ impl Config {
             DEFAULT_REQUEST_TIMEOUT_MAXIMUM_MS,
         )?;
 
+        let factory_timeout_ms = parse_env_u64("FACTORY_TIMEOUT_MS", DEFAULT_FACTORY_TIMEOUT_MS)?;
+
         let max_retries = parse_env_u32("MAX_RETRIES", DEFAULT_MAX_RETRIES)?;
 
         let model = std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into());
@@ -151,6 +160,7 @@ impl Config {
             request_timeout_ms,
             request_timeout_deep_ms,
             request_timeout_maximum_ms,
+            factory_timeout_ms,
             max_retries,
             model,
         };
@@ -177,6 +187,7 @@ impl Config {
     /// #     request_timeout_ms: 30_000,
     /// #     request_timeout_deep_ms: 60_000,
     /// #     request_timeout_maximum_ms: 120_000,
+    /// #     factory_timeout_ms: 30_000,
     /// #     max_retries: 3,
     /// #     model: "claude-sonnet-4-20250514".into(),
     /// # };
@@ -237,6 +248,7 @@ mod tests {
         env::remove_var("DATABASE_PATH");
         env::remove_var("LOG_LEVEL");
         env::remove_var("REQUEST_TIMEOUT_MS");
+        env::remove_var("FACTORY_TIMEOUT_MS");
         env::remove_var("MAX_RETRIES");
         env::remove_var("ANTHROPIC_MODEL");
     }
@@ -276,6 +288,7 @@ mod tests {
         assert_eq!(config.database_path, DEFAULT_DATABASE_PATH);
         assert_eq!(config.log_level, DEFAULT_LOG_LEVEL);
         assert_eq!(config.request_timeout_ms, DEFAULT_REQUEST_TIMEOUT_MS);
+        assert_eq!(config.factory_timeout_ms, DEFAULT_FACTORY_TIMEOUT_MS);
         assert_eq!(config.max_retries, DEFAULT_MAX_RETRIES);
         assert_eq!(config.model, DEFAULT_MODEL);
     }
@@ -347,6 +360,35 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_config_factory_timeout_from_env() {
+        setup_test_env();
+
+        env::set_var("ANTHROPIC_API_KEY", "sk-ant-test-key");
+        env::set_var("FACTORY_TIMEOUT_MS", "45000");
+
+        let config = Config::from_env().expect("should load config");
+        assert_eq!(config.factory_timeout_ms, 45000);
+    }
+
+    #[test]
+    #[serial]
+    fn test_config_factory_timeout_invalid() {
+        setup_test_env();
+
+        env::set_var("ANTHROPIC_API_KEY", "sk-ant-test-key");
+        env::set_var("FACTORY_TIMEOUT_MS", "not-a-number");
+
+        let result = Config::from_env();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::InvalidValue { var, .. } if var == "FACTORY_TIMEOUT_MS"
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn test_config_retries_validation_failure() {
         setup_test_env();
 
@@ -404,6 +446,7 @@ mod tests {
             request_timeout_ms: 5000,
             request_timeout_deep_ms: 10000,
             request_timeout_maximum_ms: 20000,
+            factory_timeout_ms: 30000,
             max_retries: 2,
             model: "test-model".to_string(),
         };
@@ -421,6 +464,7 @@ mod tests {
             request_timeout_ms: 5000,
             request_timeout_deep_ms: 10000,
             request_timeout_maximum_ms: 20000,
+            factory_timeout_ms: 30000,
             max_retries: 2,
             model: "test-model".to_string(),
         };

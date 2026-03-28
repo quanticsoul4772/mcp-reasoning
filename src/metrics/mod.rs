@@ -50,6 +50,12 @@ pub struct MetricEvent {
     pub success: bool,
     /// Timestamp of the event (Unix epoch seconds).
     pub timestamp: u64,
+    /// Problem type tag for effectiveness tracking (e.g., "math", "code_review", "planning").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem_type: Option<String>,
+    /// Quality rating of the result (0.0-1.0), set by caller or inferred from outcome.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality_rating: Option<f64>,
 }
 
 impl MetricEvent {
@@ -65,6 +71,8 @@ impl MetricEvent {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
+            problem_type: None,
+            quality_rating: None,
         }
     }
 
@@ -72,6 +80,20 @@ impl MetricEvent {
     #[must_use]
     pub fn with_operation(mut self, operation: impl Into<String>) -> Self {
         self.operation = Some(operation.into());
+        self
+    }
+
+    /// Tag this event with a problem type for effectiveness tracking.
+    #[must_use]
+    pub fn with_problem_type(mut self, problem_type: impl Into<String>) -> Self {
+        self.problem_type = Some(problem_type.into());
+        self
+    }
+
+    /// Set a quality rating for this event's result (0.0-1.0).
+    #[must_use]
+    pub fn with_quality_rating(mut self, rating: f64) -> Self {
+        self.quality_rating = Some(rating.clamp(0.0, 1.0));
         self
     }
 }
@@ -217,6 +239,21 @@ pub struct ChainSummary {
     pub entry_tools: Vec<String>,
     /// Tools that are frequently ending points.
     pub terminal_tools: Vec<String>,
+}
+
+/// Tool effectiveness for a specific context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolEffectiveness {
+    /// Tool/mode name.
+    pub tool_name: String,
+    /// Success rate (0.0-1.0).
+    pub success_rate: f64,
+    /// Average quality rating (0.0-1.0), if quality data is available.
+    pub avg_quality: Option<f64>,
+    /// Number of observations.
+    pub sample_count: u64,
+    /// Average latency in ms.
+    pub avg_latency_ms: f64,
 }
 
 /// Thread-safe metrics collector.
@@ -483,6 +520,88 @@ impl MetricsCollector {
             .read()
             .map(|events| events.len() as u64)
             .unwrap_or(0)
+    }
+
+    /// Get tool effectiveness data filtered by problem type context.
+    ///
+    /// Returns effectiveness stats for each tool that has been used with the
+    /// given problem type tag, sorted by a composite score of success rate and quality.
+    #[must_use]
+    pub fn effectiveness_by_context(&self, context: &str) -> Vec<ToolEffectiveness> {
+        let events = self.events.read().map(|e| e.clone()).unwrap_or_default();
+
+        // Group events by mode, filtered by problem_type
+        let mut by_mode: HashMap<String, Vec<&MetricEvent>> = HashMap::new();
+        for event in &events {
+            if event.problem_type.as_deref() == Some(context) {
+                by_mode.entry(event.mode.clone()).or_default().push(event);
+            }
+        }
+
+        let mut results: Vec<ToolEffectiveness> = by_mode
+            .into_iter()
+            .map(|(tool_name, mode_events)| {
+                let sample_count = mode_events.len() as u64;
+                let successes = mode_events.iter().filter(|e| e.success).count() as f64;
+                let success_rate = successes / sample_count as f64;
+
+                let quality_ratings: Vec<f64> = mode_events
+                    .iter()
+                    .filter_map(|e| e.quality_rating)
+                    .collect();
+                let avg_quality = if quality_ratings.is_empty() {
+                    None
+                } else {
+                    Some(quality_ratings.iter().sum::<f64>() / quality_ratings.len() as f64)
+                };
+
+                let avg_latency_ms = mode_events.iter().map(|e| e.latency_ms).sum::<u64>() as f64
+                    / sample_count as f64;
+
+                ToolEffectiveness {
+                    tool_name,
+                    success_rate,
+                    avg_quality,
+                    sample_count,
+                    avg_latency_ms,
+                }
+            })
+            .collect();
+
+        // Sort by composite score: success_rate * 0.6 + avg_quality * 0.4 (quality defaults to success_rate)
+        results.sort_by(|a, b| {
+            let score_a = a.success_rate * 0.6 + a.avg_quality.unwrap_or(a.success_rate) * 0.4;
+            let score_b = b.success_rate * 0.6 + b.avg_quality.unwrap_or(b.success_rate) * 0.4;
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        results
+    }
+
+    /// Recommend the best tool for a given problem type based on historical effectiveness.
+    ///
+    /// Returns the tool name and a confidence score (0.0-1.0) based on sample size
+    /// and consistency. Returns `None` if no data is available for this context.
+    #[must_use]
+    pub fn recommend_tool(&self, context: &str) -> Option<(String, f64)> {
+        let effectiveness = self.effectiveness_by_context(context);
+
+        // Need at least one tool with 3+ samples to make a recommendation
+        let viable: Vec<&ToolEffectiveness> = effectiveness
+            .iter()
+            .filter(|e| e.sample_count >= 3)
+            .collect();
+
+        let best = viable.first()?;
+
+        // Confidence based on sample size: 3 samples = 0.3, 10+ = 0.8, 30+ = 1.0
+        let size_confidence = (best.sample_count as f64 / 30.0).min(1.0);
+        // Weight by success rate
+        let confidence = (size_confidence * 0.4 + best.success_rate * 0.6).min(1.0);
+
+        Some((best.tool_name.clone(), confidence))
     }
 
     /// Analyze tool chains and return a summary.

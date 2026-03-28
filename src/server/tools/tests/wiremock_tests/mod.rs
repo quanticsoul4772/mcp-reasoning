@@ -46,6 +46,7 @@ async fn create_mocked_server(mock_server: &MockServer) -> ReasoningServer {
         request_timeout_ms: 5000,
         request_timeout_deep_ms: 60000,
         request_timeout_maximum_ms: 120000,
+        factory_timeout_ms: 30000,
         max_retries: 0,
         model: "claude-sonnet-4-20250514".to_string(),
     };
