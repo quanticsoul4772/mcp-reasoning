@@ -40,6 +40,7 @@ mod graph;
 mod linear;
 mod mcts;
 pub mod memory;
+pub mod meta;
 mod reflection;
 mod timeline;
 mod tree;

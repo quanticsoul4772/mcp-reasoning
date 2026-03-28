@@ -57,6 +57,8 @@ pub enum ActionStatus {
     Failed,
     /// Action was rolled back.
     RolledBack,
+    /// Action was rejected before execution.
+    Rejected,
 }
 
 impl std::fmt::Display for ActionStatus {
@@ -68,6 +70,7 @@ impl std::fmt::Display for ActionStatus {
             Self::Completed => write!(f, "completed"),
             Self::Failed => write!(f, "failed"),
             Self::RolledBack => write!(f, "rolled_back"),
+            Self::Rejected => write!(f, "rejected"),
         }
     }
 }

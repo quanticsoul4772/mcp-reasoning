@@ -37,6 +37,7 @@
 //!     request_timeout_ms: 30000,
 //!     request_timeout_deep_ms: 60000,
 //!     request_timeout_maximum_ms: 120000,
+//!     factory_timeout_ms: 30000,
 //!     max_retries: 3,
 //!     model: DEFAULT_MODEL.to_string(),
 //! };

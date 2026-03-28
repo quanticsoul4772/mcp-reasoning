@@ -95,7 +95,7 @@ impl McpServer {
         let metadata_builder = crate::metadata::MetadataBuilder::new(
             timing_db,
             preset_index,
-            30_000, // Factory timeout (30s) - TODO: make configurable
+            self.config.factory_timeout_ms,
         );
 
         // Create progress notification channel
@@ -156,6 +156,7 @@ mod tests {
             request_timeout_ms: 30000,
             request_timeout_deep_ms: 60000,
             request_timeout_maximum_ms: 120000,
+            factory_timeout_ms: 30000,
             max_retries: 3,
             model: "claude-sonnet-4-20250514".to_string(),
         }

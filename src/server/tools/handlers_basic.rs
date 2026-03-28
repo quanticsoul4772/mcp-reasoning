@@ -3,10 +3,11 @@ use std::time::Duration;
 
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
+use crate::modes::meta::MetaMode;
 use crate::modes::{AutoMode, LinearMode, TreeMode};
 use crate::server::metadata_builders;
-use crate::server::requests::{AutoRequest, LinearRequest, TreeRequest};
-use crate::server::responses::{AutoResponse, Branch, LinearResponse, TreeResponse};
+use crate::server::requests::{AutoRequest, LinearRequest, MetaRequest, TreeRequest};
+use crate::server::responses::{AutoResponse, Branch, LinearResponse, MetaResponse, TreeResponse};
 
 use super::NO_THINKING;
 
@@ -420,6 +421,82 @@ impl super::ReasoningServer {
                 confidence: 0.0,
                 rationale: format!("ERROR: {e}"),
                 result: serde_json::Value::Null,
+                metadata: None,
+            },
+        }
+    }
+
+    pub(super) async fn handle_meta(&self, req: MetaRequest) -> MetaResponse {
+        let timer = Timer::start();
+
+        tracing::info!(
+            tool = "reasoning_meta",
+            content_length = req.content.len(),
+            problem_type_hint = ?req.problem_type_hint,
+            "Meta-reasoning invocation started"
+        );
+
+        let mode = MetaMode::new(
+            Arc::clone(&self.state.storage),
+            Arc::clone(&self.state.client),
+        );
+
+        let timeout_ms = self.state.config.timeout_for_thinking_budget(NO_THINKING);
+        let timeout_duration = Duration::from_millis(timeout_ms);
+
+        let result = match tokio::time::timeout(
+            timeout_duration,
+            mode.route(
+                &req.content,
+                req.problem_type_hint,
+                req.min_confidence,
+                &self.state.metrics,
+            ),
+        )
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_meta",
+                    timeout_ms = timeout_ms,
+                    "Tool execution timed out"
+                );
+                Err(ModeError::Timeout {
+                    elapsed_ms: timeout_ms,
+                })
+            }
+        };
+
+        let elapsed_ms = timer.elapsed_ms();
+        let success = result.is_ok();
+
+        // Record metric with problem type for meta-learning
+        let mut metric = MetricEvent::new("meta", elapsed_ms, success);
+        if let Ok(ref route) = result {
+            metric = metric
+                .with_problem_type(&route.problem_type)
+                .with_quality_rating(route.confidence);
+        }
+        self.state.metrics.record(metric);
+
+        match result {
+            Ok(route) => MetaResponse {
+                selected_tool: route.selected_tool,
+                problem_type: route.problem_type,
+                confidence: route.confidence,
+                reasoning: route.reasoning,
+                fallback_to_auto: route.fallback_to_auto,
+                candidates_evaluated: route.candidates.len(),
+                metadata: None,
+            },
+            Err(e) => MetaResponse {
+                selected_tool: "auto".to_string(),
+                problem_type: "unknown".to_string(),
+                confidence: 0.0,
+                reasoning: format!("ERROR: {e}"),
+                fallback_to_auto: true,
+                candidates_evaluated: 0,
                 metadata: None,
             },
         }

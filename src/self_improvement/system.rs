@@ -13,7 +13,7 @@ use super::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState}
 use super::executor::{ConfigState, ExecutionResult, Executor};
 use super::learner::{Learner, LearnerConfig, LearningResult, LearningSummary};
 use super::monitor::{Monitor, MonitorConfig, MonitorResult};
-use super::types::SelfImprovementAction;
+use super::types::{ActionStatus, Lesson, SelfImprovementAction};
 
 /// Configuration for the self-improvement system.
 #[derive(Debug, Clone)]
@@ -194,6 +194,50 @@ impl<C: AnthropicClientTrait> SelfImprovementSystem<C> {
     /// Reject all pending actions.
     pub fn reject_pending(&mut self) {
         self.pending_actions.clear();
+    }
+
+    /// Reject a specific pending action by ID.
+    ///
+    /// Removes the action from pending and records a rejection lesson
+    /// so the learner can track what types of actions get rejected.
+    pub fn reject_action(&mut self, action_id: &str, reason: Option<&str>) -> Result<(), String> {
+        let action_idx = self
+            .pending_actions
+            .iter()
+            .position(|a| a.id == action_id)
+            .ok_or_else(|| format!("Action not found: {action_id}"))?;
+
+        let mut action = self.pending_actions.remove(action_idx);
+        action.status = ActionStatus::Rejected;
+
+        // Record rejection as a negative learning signal
+        let rejection_reason = reason.unwrap_or("No reason provided");
+        let insight = format!(
+            "Rejected {}: {}. Action type: {}, expected improvement: {:.3}",
+            action.id, rejection_reason, action.action_type, action.expected_improvement
+        );
+
+        let lesson = Lesson::new(
+            format!("rejection-{}", action.id),
+            &action.id,
+            insight,
+            -0.3, // Moderate negative reward for rejections
+        )
+        .with_contexts(vec![
+            format!("action_type:{}", action.action_type),
+            "outcome:rejected".to_string(),
+        ]);
+
+        self.learner.record_lesson(lesson);
+
+        tracing::info!(
+            action_id = action_id,
+            reason = rejection_reason,
+            action_type = %action.action_type,
+            "Action rejected and lesson recorded"
+        );
+
+        Ok(())
     }
 
     /// Get pending actions.
