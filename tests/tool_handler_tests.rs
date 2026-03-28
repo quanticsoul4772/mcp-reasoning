@@ -990,6 +990,7 @@ mod server_tests {
             content: "test content".to_string(),
             session_id: Some("session-1".to_string()),
             confidence: Some(0.8),
+            timeout_ms: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("test content"));
@@ -998,6 +999,36 @@ mod server_tests {
 
         let deserialized: LinearRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.content, req.content);
+    }
+
+    #[test]
+    fn test_linear_request_timeout_ms_override() {
+        // timeout_ms should round-trip through JSON correctly
+        let req_with_timeout = LinearRequest {
+            content: "test".to_string(),
+            session_id: None,
+            confidence: None,
+            timeout_ms: Some(5_000),
+        };
+        let json = serde_json::to_string(&req_with_timeout).unwrap();
+        assert!(json.contains("5000"), "timeout_ms should be serialized");
+        let deserialized: LinearRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.timeout_ms, Some(5_000));
+
+        // timeout_ms: None should be omitted from JSON (skip_serializing_if)
+        let req_no_timeout = LinearRequest {
+            content: "test".to_string(),
+            session_id: None,
+            confidence: None,
+            timeout_ms: None,
+        };
+        let json_no_timeout = serde_json::to_string(&req_no_timeout).unwrap();
+        assert!(!json_no_timeout.contains("timeout_ms"), "None should be omitted from JSON");
+
+        // Old JSON without timeout_ms field should deserialize to None (backward compat)
+        let legacy_json = r#"{"content":"test"}"#;
+        let legacy: LinearRequest = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(legacy.timeout_ms, None, "missing field should deserialize to None");
     }
 
     #[test]

@@ -14,6 +14,9 @@ pub struct LinearRequest {
     pub session_id: Option<String>,
     /// Confidence threshold (0.0-1.0).
     pub confidence: Option<f64>,
+    /// Per-request timeout override in milliseconds. Overrides server default when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 }
 
 /// Request for tree reasoning.

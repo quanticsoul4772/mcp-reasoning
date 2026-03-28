@@ -29,6 +29,7 @@ async fn test_linear_success_path() {
         content: "Analyze this problem".to_string(),
         session_id: None,
         confidence: Some(0.8),
+        timeout_ms: None,
     };
 
     let resp = server.reasoning_linear(Parameters(req)).await;

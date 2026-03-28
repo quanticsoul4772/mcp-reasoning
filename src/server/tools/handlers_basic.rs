@@ -32,8 +32,11 @@ impl super::ReasoningServer {
         let input_session_id = req.session_id.clone().unwrap_or_default();
         let session_id_for_metadata = req.session_id.clone();
 
-        // Apply tool-level timeout to prevent indefinite hangs
-        let timeout_ms = self.state.config.timeout_for_thinking_budget(NO_THINKING);
+        // Apply tool-level timeout to prevent indefinite hangs.
+        // Per-request override (req.timeout_ms) takes precedence over server default.
+        let timeout_ms = req
+            .timeout_ms
+            .unwrap_or_else(|| self.state.config.timeout_for_thinking_budget(NO_THINKING));
         let timeout_duration = Duration::from_millis(timeout_ms);
 
         let result = match tokio::time::timeout(

@@ -10,6 +10,7 @@ async fn test_reasoning_linear_tool() {
         content: "test".to_string(),
         session_id: Some("s1".to_string()),
         confidence: Some(0.8),
+        timeout_ms: None,
     };
     let resp = server.reasoning_linear(Parameters(req)).await;
     assert_eq!(resp.session_id, "s1");
