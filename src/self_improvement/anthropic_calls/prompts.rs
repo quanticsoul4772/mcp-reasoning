@@ -8,18 +8,22 @@ use crate::self_improvement::types::{SuggestedAction, TriggerMetric};
 // System Prompts
 // ============================================================================
 
+/// System prompt instructing the LLM to act as a reliability expert and return diagnosis JSON.
 pub const DIAGNOSIS_SYSTEM_PROMPT: &str = r"You are a system reliability expert analyzing metrics for a reasoning server.
 Analyze the provided data and respond with ONLY valid JSON, no other text.
 Focus on identifying the most critical issue and its root cause.";
 
+/// System prompt instructing the LLM to select conservative, reversible actions and return action JSON.
 pub const ACTION_SYSTEM_PROMPT: &str = r"You are a system reliability expert selecting actions for detected issues.
 Respond with ONLY valid JSON, no other text.
 Prefer conservative, reversible adjustments.";
 
+/// System prompt instructing the LLM to validate action safety, reversibility, and appropriateness.
 pub const VALIDATION_SYSTEM_PROMPT: &str = r"You are a system safety validator reviewing proposed actions.
 Respond with ONLY valid JSON, no other text.
 Validate for safety, reversibility, and appropriateness.";
 
+/// System prompt instructing the LLM to synthesize lessons and return learning JSON with patterns.
 pub const LEARNING_SYSTEM_PROMPT: &str = r"You are a system learning analyst synthesizing lessons from executed actions.
 Respond with ONLY valid JSON, no other text.
 Focus on patterns and actionable recommendations.";
@@ -28,6 +32,7 @@ Focus on patterns and actionable recommendations.";
 // Prompt Builders
 // ============================================================================
 
+/// Build the user prompt for the diagnosis phase from current health metrics and triggered metrics.
 pub fn build_diagnosis_prompt(health: &HealthContext) -> String {
     let triggers_json = serde_json::to_string_pretty(&health.triggers).unwrap_or_default();
 
@@ -56,6 +61,7 @@ Respond with JSON:
     )
 }
 
+/// Build the user prompt for the action-selection phase from a diagnosis and the triggering metric.
 pub fn build_action_prompt(diagnosis: &DiagnosisContent, trigger: &TriggerMetric) -> String {
     let metric_type = trigger.metric_type();
     let severity = trigger.severity();
@@ -94,6 +100,7 @@ Respond with JSON:
     )
 }
 
+/// Build the user prompt for the validation phase from a proposed action and system context string.
 pub fn build_validation_prompt(action: &SuggestedAction, context: &str) -> String {
     let action_json = serde_json::to_string_pretty(action).unwrap_or_default();
 
@@ -117,6 +124,7 @@ Respond with JSON:
     )
 }
 
+/// Build the user prompt for the learning phase from pre/post metrics and action execution details.
 pub fn build_learning_prompt(learning: &LearningContext) -> String {
     // Sanitize action_details which is user-controlled
     let safe_action_details = sanitize_multiline(&learning.action_details);

@@ -15,6 +15,7 @@ use super::types::{
 // Assess Parsing
 // ============================================================================
 
+/// Parses the `evidence_pieces` array from LLM JSON into a list of `EvidencePiece` values.
 pub fn parse_evidence_pieces(json: &serde_json::Value) -> Result<Vec<EvidencePiece>, ModeError> {
     let pieces = json
         .get("evidence_pieces")
@@ -69,6 +70,7 @@ pub fn parse_evidence_pieces(json: &serde_json::Value) -> Result<Vec<EvidencePie
         .collect()
 }
 
+/// Parses the `credibility` sub-object from an evidence piece JSON node into a `Credibility`.
 pub fn parse_credibility(piece: &serde_json::Value) -> Result<Credibility, ModeError> {
     let cred = piece
         .get("credibility")
@@ -91,6 +93,7 @@ pub fn parse_credibility(piece: &serde_json::Value) -> Result<Credibility, ModeE
     })
 }
 
+/// Parses the `quality` sub-object from an evidence piece JSON node into an `EvidenceQuality`.
 pub fn parse_quality(piece: &serde_json::Value) -> Result<EvidenceQuality, ModeError> {
     let qual = piece
         .get("quality")
@@ -111,6 +114,7 @@ pub fn parse_quality(piece: &serde_json::Value) -> Result<EvidenceQuality, ModeE
     })
 }
 
+/// Parses the `overall_assessment` object from LLM JSON into an `OverallEvidenceAssessment`.
 pub fn parse_overall_assessment(
     json: &serde_json::Value,
 ) -> Result<OverallEvidenceAssessment, ModeError> {
@@ -134,6 +138,7 @@ pub fn parse_overall_assessment(
     })
 }
 
+/// Parses and validates the `confidence_in_conclusion` field (must be 0.0–1.0) from LLM JSON.
 pub fn parse_confidence(json: &serde_json::Value) -> Result<f64, ModeError> {
     let confidence = json
         .get("confidence_in_conclusion")
@@ -156,6 +161,7 @@ pub fn parse_confidence(json: &serde_json::Value) -> Result<f64, ModeError> {
 // Probabilistic Parsing
 // ============================================================================
 
+/// Parses the `prior` object from LLM JSON into a `Prior` with probability and basis.
 pub fn parse_prior(json: &serde_json::Value) -> Result<Prior, ModeError> {
     let prior = json.get("prior").ok_or_else(|| ModeError::MissingField {
         field: "prior".to_string(),
@@ -173,6 +179,7 @@ pub fn parse_prior(json: &serde_json::Value) -> Result<Prior, ModeError> {
     Ok(Prior { probability, basis })
 }
 
+/// Parses the `evidence_analysis` array from LLM JSON into a list of `EvidenceAnalysis` values.
 pub fn parse_evidence_analysis(
     json: &serde_json::Value,
 ) -> Result<Vec<EvidenceAnalysis>, ModeError> {
@@ -208,6 +215,7 @@ pub fn parse_evidence_analysis(
         .collect()
 }
 
+/// Parses the `posterior` object from LLM JSON into a `Posterior` with probability and calculation.
 pub fn parse_posterior(json: &serde_json::Value) -> Result<Posterior, ModeError> {
     let post = json
         .get("posterior")
@@ -230,6 +238,7 @@ pub fn parse_posterior(json: &serde_json::Value) -> Result<Posterior, ModeError>
     })
 }
 
+/// Parses the `belief_update` object from LLM JSON into a `BeliefUpdate` with direction, magnitude, and interpretation.
 pub fn parse_belief_update(json: &serde_json::Value) -> Result<BeliefUpdate, ModeError> {
     let update = json
         .get("belief_update")
@@ -294,6 +303,7 @@ pub fn parse_belief_update(json: &serde_json::Value) -> Result<BeliefUpdate, Mod
 // Utility Helpers
 // ============================================================================
 
+/// Extracts a named `f64` field from a JSON object, returning `ModeError::MissingField` if absent.
 pub fn get_f64(json: &serde_json::Value, field: &str) -> Result<f64, ModeError> {
     json.get(field)
         .and_then(serde_json::Value::as_f64)
@@ -302,6 +312,7 @@ pub fn get_f64(json: &serde_json::Value, field: &str) -> Result<f64, ModeError> 
         })
 }
 
+/// Extracts a named string array field from a JSON object, returning `ModeError::MissingField` if absent.
 pub fn get_string_array(json: &serde_json::Value, field: &str) -> Result<Vec<String>, ModeError> {
     Ok(json
         .get(field)

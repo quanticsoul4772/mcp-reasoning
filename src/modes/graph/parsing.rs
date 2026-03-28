@@ -16,6 +16,7 @@ use super::types::{
 // Basic Helpers
 // ============================================================================
 
+/// Extracts a string field from a JSON object, returning `MissingField` if absent or not a string.
 pub fn get_str(json: &serde_json::Value, field: &str) -> Result<String, ModeError> {
     json.get(field)
         .and_then(serde_json::Value::as_str)
@@ -25,6 +26,7 @@ pub fn get_str(json: &serde_json::Value, field: &str) -> Result<String, ModeErro
         })
 }
 
+/// Extracts an f64 field from a JSON object, returning `MissingField` if absent or not a number.
 pub fn get_f64(json: &serde_json::Value, field: &str) -> Result<f64, ModeError> {
     json.get(field)
         .and_then(serde_json::Value::as_f64)
@@ -34,6 +36,7 @@ pub fn get_f64(json: &serde_json::Value, field: &str) -> Result<f64, ModeError> 
 }
 
 // JSON numbers are u64; truncation is acceptable for counts/indices that fit in u32
+/// Extracts a u32 field from a JSON object by reading it as u64 and truncating; returns `MissingField` if absent.
 #[allow(clippy::cast_possible_truncation)]
 pub fn get_u32(json: &serde_json::Value, field: &str) -> Result<u32, ModeError> {
     json.get(field)
@@ -44,6 +47,7 @@ pub fn get_u32(json: &serde_json::Value, field: &str) -> Result<u32, ModeError> 
         })
 }
 
+/// Extracts a string array field from a JSON object, filtering out non-string elements.
 pub fn get_string_array(json: &serde_json::Value, field: &str) -> Result<Vec<String>, ModeError> {
     Ok(json
         .get(field)
@@ -60,6 +64,7 @@ pub fn get_string_array(json: &serde_json::Value, field: &str) -> Result<Vec<Str
 // Enum Parsers
 // ============================================================================
 
+/// Parses a node type string into a `NodeType` enum variant, returning `InvalidValue` for unknown values.
 pub fn parse_node_type(s: &str) -> Result<NodeType, ModeError> {
     match s.to_lowercase().as_str() {
         "root" => Ok(NodeType::Root),
@@ -76,6 +81,7 @@ pub fn parse_node_type(s: &str) -> Result<NodeType, ModeError> {
     }
 }
 
+/// Parses a relationship string into a `NodeRelationship` enum variant, returning `InvalidValue` for unknown values.
 pub fn parse_node_relationship(s: &str) -> Result<NodeRelationship, ModeError> {
     match s.to_lowercase().as_str() {
         "elaborates" => Ok(NodeRelationship::Elaborates),
@@ -89,6 +95,7 @@ pub fn parse_node_relationship(s: &str) -> Result<NodeRelationship, ModeError> {
     }
 }
 
+/// Parses a complexity string ("low", "medium", "high") into a `ComplexityLevel` enum variant.
 pub fn parse_complexity(s: &str) -> Result<ComplexityLevel, ModeError> {
     match s.to_lowercase().as_str() {
         "low" => Ok(ComplexityLevel::Low),
@@ -101,6 +108,7 @@ pub fn parse_complexity(s: &str) -> Result<ComplexityLevel, ModeError> {
     }
 }
 
+/// Parses a recommendation string ("expand", "keep", "prune") into a `NodeRecommendation` enum variant.
 pub fn parse_recommendation(s: &str) -> Result<NodeRecommendation, ModeError> {
     match s.to_lowercase().as_str() {
         "expand" => Ok(NodeRecommendation::Expand),
@@ -113,6 +121,7 @@ pub fn parse_recommendation(s: &str) -> Result<NodeRecommendation, ModeError> {
     }
 }
 
+/// Parses a prune reason string into a `PruneReason` enum variant, returning `InvalidValue` for unknown values.
 pub fn parse_prune_reason(s: &str) -> Result<PruneReason, ModeError> {
     match s.to_lowercase().as_str() {
         "low_score" => Ok(PruneReason::LowScore),
@@ -126,6 +135,7 @@ pub fn parse_prune_reason(s: &str) -> Result<PruneReason, ModeError> {
     }
 }
 
+/// Parses a prune impact string ("none", "minor", "moderate") into a `PruneImpact` enum variant.
 pub fn parse_prune_impact(s: &str) -> Result<PruneImpact, ModeError> {
     match s.to_lowercase().as_str() {
         "none" => Ok(PruneImpact::None),
@@ -138,6 +148,7 @@ pub fn parse_prune_impact(s: &str) -> Result<PruneImpact, ModeError> {
     }
 }
 
+/// Parses a suggested action string ("expand", "refine", "aggregate") into a `SuggestedAction` enum variant.
 pub fn parse_suggested_action(s: &str) -> Result<SuggestedAction, ModeError> {
     match s.to_lowercase().as_str() {
         "expand" => Ok(SuggestedAction::Expand),
@@ -154,6 +165,7 @@ pub fn parse_suggested_action(s: &str) -> Result<SuggestedAction, ModeError> {
 // Init Parsers
 // ============================================================================
 
+/// Parses the `root` object from an init response into a `RootNode`.
 pub fn parse_root(json: &serde_json::Value) -> Result<RootNode, ModeError> {
     let r = json.get("root").ok_or_else(|| ModeError::MissingField {
         field: "root".to_string(),
@@ -170,6 +182,7 @@ pub fn parse_root(json: &serde_json::Value) -> Result<RootNode, ModeError> {
     })
 }
 
+/// Parses the `expansion_directions` array from an init response into a list of `ExpansionDirection` values.
 pub fn parse_expansion_directions(
     json: &serde_json::Value,
 ) -> Result<Vec<ExpansionDirection>, ModeError> {
@@ -190,6 +203,7 @@ pub fn parse_expansion_directions(
         .collect()
 }
 
+/// Parses the `graph_metadata` object from an init response into a `GraphMetadata` struct.
 pub fn parse_graph_metadata(json: &serde_json::Value) -> Result<GraphMetadata, ModeError> {
     let m = json
         .get("graph_metadata")
@@ -210,6 +224,7 @@ pub fn parse_graph_metadata(json: &serde_json::Value) -> Result<GraphMetadata, M
 // Generate Parsers
 // ============================================================================
 
+/// Parses the `children` array from a generate response into a list of `ChildNode` values.
 pub fn parse_children(json: &serde_json::Value) -> Result<Vec<ChildNode>, ModeError> {
     let arr = json
         .get("children")
@@ -241,6 +256,7 @@ pub fn parse_children(json: &serde_json::Value) -> Result<Vec<ChildNode>, ModeEr
 // Score Parsers
 // ============================================================================
 
+/// Parses the `scores` object from a score response into a `NodeScores` struct.
 pub fn parse_node_scores(json: &serde_json::Value) -> Result<NodeScores, ModeError> {
     let s = json.get("scores").ok_or_else(|| ModeError::MissingField {
         field: "scores".to_string(),
@@ -255,6 +271,7 @@ pub fn parse_node_scores(json: &serde_json::Value) -> Result<NodeScores, ModeErr
     })
 }
 
+/// Parses the `assessment` object from a score response into a `NodeAssessment` struct.
 pub fn parse_node_assessment(json: &serde_json::Value) -> Result<NodeAssessment, ModeError> {
     let a = json
         .get("assessment")
@@ -276,6 +293,7 @@ pub fn parse_node_assessment(json: &serde_json::Value) -> Result<NodeAssessment,
 // Aggregate Parsers
 // ============================================================================
 
+/// Parses the `synthesis` object from an aggregate response into a `SynthesisNode`.
 pub fn parse_synthesis(json: &serde_json::Value) -> Result<SynthesisNode, ModeError> {
     let s = json
         .get("synthesis")
@@ -294,6 +312,7 @@ pub fn parse_synthesis(json: &serde_json::Value) -> Result<SynthesisNode, ModeEr
     })
 }
 
+/// Parses the `integration_notes` object from an aggregate response into an `IntegrationNotes` struct.
 pub fn parse_integration_notes(json: &serde_json::Value) -> Result<IntegrationNotes, ModeError> {
     let n = json
         .get("integration_notes")
@@ -312,6 +331,7 @@ pub fn parse_integration_notes(json: &serde_json::Value) -> Result<IntegrationNo
 // Refine Parsers
 // ============================================================================
 
+/// Parses the `critique` object from a refine response into a `NodeCritique` struct.
 pub fn parse_critique(json: &serde_json::Value) -> Result<NodeCritique, ModeError> {
     let c = json
         .get("critique")
@@ -326,6 +346,7 @@ pub fn parse_critique(json: &serde_json::Value) -> Result<NodeCritique, ModeErro
     })
 }
 
+/// Parses the `refined_node` object from a refine response into a `RefinedNode`.
 pub fn parse_refined_node(json: &serde_json::Value) -> Result<RefinedNode, ModeError> {
     let r = json
         .get("refined_node")
@@ -348,6 +369,7 @@ pub fn parse_refined_node(json: &serde_json::Value) -> Result<RefinedNode, ModeE
 // Prune Parsers
 // ============================================================================
 
+/// Parses the `prune_candidates` array from a prune response into a list of `PruneCandidate` values.
 pub fn parse_prune_candidates(json: &serde_json::Value) -> Result<Vec<PruneCandidate>, ModeError> {
     let arr = json
         .get("prune_candidates")
@@ -378,6 +400,7 @@ pub fn parse_prune_candidates(json: &serde_json::Value) -> Result<Vec<PruneCandi
 // Finalize Parsers
 // ============================================================================
 
+/// Parses the `best_paths` array from a finalize response into a list of `GraphPath` values.
 pub fn parse_best_paths(json: &serde_json::Value) -> Result<Vec<GraphPath>, ModeError> {
     let arr = json
         .get("best_paths")
@@ -397,6 +420,7 @@ pub fn parse_best_paths(json: &serde_json::Value) -> Result<Vec<GraphPath>, Mode
         .collect()
 }
 
+/// Parses the `conclusions` array from a finalize response into a list of `GraphConclusion` values.
 pub fn parse_conclusions(json: &serde_json::Value) -> Result<Vec<GraphConclusion>, ModeError> {
     let arr = json
         .get("conclusions")
@@ -416,6 +440,7 @@ pub fn parse_conclusions(json: &serde_json::Value) -> Result<Vec<GraphConclusion
         .collect()
 }
 
+/// Parses the `session_quality` object from a finalize response into a `SessionQuality` struct.
 pub fn parse_session_quality(json: &serde_json::Value) -> Result<SessionQuality, ModeError> {
     let q = json
         .get("session_quality")
@@ -435,6 +460,7 @@ pub fn parse_session_quality(json: &serde_json::Value) -> Result<SessionQuality,
 // State Parsers
 // ============================================================================
 
+/// Parses the `structure` object from a state response into a `GraphStructure` struct.
 pub fn parse_structure(json: &serde_json::Value) -> Result<GraphStructure, ModeError> {
     let s = json
         .get("structure")
@@ -450,6 +476,7 @@ pub fn parse_structure(json: &serde_json::Value) -> Result<GraphStructure, ModeE
     })
 }
 
+/// Parses the `frontiers` array from a state response into a list of `FrontierNodeInfo` values.
 pub fn parse_frontiers(json: &serde_json::Value) -> Result<Vec<FrontierNodeInfo>, ModeError> {
     let arr = json
         .get("frontiers")
@@ -472,6 +499,7 @@ pub fn parse_frontiers(json: &serde_json::Value) -> Result<Vec<FrontierNodeInfo>
         .collect()
 }
 
+/// Parses the `metrics` object from a state response into a `GraphMetrics` struct.
 pub fn parse_metrics(json: &serde_json::Value) -> Result<GraphMetrics, ModeError> {
     let m = json.get("metrics").ok_or_else(|| ModeError::MissingField {
         field: "metrics".to_string(),

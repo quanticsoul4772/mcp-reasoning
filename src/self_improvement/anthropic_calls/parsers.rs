@@ -11,6 +11,7 @@ use crate::self_improvement::types::{ConfigScope, ParamValue, ResourceType, Sugg
 // Response Parsers
 // ============================================================================
 
+/// Parse a diagnosis JSON response from the LLM into a `DiagnosisContent`.
 pub fn parse_diagnosis_response(response: &str) -> Result<DiagnosisContent, ModeError> {
     let json_str = extract_json(response)?;
     serde_json::from_str(&json_str).map_err(|e| ModeError::JsonParseFailed {
@@ -18,6 +19,7 @@ pub fn parse_diagnosis_response(response: &str) -> Result<DiagnosisContent, Mode
     })
 }
 
+/// Parse an action JSON response from the LLM into a `SuggestedAction`.
 pub fn parse_action_response(response: &str) -> Result<SuggestedAction, ModeError> {
     let json_str = extract_json(response)?;
 
@@ -86,6 +88,7 @@ pub fn parse_action_response(response: &str) -> Result<SuggestedAction, ModeErro
     }
 }
 
+/// Parse a validation JSON response from the LLM into a `ValidationResult`.
 pub fn parse_validation_response(response: &str) -> Result<ValidationResult, ModeError> {
     let json_str = extract_json(response)?;
     serde_json::from_str(&json_str).map_err(|e| ModeError::JsonParseFailed {
@@ -93,6 +96,7 @@ pub fn parse_validation_response(response: &str) -> Result<ValidationResult, Mod
     })
 }
 
+/// Parse a learning JSON response from the LLM into a `LearningSynthesis`.
 pub fn parse_learning_response(response: &str) -> Result<LearningSynthesis, ModeError> {
     let json_str = extract_json(response)?;
     serde_json::from_str(&json_str).map_err(|e| ModeError::JsonParseFailed {
@@ -122,6 +126,7 @@ pub struct ActionResponse {
 // Helper Functions
 // ============================================================================
 
+/// Extract a JSON object from a raw LLM response, supporting raw JSON and markdown code blocks.
 pub fn extract_json(text: &str) -> Result<String, ModeError> {
     // Enforce size limit first to prevent DoS via large responses
     if text.len() > MAX_JSON_SIZE {
@@ -199,6 +204,7 @@ pub fn extract_json(text: &str) -> Result<String, ModeError> {
     })
 }
 
+/// Convert a raw JSON value into a typed `ParamValue`, including duration string detection.
 pub fn parse_param_value(value: Option<&serde_json::Value>) -> Result<ParamValue, ModeError> {
     let value = value.ok_or_else(|| ModeError::MissingField {
         field: "value".into(),
@@ -230,6 +236,7 @@ pub fn parse_param_value(value: Option<&serde_json::Value>) -> Result<ParamValue
     }
 }
 
+/// Parse a scope string (e.g. `"global"`, `"mode:linear"`) into a validated `ConfigScope`.
 pub fn parse_scope(scope: Option<&String>) -> Result<ConfigScope, ModeError> {
     let scope_str = scope.map_or("global", String::as_str);
 
@@ -257,6 +264,7 @@ pub fn parse_scope(scope: Option<&String>) -> Result<ConfigScope, ModeError> {
     Ok(config_scope)
 }
 
+/// Convert a resource type string into a `ResourceType` variant, returning an error for unknown values.
 pub fn parse_resource_type(resource: &str) -> Result<ResourceType, ModeError> {
     match resource.to_lowercase().as_str() {
         "max_concurrent_requests" => Ok(ResourceType::MaxConcurrentRequests),

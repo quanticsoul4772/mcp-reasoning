@@ -15,6 +15,7 @@ use super::types::{
 // Bias Parsing
 // ============================================================================
 
+/// Parses the `biases_detected` array from LLM JSON into a list of `DetectedBias` values.
 pub fn parse_biases(json: &serde_json::Value) -> Result<Vec<DetectedBias>, ModeError> {
     let biases_array = json
         .get("biases_detected")
@@ -88,6 +89,7 @@ pub fn parse_biases(json: &serde_json::Value) -> Result<Vec<DetectedBias>, ModeE
         .collect()
 }
 
+/// Parses the `overall_assessment` object from LLM JSON into a `BiasAssessment`.
 pub fn parse_bias_assessment(json: &serde_json::Value) -> Result<BiasAssessment, ModeError> {
     let assessment = json
         .get("overall_assessment")
@@ -137,6 +139,7 @@ pub fn parse_bias_assessment(json: &serde_json::Value) -> Result<BiasAssessment,
 // Fallacy Parsing
 // ============================================================================
 
+/// Parses the `fallacies_detected` array from LLM JSON into a list of `DetectedFallacy` values.
 pub fn parse_fallacies(json: &serde_json::Value) -> Result<Vec<DetectedFallacy>, ModeError> {
     let fallacies_array = json
         .get("fallacies_detected")
@@ -213,6 +216,7 @@ pub fn parse_fallacies(json: &serde_json::Value) -> Result<Vec<DetectedFallacy>,
         .collect()
 }
 
+/// Parses the `argument_structure` object from LLM JSON into an `ArgumentStructure`.
 pub fn parse_argument_structure(json: &serde_json::Value) -> Result<ArgumentStructure, ModeError> {
     let structure = json
         .get("argument_structure")
@@ -264,6 +268,7 @@ pub fn parse_argument_structure(json: &serde_json::Value) -> Result<ArgumentStru
     })
 }
 
+/// Parses the `overall_assessment` object from LLM JSON into a `FallacyAssessment`.
 pub fn parse_fallacy_assessment(json: &serde_json::Value) -> Result<FallacyAssessment, ModeError> {
     let assessment = json
         .get("overall_assessment")

@@ -32,10 +32,10 @@ impl super::ReasoningServer {
                 .metrics
                 .record(MetricEvent::new("agent_invoke", timer.elapsed_ms(), false));
             return AgentInvokeResponse {
-                agent_id: req.agent_id,
+                agent_id: req.agent_id.clone(),
                 session_id,
                 steps_executed: 0,
-                synthesis: "Error: agent not found".to_string(),
+                synthesis: format!("Error: agent '{}' not found. Use reasoning_agent_list to see available agents.", req.agent_id),
                 success: false,
                 status: "error".to_string(),
                 metadata: None,
@@ -114,11 +114,11 @@ impl super::ReasoningServer {
                 .metrics
                 .record(MetricEvent::new("skill_run", timer.elapsed_ms(), false));
             return SkillRunResponse {
-                skill_id: req.skill_id,
+                skill_id: req.skill_id.clone(),
                 session_id,
                 steps_executed: 0,
                 steps_skipped: 0,
-                context: serde_json::json!({"error": "skill not found"}),
+                context: serde_json::json!({"error": format!("Skill '{}' not found. Use reasoning_agent_metrics with query='summary' to list available skills.", req.skill_id)}),
                 success: false,
                 metadata: None,
             };
@@ -268,7 +268,7 @@ impl super::ReasoningServer {
                 },
                 |agent_id| {
                     self.state.agents.get(agent_id).map_or_else(
-                        || serde_json::json!({"error": "agent not found"}),
+                        || serde_json::json!({"error": format!("Agent '{}' not found. Use query='summary' to list available agents.", agent_id)}),
                         |agent| {
                             serde_json::json!({
                                 "agent_id": agent.id,
@@ -279,7 +279,7 @@ impl super::ReasoningServer {
                     )
                 },
             ),
-            _ => serde_json::json!({"error": "unknown query type"}),
+            _ => serde_json::json!({"error": format!("Unknown query type '{}'. Valid options: 'summary', 'by_agent'.", req.query)}),
         };
 
         self.state

@@ -17,6 +17,7 @@ use super::types::{
 // Create Operation Parsing
 // ============================================================================
 
+/// Parses the `events` array from a create response into a list of `TimelineEvent` values.
 pub fn parse_events(json: &serde_json::Value) -> Result<Vec<TimelineEvent>, ModeError> {
     let arr = json
         .get("events")
@@ -52,6 +53,7 @@ pub fn parse_events(json: &serde_json::Value) -> Result<Vec<TimelineEvent>, Mode
         .collect()
 }
 
+/// Parses the `decision_points` array from a create response into a list of `DecisionPoint` values.
 pub fn parse_decision_points(json: &serde_json::Value) -> Result<Vec<DecisionPoint>, ModeError> {
     let arr = json
         .get("decision_points")
@@ -72,6 +74,7 @@ pub fn parse_decision_points(json: &serde_json::Value) -> Result<Vec<DecisionPoi
         .collect()
 }
 
+/// Parses the `temporal_structure` object from a create response into a `TemporalStructure` struct.
 pub fn parse_temporal_structure(json: &serde_json::Value) -> Result<TemporalStructure, ModeError> {
     let t = json
         .get("temporal_structure")
@@ -90,6 +93,7 @@ pub fn parse_temporal_structure(json: &serde_json::Value) -> Result<TemporalStru
 // Branch Operation Parsing
 // ============================================================================
 
+/// Parses the `branch_point` object from a branch response into a `BranchPoint` struct.
 pub fn parse_branch_point(json: &serde_json::Value) -> Result<BranchPoint, ModeError> {
     let b = json
         .get("branch_point")
@@ -103,6 +107,7 @@ pub fn parse_branch_point(json: &serde_json::Value) -> Result<BranchPoint, ModeE
     })
 }
 
+/// Parses the `branches` array from a branch response into a list of `TimelineBranch` values.
 pub fn parse_branches(json: &serde_json::Value) -> Result<Vec<TimelineBranch>, ModeError> {
     let arr = json
         .get("branches")
@@ -126,6 +131,7 @@ pub fn parse_branches(json: &serde_json::Value) -> Result<Vec<TimelineBranch>, M
         .collect()
 }
 
+/// Parses the `events` array within a single branch object into a list of `BranchEvent` values.
 pub fn parse_branch_events(branch: &serde_json::Value) -> Result<Vec<BranchEvent>, ModeError> {
     let arr = branch
         .get("events")
@@ -146,6 +152,7 @@ pub fn parse_branch_events(branch: &serde_json::Value) -> Result<Vec<BranchEvent
         .collect()
 }
 
+/// Parses the `comparison` object from a branch response into a `BranchComparison` struct.
 pub fn parse_branch_comparison(json: &serde_json::Value) -> Result<BranchComparison, ModeError> {
     let c = json
         .get("comparison")
@@ -164,6 +171,7 @@ pub fn parse_branch_comparison(json: &serde_json::Value) -> Result<BranchCompari
 // Compare Operation Parsing
 // ============================================================================
 
+/// Parses the `key_differences` array from a compare response into a list of `BranchDifference` values.
 pub fn parse_key_differences(json: &serde_json::Value) -> Result<Vec<BranchDifference>, ModeError> {
     let arr = json
         .get("key_differences")
@@ -184,6 +192,7 @@ pub fn parse_key_differences(json: &serde_json::Value) -> Result<Vec<BranchDiffe
         .collect()
 }
 
+/// Parses the `risk_assessment` object from a compare response into a `RiskAssessment` struct.
 pub fn parse_risk_assessment(json: &serde_json::Value) -> Result<RiskAssessment, ModeError> {
     let r = json
         .get("risk_assessment")
@@ -197,6 +206,7 @@ pub fn parse_risk_assessment(json: &serde_json::Value) -> Result<RiskAssessment,
     })
 }
 
+/// Parses the `opportunity_assessment` object from a compare response into an `OpportunityAssessment` struct.
 pub fn parse_opportunity_assessment(
     json: &serde_json::Value,
 ) -> Result<OpportunityAssessment, ModeError> {
@@ -212,6 +222,7 @@ pub fn parse_opportunity_assessment(
     })
 }
 
+/// Parses the `recommendation` object from a compare response into a `CompareRecommendation` struct.
 pub fn parse_compare_recommendation(
     json: &serde_json::Value,
 ) -> Result<CompareRecommendation, ModeError> {
@@ -232,6 +243,7 @@ pub fn parse_compare_recommendation(
 // Merge Operation Parsing
 // ============================================================================
 
+/// Parses the `common_patterns` array from a merge response into a list of `CommonPattern` values.
 pub fn parse_common_patterns(json: &serde_json::Value) -> Result<Vec<CommonPattern>, ModeError> {
     let arr = json
         .get("common_patterns")
@@ -251,6 +263,7 @@ pub fn parse_common_patterns(json: &serde_json::Value) -> Result<Vec<CommonPatte
         .collect()
 }
 
+/// Parses the `robust_strategies` array from a merge response into a list of `RobustStrategy` values.
 pub fn parse_robust_strategies(json: &serde_json::Value) -> Result<Vec<RobustStrategy>, ModeError> {
     let arr = json
         .get("robust_strategies")
@@ -270,6 +283,7 @@ pub fn parse_robust_strategies(json: &serde_json::Value) -> Result<Vec<RobustStr
         .collect()
 }
 
+/// Parses the `fragile_strategies` array from a merge response into a list of `FragileStrategy` values.
 pub fn parse_fragile_strategies(
     json: &serde_json::Value,
 ) -> Result<Vec<FragileStrategy>, ModeError> {
@@ -294,6 +308,7 @@ pub fn parse_fragile_strategies(
 // Utility Helpers
 // ============================================================================
 
+/// Extracts a string field from a JSON object, returning `MissingField` if absent or not a string.
 pub fn get_str(json: &serde_json::Value, field: &str) -> Result<String, ModeError> {
     json.get(field)
         .and_then(serde_json::Value::as_str)
@@ -303,6 +318,7 @@ pub fn get_str(json: &serde_json::Value, field: &str) -> Result<String, ModeErro
         })
 }
 
+/// Extracts an f64 field from a JSON object, returning `MissingField` if absent or not a number.
 pub fn get_f64(json: &serde_json::Value, field: &str) -> Result<f64, ModeError> {
     json.get(field)
         .and_then(serde_json::Value::as_f64)
@@ -311,6 +327,7 @@ pub fn get_f64(json: &serde_json::Value, field: &str) -> Result<f64, ModeError> 
         })
 }
 
+/// Extracts a string array field from a JSON object, filtering out non-string elements.
 pub fn get_string_array(json: &serde_json::Value, field: &str) -> Result<Vec<String>, ModeError> {
     Ok(json
         .get(field)

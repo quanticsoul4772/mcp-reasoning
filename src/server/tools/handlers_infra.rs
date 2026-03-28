@@ -77,11 +77,11 @@ impl super::ReasoningServer {
                     return PresetResponse {
                         presets: None,
                         execution_result: Some(PresetExecution {
-                            preset_id,
+                            preset_id: preset_id.clone(),
                             steps_completed: 0,
                             total_steps: 0,
                             step_results: vec![],
-                            final_output: serde_json::json!({"error": "preset not found"}),
+                            final_output: serde_json::json!({"error": format!("Preset '{}' not found. Use operation='list' to see available presets.", preset_id)}),
                         }),
                         session_id: req.session_id,
                         metadata: None,

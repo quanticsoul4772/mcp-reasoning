@@ -19,6 +19,7 @@ use super::types::{
 // Weighted Parsing
 // ============================================================================
 
+/// Parse the `criteria` array from a weighted decision JSON response.
 pub fn parse_criteria(json: &serde_json::Value) -> Result<Vec<Criterion>, ModeError> {
     let arr = json
         .get("criteria")
@@ -38,6 +39,7 @@ pub fn parse_criteria(json: &serde_json::Value) -> Result<Vec<Criterion>, ModeEr
         .collect()
 }
 
+/// Parse the `scores` map (option → criterion → score) from a weighted decision JSON response.
 pub fn parse_scores(
     json: &serde_json::Value,
 ) -> Result<HashMap<String, HashMap<String, f64>>, ModeError> {
@@ -70,6 +72,7 @@ pub fn parse_scores(
     Ok(result)
 }
 
+/// Parse the `weighted_totals` map (option → total score) from a weighted decision JSON response.
 pub fn parse_weighted_totals(json: &serde_json::Value) -> Result<HashMap<String, f64>, ModeError> {
     let obj = json
         .get("weighted_totals")
@@ -84,6 +87,7 @@ pub fn parse_weighted_totals(json: &serde_json::Value) -> Result<HashMap<String,
         .collect())
 }
 
+/// Parse the `ranking` array into `RankedOption` entries from a weighted decision JSON response.
 pub fn parse_weighted_ranking(json: &serde_json::Value) -> Result<Vec<RankedOption>, ModeError> {
     let arr = json
         .get("ranking")
@@ -116,6 +120,7 @@ pub fn parse_weighted_ranking(json: &serde_json::Value) -> Result<Vec<RankedOpti
 // Pairwise Parsing
 // ============================================================================
 
+/// Parse the `comparisons` array into `PairwiseComparison` entries from a pairwise JSON response.
 pub fn parse_comparisons(json: &serde_json::Value) -> Result<Vec<PairwiseComparison>, ModeError> {
     let arr = json
         .get("comparisons")
@@ -163,6 +168,7 @@ pub fn parse_comparisons(json: &serde_json::Value) -> Result<Vec<PairwiseCompari
         .collect()
 }
 
+/// Parse the `pairwise_matrix` win/loss map from a pairwise JSON response.
 pub fn parse_pairwise_matrix(json: &serde_json::Value) -> Result<HashMap<String, i32>, ModeError> {
     let obj = json
         .get("pairwise_matrix")
@@ -179,6 +185,7 @@ pub fn parse_pairwise_matrix(json: &serde_json::Value) -> Result<HashMap<String,
         .collect())
 }
 
+/// Parse the `ranking` array into `PairwiseRank` entries from a pairwise JSON response.
 pub fn parse_pairwise_ranking(json: &serde_json::Value) -> Result<Vec<PairwiseRank>, ModeError> {
     let arr = json
         .get("ranking")
@@ -219,6 +226,7 @@ pub fn parse_pairwise_ranking(json: &serde_json::Value) -> Result<Vec<PairwiseRa
 // TOPSIS Parsing
 // ============================================================================
 
+/// Parse the `criteria` array into `TopsisCreterion` entries from a TOPSIS JSON response.
 pub fn parse_topsis_criteria(json: &serde_json::Value) -> Result<Vec<TopsisCreterion>, ModeError> {
     let arr = json
         .get("criteria")
@@ -250,6 +258,7 @@ pub fn parse_topsis_criteria(json: &serde_json::Value) -> Result<Vec<TopsisCrete
         .collect()
 }
 
+/// Parse the `decision_matrix` map (option → score vector) from a TOPSIS JSON response.
 pub fn parse_decision_matrix(
     json: &serde_json::Value,
 ) -> Result<HashMap<String, Vec<f64>>, ModeError> {
@@ -273,6 +282,7 @@ pub fn parse_decision_matrix(
     Ok(result)
 }
 
+/// Extract a named array of `f64` values from a JSON object.
 pub fn parse_f64_array(json: &serde_json::Value, field: &str) -> Result<Vec<f64>, ModeError> {
     let arr = json
         .get(field)
@@ -284,6 +294,7 @@ pub fn parse_f64_array(json: &serde_json::Value, field: &str) -> Result<Vec<f64>
     Ok(arr.iter().filter_map(serde_json::Value::as_f64).collect())
 }
 
+/// Parse the `distances` map (option → ideal/anti-ideal distances) from a TOPSIS JSON response.
 pub fn parse_distances(
     json: &serde_json::Value,
 ) -> Result<HashMap<String, TopsisDistances>, ModeError> {
@@ -309,6 +320,7 @@ pub fn parse_distances(
     Ok(result)
 }
 
+/// Parse the `relative_closeness` map (option → closeness score) from a TOPSIS JSON response.
 pub fn parse_relative_closeness(
     json: &serde_json::Value,
 ) -> Result<HashMap<String, f64>, ModeError> {
@@ -325,6 +337,7 @@ pub fn parse_relative_closeness(
         .collect())
 }
 
+/// Parse the `ranking` array into `TopsisRank` entries from a TOPSIS JSON response.
 pub fn parse_topsis_ranking(json: &serde_json::Value) -> Result<Vec<TopsisRank>, ModeError> {
     let arr = json
         .get("ranking")
@@ -357,6 +370,7 @@ pub fn parse_topsis_ranking(json: &serde_json::Value) -> Result<Vec<TopsisRank>,
 // Perspectives Parsing
 // ============================================================================
 
+/// Parse the `stakeholders` array from a perspectives JSON response.
 pub fn parse_stakeholders(json: &serde_json::Value) -> Result<Vec<Stakeholder>, ModeError> {
     let arr = json
         .get("stakeholders")
@@ -391,6 +405,7 @@ pub fn parse_stakeholders(json: &serde_json::Value) -> Result<Vec<Stakeholder>, 
         .collect()
 }
 
+/// Parse the `conflicts` array from a perspectives JSON response.
 pub fn parse_conflicts(json: &serde_json::Value) -> Result<Vec<Conflict>, ModeError> {
     let arr = json
         .get("conflicts")
@@ -423,6 +438,7 @@ pub fn parse_conflicts(json: &serde_json::Value) -> Result<Vec<Conflict>, ModeEr
         .collect()
 }
 
+/// Parse the `alignments` array from a perspectives JSON response.
 pub fn parse_alignments(json: &serde_json::Value) -> Result<Vec<Alignment>, ModeError> {
     let arr = json
         .get("alignments")
@@ -441,6 +457,7 @@ pub fn parse_alignments(json: &serde_json::Value) -> Result<Vec<Alignment>, Mode
         .collect()
 }
 
+/// Parse the `balanced_recommendation` object from a perspectives JSON response.
 pub fn parse_balanced_recommendation(
     json: &serde_json::Value,
 ) -> Result<BalancedRecommendation, ModeError> {
@@ -461,6 +478,7 @@ pub fn parse_balanced_recommendation(
 // Utility Helpers
 // ============================================================================
 
+/// Extract a string field from a JSON object, returning `MissingField` if absent or not a string.
 pub fn get_str(json: &serde_json::Value, field: &str) -> Result<String, ModeError> {
     json.get(field)
         .and_then(serde_json::Value::as_str)
@@ -470,6 +488,7 @@ pub fn get_str(json: &serde_json::Value, field: &str) -> Result<String, ModeErro
         })
 }
 
+/// Extract an `f64` field from a JSON object, returning `MissingField` if absent or not numeric.
 pub fn get_f64(json: &serde_json::Value, field: &str) -> Result<f64, ModeError> {
     json.get(field)
         .and_then(serde_json::Value::as_f64)
@@ -478,6 +497,7 @@ pub fn get_f64(json: &serde_json::Value, field: &str) -> Result<f64, ModeError> 
         })
 }
 
+/// Extract a string array field from a JSON object, skipping non-string elements.
 pub fn get_string_array(json: &serde_json::Value, field: &str) -> Result<Vec<String>, ModeError> {
     Ok(json
         .get(field)
