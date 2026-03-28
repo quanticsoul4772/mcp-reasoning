@@ -8,7 +8,7 @@
 //! 5. Preset-to-skill import
 //! 6. Serialization round-trips
 //!
-//! Note: Tests requiring LLM mocks (SkillExecutor) are in the unit tests
+//! Note: Tests requiring LLM mocks (`SkillExecutor`) are in the unit tests
 //! within src/skills/executor.rs since mockall types are only available
 //! inside the crate.
 
@@ -21,7 +21,7 @@
 )]
 
 use mcp_reasoning::presets::PresetRegistry;
-use mcp_reasoning::skills::discovery::{DiscoveredPattern, SkillDiscovery};
+use mcp_reasoning::skills::discovery::SkillDiscovery;
 use mcp_reasoning::skills::registry::SkillRegistry;
 use mcp_reasoning::skills::types::{
     ErrorStrategy, Skill, SkillCategory, SkillContext, SkillInfo, SkillStep, StepCondition,

@@ -359,7 +359,7 @@ mod doctest_helpers_tests {
 
     #[test]
     fn test_mock_storage_default() {
-        let storage = MockStorage::default();
+        let storage = MockStorage;
         let debug = format!("{storage:?}");
         assert!(debug.contains("MockStorage"));
     }
@@ -625,7 +625,7 @@ mod doctest_helpers_tests {
 
     #[test]
     fn test_mock_time_default() {
-        let time = MockTime::default();
+        let time = MockTime;
         let debug = format!("{time:?}");
         assert!(debug.contains("MockTime"));
     }

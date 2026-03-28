@@ -1,6 +1,6 @@
 # MCP Reasoning Server
 
-A Rust MCP server providing 15 structured reasoning tools for Claude Code and Claude Desktop.
+A Rust MCP server providing 15 structured reasoning tools for Claude Code and Claude Desktop. 2,020+ tests, 95%+ coverage.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
@@ -235,23 +235,44 @@ Ask Claude: *"Run the architecture-decision preset to evaluate switching to Kube
 
 Reasoning state is stored in SQLite. Sessions can be resumed across conversations using checkpoints.
 
-### Self-Improvement
+### Self-Improvement (4-Phase)
 
-The server tracks its own performance metrics:
+The server continuously monitors and improves its own reasoning quality:
 
-- Records execution times to calibrate duration estimates
-- Detects anomalies and suggests corrections
-- Circuit breaker halts changes after consecutive failures
+1. **Monitor** — Collects execution times, error rates, and tool-chain patterns per reasoning mode
+2. **Analyze** — Uses Claude to diagnose anomalies and generate corrective actions
+3. **Execute** — Applies validated changes with automatic rollback on failure
+4. **Learn** — Calculates reward signals and updates future behavior
+
+Safety mechanisms: circuit breaker halts after consecutive failures; allowlist validates every proposed action before execution.
+
+### Tool Chain Tracking
+
+Automatically records reasoning tool sequences (e.g. `linear → reflection → decision`) and detects recurring patterns. Use `reasoning_metrics` to query chain summaries and spot workflow anti-patterns.
+
+### Error Enhancement
+
+Errors include contextual alternatives — if a tool fails due to incorrect parameters, the response suggests the correct call with example values. Complexity metrics help diagnose timeout causes.
+
+### Extended Thinking Budgets
+
+| Modes | Thinking Budget |
+|-------|-----------------|
+| `linear`, `tree`, `auto`, `checkpoint` | None (fast) |
+| `divergent`, `graph` | Standard — 4096 tokens |
+| `reflection`, `decision`, `evidence` | Deep — 8192 tokens |
+| `counterfactual`, `mcts` | Maximum — 16384 tokens |
 
 ### Streaming
 
-Long-running operations send progress updates via MCP notifications.
+Long-running operations stream milestone progress via MCP notifications, so Claude can report partial results while reasoning continues.
 
 ### Implementation
 
 - Zero `unsafe` code (`#![forbid(unsafe_code)]`)
+- No `.unwrap()` / `.expect()` in production paths
 - Const SQL queries, pre-allocated buffers
-- 2,000+ tests
+- 2,020+ tests, 95%+ line coverage
 
 ---
 

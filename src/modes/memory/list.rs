@@ -156,14 +156,14 @@ mod tests {
             .await
             .expect("save thought");
 
-        let (sessions, total, has_more) = list_sessions(&storage, None, None, None)
+        let (listed, total, has_more) = list_sessions(&storage, None, None, None)
             .await
             .expect("list sessions");
 
-        assert_eq!(sessions.len(), 2);
+        assert_eq!(listed.len(), 2);
         assert_eq!(total, 2);
         assert!(!has_more);
-        assert_eq!(sessions[0].thought_count, 1);
+        assert_eq!(listed[0].thought_count, 1);
     }
 
     #[tokio::test]
@@ -179,7 +179,7 @@ mod tests {
                 uuid::Uuid::new_v4().to_string(),
                 &session.id,
                 "linear",
-                &format!("Test thought {i}"),
+                format!("Test thought {i}"),
                 0.8,
             );
             storage
@@ -236,11 +236,11 @@ mod tests {
             .await
             .expect("save thought");
 
-        let (sessions, _, _) = list_sessions(&storage, None, None, Some("linear".to_string()))
+        let (listed, _, _) = list_sessions(&storage, None, None, Some("linear".to_string()))
             .await
             .expect("list sessions");
 
-        assert_eq!(sessions.len(), 1);
-        assert_eq!(sessions[0].primary_mode, Some("linear".to_string()));
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].primary_mode, Some("linear".to_string()));
     }
 }

@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use rmcp::handler::server::wrapper::Parameters;
 use rmcp::handler::server::ServerHandler;
-use rmcp::model::IntoContents;
 
 use crate::server::requests::*;
 use crate::server::responses::*;
