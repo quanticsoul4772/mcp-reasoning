@@ -5,6 +5,64 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+// ============================================================================
+// Validated scalar types
+// ============================================================================
+
+/// A confidence threshold value guaranteed to be a finite f64 in [0.0, 1.0].
+///
+/// Validation happens at construction via [`TryFrom<f64>`] and at JSON
+/// deserialization, so handler code never needs to re-validate this field.
+///
+/// # Examples
+///
+/// ```
+/// use mcp_reasoning::server::ConfidenceThreshold;
+///
+/// let t = ConfidenceThreshold::try_from(0.8).unwrap();
+/// assert_eq!(t.value(), 0.8);
+///
+/// assert!(ConfidenceThreshold::try_from(f64::NAN).is_err());
+/// assert!(ConfidenceThreshold::try_from(-0.1).is_err());
+/// assert!(ConfidenceThreshold::try_from(1.1).is_err());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, JsonSchema)]
+#[serde(transparent)]
+#[schemars(transparent)]
+pub struct ConfidenceThreshold(f64);
+
+impl ConfidenceThreshold {
+    /// Returns the inner f64 value.
+    #[must_use]
+    pub fn value(self) -> f64 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for ConfidenceThreshold {
+    type Error = String;
+
+    fn try_from(v: f64) -> Result<Self, Self::Error> {
+        if v.is_finite() && (0.0..=1.0).contains(&v) {
+            Ok(Self(v))
+        } else {
+            Err(format!(
+                "confidence threshold must be a finite value between 0.0 and 1.0, got {v}"
+            ))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ConfidenceThreshold {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = f64::deserialize(deserializer)?;
+        ConfidenceThreshold::try_from(v).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Request for linear reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct LinearRequest {
@@ -12,8 +70,9 @@ pub struct LinearRequest {
     pub content: String,
     /// Session ID for context continuity.
     pub session_id: Option<String>,
-    /// Confidence threshold (0.0-1.0).
-    pub confidence: Option<f64>,
+    /// Minimum confidence threshold (0.0-1.0). Responses below this score are rejected.
+    /// Invalid values (NaN, infinity, out of range) are rejected at parse time.
+    pub confidence: Option<ConfidenceThreshold>,
     /// Per-request timeout override in milliseconds. Overrides server default when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
