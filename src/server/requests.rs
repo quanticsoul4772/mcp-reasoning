@@ -59,7 +59,7 @@ impl<'de> Deserialize<'de> for ConfidenceThreshold {
         D: serde::Deserializer<'de>,
     {
         let v = f64::deserialize(deserializer)?;
-        ConfidenceThreshold::try_from(v).map_err(serde::de::Error::custom)
+        Self::try_from(v).map_err(serde::de::Error::custom)
     }
 }
 

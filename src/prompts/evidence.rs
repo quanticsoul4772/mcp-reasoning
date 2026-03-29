@@ -43,7 +43,8 @@ Respond with a JSON object in this exact format:
     "evidential_support": 0.72,
     "key_strengths": ["Strong primary sources"],
     "key_weaknesses": ["Limited corroboration"],
-    "gaps": ["What evidence is missing"]
+    "gaps": ["For each gap: what evidence is missing AND whether filling it would strengthen/weaken/reverse the conclusion"],
+    "pivot_evidence": "Which single existing piece of evidence, if it turned out to be false, would most change the conclusion? Name it and state the direction of impact."
   },
   "confidence_in_conclusion": 0.7
 }
@@ -51,7 +52,9 @@ Respond with a JSON object in this exact format:
 Important:
 - Be rigorous about source credibility
 - Note conflicts between evidence pieces
-- Identify what additional evidence would be decisive"#
+- gaps must state impact direction (strengthen/weaken/reverse) for each missing piece
+- pivot_evidence is required: name the most fragile assumption in the evidential chain
+- Distinguish absence of evidence from evidence of absence"#
 }
 
 /// Prompt for evidence mode (probabilistic operation).

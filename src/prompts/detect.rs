@@ -25,16 +25,18 @@ Respond with a JSON object in this exact format:
       "bias": "Name of the bias (e.g., Confirmation Bias)",
       "evidence": "Specific text or reasoning that shows this bias",
       "severity": "low|medium|high",
-      "impact": "How this bias affects the reasoning",
+      "changes_conclusion": "yes|no|maybe — if this bias were removed, would the bottom-line recommendation change?",
+      "impact": "How this bias affects the reasoning and whether it is conclusion-determinative",
       "debiasing": "Strategy to counteract this bias"
     }
   ],
   "overall_assessment": {
     "bias_count": 3,
     "most_severe": "The most impactful bias",
+    "conclusion_altering_biases": "List only the biases where changes_conclusion=yes — these are the ones that actually matter",
     "reasoning_quality": 0.7
   },
-  "debiased_version": "A brief debiased restatement of the main argument"
+  "debiased_version": "A brief debiased restatement of the main argument — this must differ from the original if any changes_conclusion=yes biases were found"
 }
 
 Common biases to check:
@@ -45,7 +47,9 @@ Common biases to check:
 Important:
 - Only flag genuine biases with clear evidence
 - Distinguish bias from reasonable heuristics
-- Debiasing suggestions should be practical"#
+- changes_conclusion is required for each bias — this is the most actionable field
+- A bias present but not conclusion-altering (changes_conclusion=no) is less urgent than one that is
+- Debiasing suggestions should be practical and focus on the conclusion-altering biases first"#
 }
 
 /// Prompt for detect mode (fallacies operation).

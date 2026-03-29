@@ -40,13 +40,14 @@ Respond with a JSON object in this exact format:
     {"option": "Option B", "score": 0.78, "rank": 1},
     {"option": "Option A", "score": 0.72, "rank": 2}
   ],
-  "sensitivity_notes": "How sensitive is the ranking to weight changes"
+  "sensitivity_notes": "Name the single criterion whose weight matters most to the ranking. Then test: if that weight changed ±20%, would the top option change? State the result explicitly (e.g. 'Robust: Option B leads even if cost weight drops from 0.4 to 0.2' or 'Fragile: swapping cost and quality weights reverses the ranking')."
 }
 
 Important:
 - Weights must sum to 1.0
 - Scores should be 0.0-1.0
-- Note any close calls or sensitivity concerns"#
+- sensitivity_notes must identify the load-bearing criterion AND state whether the top ranking is robust or fragile to ±20% weight changes
+- If the margin between top two options is < 0.05, flag it as a near-tie and state what additional information would break the tie"#
 }
 
 /// Prompt for decision mode (pairwise operation).

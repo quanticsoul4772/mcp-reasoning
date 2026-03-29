@@ -32,23 +32,6 @@ impl super::ReasoningServer {
         let input_session_id = req.session_id.clone().unwrap_or_default();
         let session_id_for_metadata = req.session_id.clone();
 
-        // Validate confidence threshold before calling the mode.
-        // NaN disables the check silently; negative/infinite values produce wrong behavior.
-        if let Some(min_conf) = req.confidence {
-            if !min_conf.is_finite() || !(0.0..=1.0).contains(&min_conf) {
-                return LinearResponse {
-                    thought_id: String::new(),
-                    session_id: input_session_id,
-                    content: format!(
-                        "ERROR: confidence threshold must be between 0.0 and 1.0, got {min_conf}"
-                    ),
-                    confidence: 0.0,
-                    next_step: None,
-                    metadata: None,
-                };
-            }
-        }
-
         // Apply tool-level timeout to prevent indefinite hangs.
         // Per-request override (req.timeout_ms) takes precedence over server default.
         let timeout_ms = req
@@ -58,7 +41,7 @@ impl super::ReasoningServer {
 
         let result = match tokio::time::timeout(
             timeout_duration,
-            mode.process(&req.content, req.session_id, req.confidence),
+            mode.process(&req.content, req.session_id, req.confidence.map(super::super::requests::ConfidenceThreshold::value)),
         )
         .await
         {
