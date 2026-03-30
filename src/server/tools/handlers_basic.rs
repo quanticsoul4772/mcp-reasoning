@@ -172,6 +172,9 @@ impl super::ReasoningServer {
                                     .collect()
                             }),
                             recommendation: resp.recommendation,
+                            synthesis: None,
+                            key_findings: None,
+                            best_insights: None,
                             metadata: None,
                         },
                         true,
@@ -182,6 +185,9 @@ impl super::ReasoningServer {
                             branch_id: None,
                             branches: None,
                             recommendation: Some(format!("ERROR: {e}")),
+                            synthesis: None,
+                            key_findings: None,
+                            best_insights: None,
                             metadata: None,
                         },
                         false,
@@ -225,6 +231,9 @@ impl super::ReasoningServer {
                                     .collect()
                             }),
                             recommendation: resp.recommendation,
+                            synthesis: None,
+                            key_findings: None,
+                            best_insights: None,
                             metadata: None,
                         },
                         true,
@@ -235,6 +244,9 @@ impl super::ReasoningServer {
                             branch_id: None,
                             branches: None,
                             recommendation: Some(format!("ERROR: {e}")),
+                            synthesis: None,
+                            key_findings: None,
+                            best_insights: None,
                             metadata: None,
                         },
                         false,
@@ -257,6 +269,9 @@ impl super::ReasoningServer {
                                 .collect()
                         }),
                         recommendation: resp.recommendation,
+                        synthesis: None,
+                        key_findings: None,
+                        best_insights: None,
                         metadata: None,
                     },
                     true,
@@ -267,6 +282,9 @@ impl super::ReasoningServer {
                         branch_id: None,
                         branches: None,
                         recommendation: Some(format!("ERROR: {e}")),
+                        synthesis: None,
+                        key_findings: None,
+                        best_insights: None,
                         metadata: None,
                     },
                     false,
@@ -291,6 +309,9 @@ impl super::ReasoningServer {
                                     .collect()
                             }),
                             recommendation: resp.recommendation,
+                            synthesis: None,
+                            key_findings: None,
+                            best_insights: None,
                             metadata: None,
                         },
                         true,
@@ -301,6 +322,67 @@ impl super::ReasoningServer {
                             branch_id: None,
                             branches: None,
                             recommendation: Some(format!("ERROR: {e}")),
+                            synthesis: None,
+                            key_findings: None,
+                            best_insights: None,
+                            metadata: None,
+                        },
+                        false,
+                    ),
+                }
+            }
+            "summarize" => {
+                let summarize_result = match tokio::time::timeout(
+                    timeout_duration,
+                    mode.summarize(&session_id),
+                )
+                .await
+                {
+                    Ok(inner) => inner,
+                    Err(_elapsed) => {
+                        tracing::error!(
+                            tool = "reasoning_tree",
+                            operation = "summarize",
+                            timeout_ms = timeout_ms,
+                            "Tool execution timed out"
+                        );
+                        Err(ModeError::Timeout {
+                            elapsed_ms: timeout_ms,
+                        })
+                    }
+                };
+                match summarize_result {
+                    Ok(resp) => (
+                        TreeResponse {
+                            session_id: resp.session_id,
+                            branch_id: resp.branch_id,
+                            branches: resp.branches.map(|bs| {
+                                bs.into_iter()
+                                    .map(|b| Branch {
+                                        id: b.id,
+                                        content: b.content,
+                                        score: b.score,
+                                        status: b.status.as_str().to_string(),
+                                    })
+                                    .collect()
+                            }),
+                            recommendation: resp.recommendation,
+                            synthesis: resp.synthesis,
+                            key_findings: resp.key_findings,
+                            best_insights: resp.best_insights,
+                            metadata: None,
+                        },
+                        true,
+                    ),
+                    Err(e) => (
+                        TreeResponse {
+                            session_id,
+                            branch_id: None,
+                            branches: None,
+                            recommendation: Some(format!("ERROR: {e}")),
+                            synthesis: None,
+                            key_findings: None,
+                            best_insights: None,
                             metadata: None,
                         },
                         false,
@@ -313,8 +395,11 @@ impl super::ReasoningServer {
                     branch_id: None,
                     branches: None,
                     recommendation: Some(format!(
-                        "Unknown operation: {operation}. Use create/focus/list/complete."
+                        "Unknown operation: {operation}. Use create/focus/list/complete/summarize."
                     )),
+                    synthesis: None,
+                    key_findings: None,
+                    best_insights: None,
                     metadata: None,
                 },
                 false,

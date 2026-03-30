@@ -945,8 +945,8 @@ async fn test_checkpoint_mode_create_and_list() {
 mod server_tests {
     use super::*;
     use mcp_reasoning::server::{
-        AutoRequest, CheckpointRequest, CounterfactualRequest, DecisionRequest, DetectRequest,
-        DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, MctsRequest,
+        AutoRequest, CheckpointRequest, ConfidenceThreshold, CounterfactualRequest, DecisionRequest,
+        DetectRequest, DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, MctsRequest,
         MetricsRequest, PresetRequest, ReasoningServer, ReflectionRequest, TimelineRequest,
         TreeRequest,
     };
@@ -989,7 +989,7 @@ mod server_tests {
         let req = LinearRequest {
             content: "test content".to_string(),
             session_id: Some("session-1".to_string()),
-            confidence: Some(0.8),
+            confidence: Some(ConfidenceThreshold::try_from(0.8).unwrap()),
             timeout_ms: None,
         };
         let json = serde_json::to_string(&req).unwrap();
@@ -1007,7 +1007,7 @@ mod server_tests {
         let req_with_timeout = LinearRequest {
             content: "test".to_string(),
             session_id: None,
-            confidence: None,
+            confidence: Some(ConfidenceThreshold::try_from(0.5).unwrap()),
             timeout_ms: Some(5_000),
         };
         let json = serde_json::to_string(&req_with_timeout).unwrap();
@@ -1023,12 +1023,18 @@ mod server_tests {
             timeout_ms: None,
         };
         let json_no_timeout = serde_json::to_string(&req_no_timeout).unwrap();
-        assert!(!json_no_timeout.contains("timeout_ms"), "None should be omitted from JSON");
+        assert!(
+            !json_no_timeout.contains("timeout_ms"),
+            "None should be omitted from JSON"
+        );
 
         // Old JSON without timeout_ms field should deserialize to None (backward compat)
         let legacy_json = r#"{"content":"test"}"#;
         let legacy: LinearRequest = serde_json::from_str(legacy_json).unwrap();
-        assert_eq!(legacy.timeout_ms, None, "missing field should deserialize to None");
+        assert_eq!(
+            legacy.timeout_ms, None,
+            "missing field should deserialize to None"
+        );
     }
 
     #[test]

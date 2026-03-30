@@ -230,6 +230,8 @@ pub enum Operation {
     List,
     /// Tree: Complete the exploration.
     Complete,
+    /// Tree: Synthesize all branches into a final answer.
+    Summarize,
     /// Reflection: Process for improvement.
     Process,
     /// Reflection: Evaluate the session.
@@ -291,6 +293,7 @@ impl Operation {
             Self::Focus => "focus",
             Self::List => "list",
             Self::Complete => "complete",
+            Self::Summarize => "summarize",
             Self::Process => "process",
             Self::Evaluate => "evaluate",
             Self::ForceRebellion => "force_rebellion",
@@ -363,6 +366,7 @@ pub fn get_prompt_for_mode(mode: ReasoningMode, operation: Option<&Operation>) -
         (ReasoningMode::Tree, Some(Operation::Focus)) => tree_focus_prompt(),
         (ReasoningMode::Tree, Some(Operation::List)) => tree_list_prompt(),
         (ReasoningMode::Tree, Some(Operation::Complete)) => tree_complete_prompt(),
+        (ReasoningMode::Tree, Some(Operation::Summarize)) => tree_complete_prompt(),
 
         (ReasoningMode::Divergent, Some(Operation::ForceRebellion)) => divergent_rebellion_prompt(),
         (ReasoningMode::Divergent, _) => divergent_prompt(),

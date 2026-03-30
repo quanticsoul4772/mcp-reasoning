@@ -78,11 +78,11 @@ pub use params::{
 pub use progress::{create_progress_channel, ProgressEvent, ProgressMilestone, ProgressReporter};
 pub use requests::{
     AgentInvokeRequest, AgentListRequest, AgentMetricsRequest, AutoRequest, CheckpointRequest,
-    CounterfactualRequest, DecisionRequest, DetectRequest, DivergentRequest, EvidenceRequest,
-    GraphRequest, LinearRequest, MctsRequest, MetricsRequest, PresetRequest, ReflectionRequest,
-    SiApproveRequest, SiDiagnosesRequest, SiRejectRequest, SiRollbackRequest, SiStatusRequest,
-    SiTriggerRequest, SkillRunRequest, TeamListRequest, TeamRunRequest, TimelineRequest,
-    TreeRequest,
+    ConfidenceThreshold, CounterfactualRequest, DecisionRequest, DetectRequest, DivergentRequest,
+    EvidenceRequest, GraphRequest, LinearRequest, MctsRequest, MetricsRequest, PresetRequest,
+    ReflectionRequest, SiApproveRequest, SiDiagnosesRequest, SiRejectRequest, SiRollbackRequest,
+    SiStatusRequest, SiTriggerRequest, SkillRunRequest, TeamListRequest, TeamRunRequest,
+    TimelineRequest, TreeRequest,
 };
 pub use responses::{
     AgentInvokeResponse, AgentListResponse, AgentMetricsResponse, AutoResponse,

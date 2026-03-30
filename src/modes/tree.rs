@@ -188,6 +188,15 @@ pub struct TreeResponse {
     /// Insights gained (for focus operation).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub insights: Option<Vec<String>>,
+    /// Synthesis across all branches (for summarize operation).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synthesis: Option<String>,
+    /// Key findings across all branches (for summarize operation).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_findings: Option<Vec<String>>,
+    /// Best insights from the exploration (for summarize operation).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub best_insights: Option<Vec<String>>,
 }
 
 impl TreeResponse {
@@ -201,6 +210,9 @@ impl TreeResponse {
             recommendation: None,
             exploration: None,
             insights: None,
+            synthesis: None,
+            key_findings: None,
+            best_insights: None,
         }
     }
 
@@ -236,6 +248,27 @@ impl TreeResponse {
     #[must_use]
     pub fn with_insights(mut self, insights: Vec<String>) -> Self {
         self.insights = Some(insights);
+        self
+    }
+
+    /// Set the synthesis.
+    #[must_use]
+    pub fn with_synthesis(mut self, synthesis: impl Into<String>) -> Self {
+        self.synthesis = Some(synthesis.into());
+        self
+    }
+
+    /// Set the key findings.
+    #[must_use]
+    pub fn with_key_findings(mut self, key_findings: Vec<String>) -> Self {
+        self.key_findings = Some(key_findings);
+        self
+    }
+
+    /// Set the best insights.
+    #[must_use]
+    pub fn with_best_insights(mut self, best_insights: Vec<String>) -> Self {
+        self.best_insights = Some(best_insights);
         self
     }
 }
@@ -532,6 +565,114 @@ where
         Ok(TreeResponse::new(session_id)
             .with_branch_id(branch_id)
             .with_branches(branches))
+    }
+
+    /// Synthesize all branches into a final answer.
+    ///
+    /// Reads all branches from the session, passes them to the LLM with the
+    /// tree synthesis prompt, and returns key findings, best insights, and a
+    /// coherent conclusion.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if no branches exist, API fails, or parsing fails.
+    pub async fn summarize(&mut self, session_id: &str) -> Result<TreeResponse, ModeError> {
+        let stored_branches =
+            self.storage
+                .get_branches(session_id)
+                .await
+                .map_err(|e| ModeError::ApiUnavailable {
+                    message: format!("Failed to get branches: {e}"),
+                })?;
+
+        if stored_branches.is_empty() {
+            return Err(ModeError::InvalidValue {
+                field: "session_id".to_string(),
+                reason: format!("No branches found for session {session_id}"),
+            });
+        }
+
+        let branches: Vec<Branch> = stored_branches.iter().map(Branch::from_stored).collect();
+
+        // Build a summary of all branches for the LLM
+        let branch_summaries: Vec<String> = branches
+            .iter()
+            .map(|b| {
+                format!(
+                    "Branch '{}' (status: {}, score: {:.2}):\n{}",
+                    b.title,
+                    b.status.as_str(),
+                    b.score,
+                    b.content
+                )
+            })
+            .collect();
+
+        let prompt = get_prompt_for_mode(ReasoningMode::Tree, Some(&Operation::Summarize));
+        let user_message = format!(
+            "{prompt}\n\nBranches to synthesize:\n\n{}",
+            branch_summaries.join("\n\n---\n\n")
+        );
+
+        let messages = vec![crate::traits::Message::user(user_message)];
+        let config = crate::traits::CompletionConfig::new()
+            .with_max_tokens(4096)
+            .with_temperature(0.7);
+
+        let response = self.client.complete(messages, config).await?;
+        let json = extract_json(&response.content)?;
+
+        let key_findings: Vec<String> = json
+            .get("key_findings")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let best_insights: Vec<String> = json
+            .get("best_insights")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let synthesis = json
+            .get("synthesis")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let mut result = TreeResponse::new(session_id)
+            .with_branches(branches)
+            .with_synthesis(synthesis)
+            .with_key_findings(key_findings)
+            .with_best_insights(best_insights);
+
+        // Include unresolved questions in recommendation if present
+        let unresolved: Vec<String> = json
+            .get("unresolved")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if !unresolved.is_empty() {
+            result = result.with_recommendation(format!(
+                "Unresolved questions: {}",
+                unresolved.join("; ")
+            ));
+        }
+
+        Ok(result)
     }
 
     /// Get or create a session.
@@ -1267,5 +1408,128 @@ mod tests {
         let branch = Branch::from_stored(&stored);
         assert_eq!(branch.title, "Has Title");
         assert_eq!(branch.content, r#"{"title":"Has Title"}"#);
+    }
+
+    fn mock_summarize_response() -> String {
+        r#"{"key_findings": ["Finding 1", "Finding 2"], "best_insights": ["Key insight here"], "synthesis": "Overall conclusion from all branches", "unresolved": ["Open question 1"], "confidence": 0.9}"#.to_string()
+    }
+
+    #[tokio::test]
+    async fn test_tree_summarize_success() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_branches().returning(|_| {
+            Ok(vec![
+                StoredBranch::new(
+                    "b-1",
+                    "test-session",
+                    r#"{"title":"Branch 1","content":"Content 1"}"#,
+                )
+                .with_score(0.8)
+                .with_status(StoredBranchStatus::Completed),
+                StoredBranch::new(
+                    "b-2",
+                    "test-session",
+                    r#"{"title":"Branch 2","content":"Content 2"}"#,
+                )
+                .with_score(0.6)
+                .with_status(StoredBranchStatus::Active),
+            ])
+        });
+
+        mock_client
+            .expect_complete()
+            .returning(|_, _| {
+                Ok(CompletionResponse {
+                    content: mock_summarize_response(),
+                    usage: Usage {
+                        input_tokens: 100,
+                        output_tokens: 150,
+                    },
+                })
+            });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.summarize("test-session").await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.session_id, "test-session");
+        assert!(response.synthesis.is_some());
+        assert_eq!(
+            response.synthesis.as_deref().unwrap(),
+            "Overall conclusion from all branches"
+        );
+        assert!(response.key_findings.is_some());
+        assert_eq!(response.key_findings.as_ref().unwrap().len(), 2);
+        assert!(response.best_insights.is_some());
+        assert_eq!(response.best_insights.as_ref().unwrap().len(), 1);
+        // Unresolved questions go into recommendation
+        assert!(response.recommendation.is_some());
+        assert!(response
+            .recommendation
+            .as_deref()
+            .unwrap()
+            .contains("Open question 1"));
+        // All branches included in response
+        assert!(response.branches.is_some());
+        assert_eq!(response.branches.as_ref().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_tree_summarize_no_branches() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_branches()
+            .returning(|_| Ok(vec![]));
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.summarize("empty-session").await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ModeError::InvalidValue { field, .. })
+            if field == "session_id"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_tree_summarize_storage_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_branches()
+            .returning(|_| {
+                Err(StorageError::QueryFailed {
+                    query: "get_branches".to_string(),
+                    message: "session not found".to_string(),
+                })
+            });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.summarize("bad-session").await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ModeError::ApiUnavailable { .. })
+        ));
+    }
+
+    #[test]
+    fn test_tree_response_builder_synthesis_fields() {
+        let response = TreeResponse::new("s-1")
+            .with_synthesis("Final conclusion")
+            .with_key_findings(vec!["Finding A".to_string(), "Finding B".to_string()])
+            .with_best_insights(vec!["Insight X".to_string()]);
+
+        assert_eq!(response.synthesis.as_deref().unwrap(), "Final conclusion");
+        assert_eq!(response.key_findings.as_ref().unwrap().len(), 2);
+        assert_eq!(response.best_insights.as_ref().unwrap().len(), 1);
     }
 }

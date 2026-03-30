@@ -198,6 +198,9 @@ async fn test_into_contents_implementations() {
             status: "active".to_string(),
         }]),
         recommendation: Some("Rec".to_string()),
+        synthesis: None,
+        key_findings: None,
+        best_insights: None,
         metadata: None,
     };
     let _ = tree_resp.into_contents();

@@ -9,7 +9,7 @@ async fn test_reasoning_linear_tool() {
     let req = LinearRequest {
         content: "test".to_string(),
         session_id: Some("s1".to_string()),
-        confidence: Some(0.8),
+        confidence: Some(ConfidenceThreshold::try_from(0.8).unwrap()),
         timeout_ms: None,
     };
     let resp = server.reasoning_linear(Parameters(req)).await;

@@ -69,6 +69,12 @@ pub struct TreeResponse {
     pub branches: Option<Vec<Branch>>,
     /// Suggested next branch to explore.
     pub recommendation: Option<String>,
+    /// Synthesized conclusion across all branches (summarize operation).
+    pub synthesis: Option<String>,
+    /// Key findings across all branches (summarize operation).
+    pub key_findings: Option<Vec<String>>,
+    /// Best insights from the exploration (summarize operation).
+    pub best_insights: Option<Vec<String>>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1056,6 +1062,9 @@ mod tests {
                 status: "active".to_string(),
             }]),
             recommendation: Some("Explore branch 1".to_string()),
+            synthesis: None,
+            key_findings: None,
+            best_insights: None,
             metadata: None,
         };
         let contents = response.into_contents();

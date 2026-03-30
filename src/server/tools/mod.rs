@@ -103,7 +103,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_tree",
-        description = "Branching exploration: create=start with 2-4 paths, focus=select branch, list=show branches, complete=mark finished."
+        description = "Branching exploration: create=start with 2-4 paths, focus=select branch, list=show branches, complete=mark finished, summarize=synthesize all branches into final answer."
     )]
     async fn reasoning_tree(&self, req: Parameters<TreeRequest>) -> TreeResponse {
         self.handle_tree(req.0).await

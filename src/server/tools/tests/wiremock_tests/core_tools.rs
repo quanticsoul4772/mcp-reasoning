@@ -28,7 +28,7 @@ async fn test_linear_success_path() {
     let req = LinearRequest {
         content: "Analyze this problem".to_string(),
         session_id: None,
-        confidence: Some(0.8),
+        confidence: Some(ConfidenceThreshold::try_from(0.8).unwrap()),
         timeout_ms: None,
     };
 
@@ -338,124 +338,64 @@ async fn test_auto_success_path() {
 }
 
 // ============================================================================
-// Edge case tests for handle_linear — confidence threshold validation
+// ConfidenceThreshold type tests — invalid states are unrepresentable
 // ============================================================================
 
-#[tokio::test]
-async fn test_linear_nan_confidence_threshold_rejected() {
-    // BUG: NaN min_confidence silently disables the threshold because
-    // NaN comparisons always return false: `confidence < NaN` == false.
-    // Any API response passes through regardless of its confidence score.
-    // The handler should reject NaN before calling the mode.
-    let mock_server = MockServer::start().await;
-
-    let response_json = serde_json::json!({
-        "analysis": "Analysis result",
-        "confidence": 0.85,
-        "next_step": "Continue"
-    });
-
-    Mock::given(method("POST"))
-        .and(path("/messages"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(anthropic_response(&response_json.to_string())),
-        )
-        .mount(&mock_server)
-        .await;
-
-    let server = create_mocked_server(&mock_server).await;
-    let req = LinearRequest {
-        content: "Valid content".to_string(),
-        session_id: None,
-        confidence: Some(f64::NAN), // Invalid: NaN threshold silently disabled
-        timeout_ms: None,
-    };
-
-    let resp = server.reasoning_linear(Parameters(req)).await;
-    assert!(
-        resp.content.contains("ERROR"),
-        "NaN confidence threshold should be rejected before calling the mode, got: {}",
-        resp.content
-    );
+#[test]
+fn test_confidence_threshold_valid_range() {
+    // Boundary values
+    assert!(ConfidenceThreshold::try_from(0.0).is_ok());
+    assert!(ConfidenceThreshold::try_from(1.0).is_ok());
+    assert!(ConfidenceThreshold::try_from(0.5).is_ok());
+    assert!(ConfidenceThreshold::try_from(0.999).is_ok());
 }
 
-#[tokio::test]
-async fn test_linear_negative_confidence_threshold_rejected() {
-    // BUG: Negative min_confidence silently disables the threshold because
-    // `actual_confidence < -0.5` is always false for any valid 0.0-1.0 confidence.
-    // Callers who accidentally pass a negative threshold get no error and no filtering.
-    let mock_server = MockServer::start().await;
-
-    let response_json = serde_json::json!({
-        "analysis": "Low-quality analysis",
-        "confidence": 0.1, // Should be rejected if threshold were working
-    });
-
-    Mock::given(method("POST"))
-        .and(path("/messages"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(anthropic_response(&response_json.to_string())),
-        )
-        .mount(&mock_server)
-        .await;
-
-    let server = create_mocked_server(&mock_server).await;
-    let req = LinearRequest {
-        content: "Valid content".to_string(),
-        session_id: None,
-        confidence: Some(-0.5), // Invalid: negative threshold silently ignored
-        timeout_ms: None,
-    };
-
-    let resp = server.reasoning_linear(Parameters(req)).await;
-    assert!(
-        resp.content.contains("ERROR"),
-        "Negative confidence threshold should be rejected before calling the mode, got: {}",
-        resp.content
-    );
+#[test]
+fn test_confidence_threshold_rejects_nan() {
+    // NaN used to silently disable the threshold (NaN < x == false always).
+    // Now it's rejected at construction.
+    assert!(ConfidenceThreshold::try_from(f64::NAN).is_err());
+    let err = ConfidenceThreshold::try_from(f64::NAN).unwrap_err();
+    assert!(err.contains("finite"), "error should mention finite: {err}");
 }
 
-#[tokio::test]
-async fn test_linear_infinite_confidence_threshold_rejected() {
-    // BUG: INFINITY min_confidence silently rejects ALL responses because
-    // `actual_confidence < INFINITY` is always true for any finite confidence.
-    // This causes every valid API response to fail with a misleading threshold error.
-    let mock_server = MockServer::start().await;
+#[test]
+fn test_confidence_threshold_rejects_negative() {
+    // Negative values used to silently disable the threshold.
+    assert!(ConfidenceThreshold::try_from(-0.001).is_err());
+    assert!(ConfidenceThreshold::try_from(-1.0).is_err());
+}
 
-    let response_json = serde_json::json!({
-        "analysis": "High quality analysis",
-        "confidence": 0.99, // Very high — should pass any reasonable threshold
-    });
+#[test]
+fn test_confidence_threshold_rejects_out_of_range() {
+    // Values > 1.0 or +∞ used to reject all responses silently.
+    assert!(ConfidenceThreshold::try_from(1.001).is_err());
+    assert!(ConfidenceThreshold::try_from(f64::INFINITY).is_err());
+}
 
-    Mock::given(method("POST"))
-        .and(path("/messages"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(anthropic_response(&response_json.to_string())),
-        )
-        .mount(&mock_server)
-        .await;
+#[test]
+fn test_confidence_threshold_json_round_trip() {
+    // Serializes as a plain f64, deserializes with validation.
+    let t = ConfidenceThreshold::try_from(0.75).unwrap();
+    let json = serde_json::to_string(&t).unwrap();
+    assert_eq!(json, "0.75");
 
-    let server = create_mocked_server(&mock_server).await;
-    let req = LinearRequest {
-        content: "Valid content".to_string(),
-        session_id: None,
-        confidence: Some(f64::INFINITY), // Invalid: causes all responses to fail
-        timeout_ms: None,
-    };
+    let back: ConfidenceThreshold = serde_json::from_str("0.75").unwrap();
+    assert!((back.value() - 0.75).abs() < f64::EPSILON);
+}
 
-    let resp = server.reasoning_linear(Parameters(req)).await;
-    // Should be an input validation error, not a "below threshold" error
-    assert!(
-        resp.content.contains("ERROR"),
-        "Infinite confidence threshold should be rejected before calling the mode, got: {}",
-        resp.content
-    );
-    // And it must NOT succeed (infinity threshold silently blocks everything)
-    assert!(
-        resp.thought_id.is_empty(),
-        "Infinite confidence threshold should not produce a valid thought_id"
-    );
+#[test]
+fn test_confidence_threshold_json_rejects_invalid() {
+    // Bad values rejected at deserialization — before reaching any handler.
+    assert!(serde_json::from_str::<ConfidenceThreshold>("1.5").is_err());
+    assert!(serde_json::from_str::<ConfidenceThreshold>("-0.1").is_err());
+}
+
+#[test]
+fn test_linear_request_confidence_json_rejects_out_of_range() {
+    // Regression: a LinearRequest with an invalid confidence value in JSON
+    // should be rejected at deserialization, never reaching the handler.
+    let bad_json = r#"{"content":"test","confidence":1.5}"#;
+    let result = serde_json::from_str::<LinearRequest>(bad_json);
+    assert!(result.is_err(), "confidence:1.5 should be rejected at parse time");
 }

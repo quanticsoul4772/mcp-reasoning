@@ -32,6 +32,9 @@ fn test_tree_response_into_contents() {
             status: "active".to_string(),
         }]),
         recommendation: Some("explore branch b1".to_string()),
+        synthesis: None,
+        key_findings: None,
+        best_insights: None,
         metadata: None,
     };
     let contents = response.into_contents();
