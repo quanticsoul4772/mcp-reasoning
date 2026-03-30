@@ -3,7 +3,7 @@
 use crate::error::ModeError;
 use crate::modes::memory::types::{CheckpointInfo, SessionContext, ThoughtSummary};
 use crate::storage::SqliteStorage;
-use crate::traits::AnthropicClientTrait;
+use crate::traits::{AnthropicClientTrait, CompletionConfig, Message};
 use sqlx::Row;
 
 const SQL_GET_SESSION: &str = "SELECT id, created_at, updated_at FROM sessions WHERE id = ?";
@@ -140,19 +140,40 @@ pub async fn resume_session<C: AnthropicClientTrait>(
     })
 }
 
-/// Compress session content (placeholder for future Claude API compression).
-#[allow(clippy::unused_async)]
+/// Compress session content using Claude to produce a concise summary.
 async fn compress_session<C: AnthropicClientTrait>(
-    _client: &C,
+    client: &C,
     thoughts: &[String],
 ) -> Result<String, ModeError> {
     let combined = thoughts.join("\n\n");
 
-    // MVP: Simple truncation. Future: Use Claude API for intelligent summarization.
-    if combined.len() > 1000 {
-        Ok(combined.chars().take(1000).collect::<String>() + "...")
-    } else {
-        Ok(combined)
+    // If content is short enough, no compression needed
+    if combined.len() <= 1000 {
+        return Ok(combined);
+    }
+
+    let prompt = format!(
+        "You are summarizing a reasoning session for later resumption. \
+         Produce a concise summary (200-400 words) that captures:\n\
+         1. The core problem or question being explored\n\
+         2. Key insights and conclusions reached\n\
+         3. The current state of reasoning and any open threads\n\
+         4. Important decisions made and their rationale\n\n\
+         Reasoning session content:\n{combined}\n\n\
+         Respond with ONLY the summary text, no JSON or formatting."
+    );
+
+    let messages = vec![Message::user(&prompt)];
+    let config = CompletionConfig::new()
+        .with_max_tokens(600)
+        .with_temperature(0.3); // Low temperature for factual summarization
+
+    match client.complete(messages, config).await {
+        Ok(response) => Ok(response.content.trim().to_string()),
+        Err(_) => {
+            // Fallback to truncation if API call fails
+            Ok(combined.chars().take(1000).collect::<String>() + "\n\n[Summary truncated]")
+        }
     }
 }
 
