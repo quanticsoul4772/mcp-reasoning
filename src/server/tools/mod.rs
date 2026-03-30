@@ -95,7 +95,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_linear",
-        description = "Process a thought and get a logical continuation with confidence scoring."
+        description = "Step-by-step reasoning for single-path analysis, explanations, and direct problem solving. Returns analysis with confidence score and suggested next step."
     )]
     async fn reasoning_linear(&self, req: Parameters<LinearRequest>) -> LinearResponse {
         self.handle_linear(req.0).await
@@ -111,7 +111,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_auto",
-        description = "Analyze content and route to optimal reasoning mode."
+        description = "Start here when unsure which tool to use. Analyzes content and routes automatically to the best reasoning mode."
     )]
     async fn reasoning_auto(&self, req: Parameters<AutoRequest>) -> AutoResponse {
         self.handle_auto(req.0).await
@@ -129,7 +129,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_divergent",
-        description = "Generate novel perspectives with assumption challenges and optional force_rebellion mode."
+        description = "Break out of conventional thinking: generates multiple novel perspectives, challenges assumptions, optional force_rebellion for radical alternatives."
     )]
     async fn reasoning_divergent(&self, req: Parameters<DivergentRequest>) -> DivergentResponse {
         self.handle_divergent(req.0).await
@@ -155,7 +155,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_graph",
-        description = "Graph reasoning: init/generate/score/aggregate/refine/prune/finalize/state operations."
+        description = "Graph-of-Thoughts for complex multi-faceted problems requiring decomposition and aggregation: init/generate/score/aggregate/refine/prune/finalize/state."
     )]
     async fn reasoning_graph(&self, req: Parameters<GraphRequest>) -> GraphResponse {
         self.handle_graph(req.0).await
@@ -191,7 +191,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_timeline",
-        description = "Temporal reasoning: create/branch/compare/merge operations."
+        description = "Temporal reasoning for time-ordered scenarios and alternative decision paths: create=establish sequence, branch=split paths, compare=evaluate options, merge=synthesize."
     )]
     async fn reasoning_timeline(&self, req: Parameters<TimelineRequest>) -> TimelineResponse {
         self.handle_timeline(req.0).await
