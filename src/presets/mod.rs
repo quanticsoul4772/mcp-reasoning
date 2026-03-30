@@ -14,6 +14,7 @@
 //! | architecture-decision | Decision | Multi-factor architectural decision making |
 //! | strategic-decision | Decision | Stakeholder-aware strategic planning |
 //! | evidence-conclusion | Research | Evidence-based research synthesis |
+//! | brainstorming | Analysis | Creative exploration via divergent→tree→summarize→reflection |
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -311,6 +312,29 @@ impl PresetRegistry {
             ],
         ));
 
+        // 6. Brainstorming
+        self.register(Preset::new(
+            "brainstorming",
+            "Brainstorming",
+            "Creative exploration: generate novel perspectives, branch into promising paths, synthesize insights, then reflect on quality",
+            PresetCategory::Analysis,
+            vec![
+                PresetStep::new("divergent")
+                    .with_config(serde_json::json!({"num_perspectives": 4, "challenge_assumptions": true}))
+                    .with_description("Generate novel perspectives and challenge assumptions"),
+                PresetStep::new("tree")
+                    .with_operation("create")
+                    .with_config(serde_json::json!({"num_branches": 3}))
+                    .with_description("Branch into the most promising perspectives"),
+                PresetStep::new("tree")
+                    .with_operation("summarize")
+                    .with_description("Synthesize all branches into key findings and insights"),
+                PresetStep::new("reflection")
+                    .with_operation("evaluate")
+                    .with_description("Assess quality and identify the strongest ideas"),
+            ],
+        ));
+
         // 5. Evidence-Based Conclusion
         self.register(Preset::new(
             "evidence-conclusion",
@@ -507,8 +531,8 @@ mod tests {
     fn test_preset_registry_new() {
         let registry = PresetRegistry::new();
 
-        // Should have 5 built-in presets
-        assert_eq!(registry.list().len(), 5);
+        // Should have 6 built-in presets
+        assert_eq!(registry.list().len(), 6);
     }
 
     #[test]
@@ -660,8 +684,8 @@ mod tests {
             presets,
         };
 
-        assert_eq!(response.total, 5);
+        assert_eq!(response.total, 6);
         let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("\"total\":5"));
+        assert!(json.contains("\"total\":6"));
     }
 }
