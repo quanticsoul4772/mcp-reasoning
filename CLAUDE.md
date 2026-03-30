@@ -92,13 +92,15 @@ MCP_TRANSPORT=stdio                   # stdio (default) or http
 src/
 ├── main.rs              # Entry point (<100 lines)
 ├── lib.rs               # Module declarations + lints
-├── traits.rs            # Mockable traits (AnthropicClientTrait, StorageTrait, TimeProvider)
+├── traits/              # Mockable traits (AnthropicClientTrait, StorageTrait, TimeProvider)
 ├── test_utils.rs        # Mock factories (test only)
 ├── error/
 │   ├── mod.rs           # AppError, StorageError, ConfigError, ModeError
 │   └── enhanced.rs      # ErrorEnhancer, ComplexityMetrics, contextual alternatives
 ├── config/
 │   ├── mod.rs           # Config struct + from_env()
+│   ├── secret.rs        # SecretString wrapper (redacts on Display)
+│   ├── self_improvement.rs  # SelfImprovementConfig
 │   └── validation.rs    # Validation logic
 ├── anthropic/
 │   ├── client.rs        # AnthropicClient with retry + backoff + streaming
@@ -106,55 +108,89 @@ src/
 │   ├── config.rs        # ModelConfig, ThinkingConfig (standard/deep/maximum)
 │   └── streaming.rs     # SSE parsing, StreamAccumulator
 ├── storage/
-│   ├── mod.rs           # Storage trait
-│   ├── sqlite.rs        # Main implementation (<500 lines)
+│   ├── mod.rs           # Storage trait + SqliteStorage struct
+│   ├── core.rs          # Connection pool + migrations
 │   ├── session.rs       # Session CRUD
 │   ├── thought.rs       # Thought CRUD
-│   └── graph.rs         # Graph node/edge CRUD
+│   ├── branch.rs        # Branch CRUD
+│   ├── checkpoint.rs    # Checkpoint CRUD
+│   ├── graph.rs         # Graph node/edge CRUD
+│   ├── metrics.rs       # Metrics storage
+│   ├── actions.rs       # SI action storage
+│   ├── agent_metrics.rs # Agent performance storage
+│   ├── trait_impl.rs    # StorageTrait implementation
+│   └── types.rs         # Storage types
 ├── prompts/
-│   ├── mod.rs           # get_prompt_for_mode() router
-│   ├── core.rs          # linear, tree, divergent, reflection prompts
-│   └── advanced.rs      # graph, timeline, mcts, counterfactual prompts
+│   ├── mod.rs           # ReasoningMode enum, Operation enum, get_prompt_for_mode() router
+│   ├── core.rs          # linear, tree, divergent, reflection, checkpoint, auto prompts
+│   ├── graph.rs         # Graph-of-Thoughts prompts (8 operations)
+│   ├── detect.rs        # Bias/fallacy detection prompts
+│   ├── decision.rs      # Decision analysis prompts (weighted/pairwise/topsis/perspectives)
+│   ├── evidence.rs      # Evidence evaluation prompts (assess/probabilistic)
+│   ├── timeline.rs      # Timeline prompts (create/branch/compare/merge)
+│   ├── mcts.rs          # MCTS prompts (explore/auto_backtrack)
+│   └── counterfactual.rs # Causal analysis prompts (Pearl's Ladder)
 ├── modes/
-│   ├── mod.rs           # ReasoningMode enum + exports
+│   ├── mod.rs           # Mode exports
 │   ├── core.rs          # ModeCore (shared deps) + extract_json() helper
 │   ├── linear.rs        # Single-pass sequential
-│   ├── tree.rs          # Branching (create/focus/list/complete)
+│   ├── tree.rs          # Branching (create/focus/list/complete/summarize)
 │   ├── divergent.rs     # Multi-perspective + force_rebellion
-│   ├── reflection.rs    # Meta-cognitive (process/evaluate)
 │   ├── checkpoint.rs    # State management (create/list/restore)
 │   ├── auto.rs          # Mode selection router
-│   ├── graph.rs         # Graph-of-Thoughts (8 operations)
-│   ├── detect.rs        # Bias/fallacy detection
-│   ├── decision.rs      # weighted/pairwise/topsis/perspectives
-│   ├── evidence.rs      # Credibility + Bayesian updates
-│   ├── timeline.rs      # Temporal (create/branch/compare/merge)
-│   ├── mcts.rs          # UCB1 search + auto_backtrack
-│   └── counterfactual.rs # Pearl's Ladder causal analysis
+│   ├── meta.rs          # Meta-mode (selects based on empirical data)
+│   ├── counterfactual.rs # Pearl's Ladder causal analysis
+│   ├── reflection/      # Meta-cognitive (process/evaluate)
+│   ├── graph/           # Graph-of-Thoughts (8 operations)
+│   ├── detect/          # Bias/fallacy detection
+│   ├── decision/        # weighted/pairwise/topsis/perspectives
+│   ├── evidence/        # Credibility + Bayesian updates
+│   ├── timeline/        # Temporal (create/branch/compare/merge)
+│   ├── mcts/            # UCB1 search + auto_backtrack
+│   └── memory/          # Session memory (list/resume/search/relate + embeddings)
 ├── server/
 │   ├── mod.rs           # McpServer + graceful shutdown
 │   ├── mcp.rs           # JSON-RPC protocol
-│   ├── tools.rs         # 32 tool schemas (rmcp macros)
-│   ├── handlers.rs      # HandlerRegistry (HashMap pattern)
 │   ├── transport.rs     # Stdio + HTTP transport
 │   ├── progress.rs      # ProgressEvent, ProgressReporter, milestones
 │   ├── params.rs        # Tool parameter schemas
 │   ├── requests.rs      # Request types with JsonSchema
-│   └── types.rs         # AppState with progress broadcast channel
+│   ├── responses.rs     # Response types
+│   ├── metadata_builders.rs # Response metadata helpers
+│   ├── types.rs         # AppState with progress broadcast channel
+│   └── tools/           # 32 tool schemas + per-category handlers
+│       ├── mod.rs        # Tool definitions (rmcp macros)
+│       ├── handlers_basic.rs    # linear, tree, divergent, reflection, checkpoint, auto
+│       ├── handlers_cognitive.rs # detect, meta
+│       ├── handlers_decision.rs # decision, evidence
+│       ├── handlers_temporal.rs # timeline, mcts, counterfactual
+│       ├── handlers_graph.rs    # graph
+│       ├── handlers_sessions.rs # list_sessions, resume, search, relate
+│       ├── handlers_agents.rs   # agent_invoke, agent_list, skill_run, team_run, team_list, agent_metrics
+│       ├── handlers_si.rs       # SI status/diagnoses/approve/reject/trigger/rollback
+│       └── handlers_infra.rs    # preset, metrics
+├── agents/              # Agent coordination system (invoke/list/team)
+├── skills/              # Composable skill system (run/discover/builtin)
+├── metadata/            # Tool metadata, suggestions, timing defaults
 ├── presets/
-│   ├── mod.rs           # PresetMode (list/run)
-│   └── mod.rs           # 6 built-in presets (code-review, debug-analysis, architecture-decision, strategic-decision, evidence-conclusion, brainstorming)
+│   └── mod.rs           # 6 built-in presets (code-review, debug-analysis, architecture-decision,
+│                        #   strategic-decision, evidence-conclusion, brainstorming)
 ├── metrics/mod.rs       # Usage metrics + tool chain tracking (ToolTransition, ChainSummary)
 └── self_improvement/
     ├── mod.rs           # Re-exports
     ├── system.rs        # SelfImprovementSystem orchestrator
-    ├── types.rs         # Severity, TriggerMetric, SuggestedAction
+    ├── manager.rs       # Cycle management + state machine
     ├── monitor.rs       # Phase 1: Metric collection
     ├── analyzer.rs      # Phase 2: LLM diagnosis
     ├── executor.rs      # Phase 3: Action execution + rollback
     ├── learner.rs       # Phase 4: Reward calculation
+    ├── baseline.rs      # Performance baseline tracking
     ├── circuit_breaker.rs # Safety: halt on consecutive failures
-    └── allowlist.rs     # Safety: validate action bounds
+    ├── allowlist.rs     # Safety: validate action bounds
+    ├── types/           # Severity, TriggerMetric, SuggestedAction, etc.
+    ├── storage/         # SI-specific storage layer
+    ├── anthropic_calls/ # LLM interaction wrappers
+    └── cli/             # CLI commands for SI management
 ```
 
 ## The 15 Reasoning Tools
