@@ -283,3 +283,45 @@ async fn test_preset_all_operations() {
     let resp = server.reasoning_preset(Parameters(unknown_req)).await;
     let _ = resp.presets;
 }
+
+#[tokio::test]
+async fn test_preset_brainstorming() {
+    let mock_server = MockServer::start().await;
+    // Presets don't require API calls for list/run (run returns a plan)
+    let server = create_mocked_server(&mock_server).await;
+
+    // Verify brainstorming preset appears in analysis category list
+    let list_req = PresetRequest {
+        operation: "list".to_string(),
+        preset_id: None,
+        category: Some("analysis".to_string()),
+        inputs: None,
+        session_id: None,
+    };
+    let resp = server.reasoning_preset(Parameters(list_req)).await;
+    let presets = resp.presets.unwrap();
+    let brainstorming = presets.iter().find(|p| p.id == "brainstorming");
+    assert!(
+        brainstorming.is_some(),
+        "brainstorming preset should be listed"
+    );
+    let bp = brainstorming.unwrap();
+    assert_eq!(bp.category, "analysis");
+    assert!(!bp.description.is_empty());
+
+    // Verify running the brainstorming preset returns step plan with 4 steps
+    let run_req = PresetRequest {
+        operation: "run".to_string(),
+        preset_id: Some("brainstorming".to_string()),
+        category: None,
+        inputs: Some(
+            serde_json::json!({"content": "How might we improve developer productivity?"}),
+        ),
+        session_id: Some("s-brainstorm".to_string()),
+    };
+    let resp = server.reasoning_preset(Parameters(run_req)).await;
+    let execution = resp.execution_result.unwrap();
+    assert_eq!(execution.preset_id, "brainstorming");
+    assert_eq!(execution.total_steps, 4); // divergent, tree create, tree summarize, reflection
+    assert_eq!(execution.step_results.len(), 4);
+}
