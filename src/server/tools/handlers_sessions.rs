@@ -134,7 +134,11 @@ impl super::ReasoningServer {
                 ResumeSessionResponse {
                     session_id: req.session_id,
                     created_at: String::new(),
-                    summary: format!("Error: {e}"),
+                    summary: format!(
+                        "resume failed: {e}. \
+                         Verify the session_id is from a previous reasoning session. \
+                         Use reasoning_list_sessions to find valid session IDs."
+                    ),
                     thought_chain: vec![],
                     key_conclusions: vec![],
                     last_mode: None,

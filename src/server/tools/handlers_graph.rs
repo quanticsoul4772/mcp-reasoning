@@ -293,7 +293,10 @@ impl super::ReasoningServer {
                     Err(e) => (
                         DetectResponse {
                             detections: vec![],
-                            summary: Some(format!("Error detecting biases: {e}")),
+                            summary: Some(format!(
+                                "bias detection failed: {e}. \
+                                 Provide non-empty content or a valid thought_id from a prior reasoning session."
+                            )),
                             overall_quality: None,
                             metadata: None,
                         },
@@ -336,7 +339,11 @@ impl super::ReasoningServer {
                     Err(e) => (
                         DetectResponse {
                             detections: vec![],
-                            summary: Some(format!("Error detecting fallacies: {e}")),
+                            summary: Some(format!(
+                                "fallacy detection failed: {e}. \
+                                 Provide non-empty content or a valid thought_id. \
+                                 Use detect_type='biases' to check cognitive biases instead."
+                            )),
                             overall_quality: None,
                             metadata: None,
                         },
