@@ -160,10 +160,13 @@ impl super::ReasoningServer {
                 .metrics
                 .record(MetricEvent::new("team_run", timer.elapsed_ms(), false));
             return TeamRunResponse {
-                team_id: req.team_id,
+                team_id: req.team_id.clone(),
                 session_id,
                 subtasks_executed: 0,
-                synthesis: "Error: team not found".to_string(),
+                synthesis: format!(
+                    "team '{}' not found. Use reasoning_team_list to see available teams.",
+                    req.team_id
+                ),
                 success: false,
                 metadata: None,
             };
