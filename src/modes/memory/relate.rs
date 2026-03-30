@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::error::ModeError;
-use crate::modes::memory::embeddings::{cosine_similarity, get_session_embedding};
+use crate::modes::memory::embeddings::get_session_content;
 use crate::modes::memory::types::{
     RelationshipEdge, RelationshipGraph, RelationshipType, SessionNode,
 };
@@ -190,32 +190,110 @@ async fn find_related_sessions<C: AnthropicClientTrait>(
     Ok(relationships)
 }
 
-/// Find sessions with similar embeddings.
+/// Find sessions with similar content using FTS5 full-text search.
+///
+/// Extracts significant keywords from the source session and searches
+/// for other sessions containing those keywords. Similarity is derived
+/// from BM25 rank normalized to [0.5, 1.0].
 async fn find_similar_sessions<C: AnthropicClientTrait>(
     storage: &SqliteStorage,
-    client: &C,
+    _client: &C,
     session_id: &str,
     min_similarity: f32,
 ) -> Result<Vec<(String, RelationshipType, f32)>, ModeError> {
-    let embedding = get_session_embedding(storage, client, session_id).await?;
+    let content = get_session_content(storage, session_id).await?;
+    if content.is_empty() {
+        return Ok(vec![]);
+    }
 
-    let other_sessions: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions WHERE id != ?")
-        .bind(session_id)
-        .fetch_all(&storage.get_pool())
-        .await
-        .map_err(|e| ModeError::StorageError {
-            message: format!("Failed to get sessions: {e}"),
-        })?;
+    // Extract query terms: lowercase words with 4+ chars (skip common short words)
+    let query_terms: Vec<String> = content
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .map(|w| {
+            // Strip common punctuation from word boundaries
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_string()
+        })
+        .filter(|w| w.len() >= 4)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .take(20) // Use top 20 unique terms for the query
+        .collect();
 
-    let mut results = Vec::new();
-    for other_id in other_sessions {
-        let other_embedding = get_session_embedding(storage, client, &other_id).await?;
-        let similarity = cosine_similarity(&embedding, &other_embedding);
+    if query_terms.is_empty() {
+        return Ok(vec![]);
+    }
 
-        if similarity >= min_similarity {
-            results.push((other_id, RelationshipType::SimilarTopic, similarity));
+    // Build FTS5 OR query from extracted terms (each term double-quoted for exact match)
+    let fts_query = query_terms
+        .iter()
+        .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+
+    // Find other sessions matching these terms, ranked by BM25
+    let rows = sqlx::query(
+        r"
+        SELECT
+            session_id,
+            bm25(thoughts_fts) AS score
+        FROM thoughts_fts
+        WHERE thoughts_fts MATCH ?
+          AND session_id != ?
+        ORDER BY score ASC
+        LIMIT 50
+        ",
+    )
+    .bind(&fts_query)
+    .bind(session_id)
+    .fetch_all(&storage.get_pool())
+    .await
+    .map_err(|e| ModeError::StorageError {
+        message: format!("FTS5 similarity search failed: {e}"),
+    })?;
+
+    if rows.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Deduplicate by session_id (keep best BM25 score per session)
+    let mut best_per_session: HashMap<String, f64> = HashMap::new();
+    let mut session_order: Vec<String> = Vec::new();
+    for row in &rows {
+        let sid: String = row.get("session_id");
+        let score: f64 = row.get("score");
+        let entry = best_per_session.entry(sid.clone()).or_insert(f64::MAX);
+        if score < *entry {
+            *entry = score;
+        }
+        if !session_order.contains(&sid) {
+            session_order.push(sid);
         }
     }
+
+    // Sort by best score (most negative = most relevant)
+    session_order.sort_by(|a, b| {
+        best_per_session[a]
+            .partial_cmp(&best_per_session[b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Normalize to [0.5, 1.0] similarity range
+    let count = session_order.len();
+    let results = session_order
+        .into_iter()
+        .enumerate()
+        .map(|(i, sid)| {
+            let similarity = if count == 1 {
+                1.0_f32
+            } else {
+                1.0 - (i as f32 / (count - 1) as f32) * 0.5
+            };
+            (sid, RelationshipType::SimilarTopic, similarity)
+        })
+        .filter(|(_, _, sim)| *sim >= min_similarity)
+        .collect();
 
     Ok(results)
 }
