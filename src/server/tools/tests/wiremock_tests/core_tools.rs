@@ -123,6 +123,82 @@ async fn test_tree_all_operations() {
 }
 
 #[tokio::test]
+async fn test_tree_summarize_operation() {
+    let mock_server = MockServer::start().await;
+
+    // Both the create call and the summarize LLM call use the same mock
+    let branches_json = serde_json::json!({
+        "branches": [
+            {"id": "b1", "content": "Branch 1 analysis", "score": 0.8},
+            {"id": "b2", "content": "Branch 2 analysis", "score": 0.7}
+        ],
+        "recommendation": "Branch 1 is strongest"
+    });
+
+    // The summarize LLM call returns a tree_complete_prompt-formatted response
+    let summarize_json = serde_json::json!({
+        "key_findings": ["Finding 1: branch 1 is strongest", "Finding 2: both branches converge"],
+        "best_insights": ["Insight: the core approach is sound"],
+        "synthesis": "Both branches confirm the hypothesis with high confidence.",
+        "unresolved": ["Edge case under unusual conditions"],
+        "confidence": 0.88
+    });
+
+    // First call: create (returns branch structure)
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(anthropic_response(&branches_json.to_string())),
+        )
+        .up_to_n_times(1)
+        .mount(&mock_server)
+        .await;
+
+    // Second call: summarize (returns synthesis)
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(anthropic_response(&summarize_json.to_string())),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let server = create_mocked_server(&mock_server).await;
+
+    // Create a session first
+    let create_req = TreeRequest {
+        operation: Some("create".to_string()),
+        content: Some("Explore this topic".to_string()),
+        session_id: Some("s-summarize".to_string()),
+        branch_id: None,
+        num_branches: Some(2),
+        completed: None,
+    };
+    let create_resp = server.reasoning_tree(Parameters(create_req)).await;
+    assert_eq!(create_resp.session_id, "s-summarize");
+
+    // Now summarize
+    let summarize_req = TreeRequest {
+        operation: Some("summarize".to_string()),
+        content: None,
+        session_id: Some("s-summarize".to_string()),
+        branch_id: None,
+        num_branches: None,
+        completed: None,
+    };
+    let resp = server.reasoning_tree(Parameters(summarize_req)).await;
+    assert_eq!(resp.session_id, "s-summarize");
+    // synthesis and key_findings should be populated
+    assert!(resp.synthesis.is_some());
+    assert!(resp.key_findings.is_some());
+    assert!(resp.best_insights.is_some());
+    let key_findings = resp.key_findings.unwrap();
+    assert!(!key_findings.is_empty());
+}
+
+#[tokio::test]
 async fn test_divergent_success_path() {
     let mock_server = MockServer::start().await;
 
