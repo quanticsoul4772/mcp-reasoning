@@ -6,6 +6,7 @@
 //! - `search_sessions` - Semantic search over reasoning history
 //! - `relate_sessions` - Show relationships between sessions
 
+mod cluster;
 mod embeddings;
 mod list;
 mod relate;
