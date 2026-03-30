@@ -4,15 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 15 consolidated reasoning tools (vs 40 in the predecessor mcp-langbase-reasoning).
+MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 32 tools across reasoning, self-improvement, session management, and agent/team coordination (vs 40 in the predecessor mcp-langbase-reasoning).
 
-**Status**: Complete. 38,000+ lines of Rust code and 2,020 tests.
+**Status**: Complete. 38,000+ lines of Rust code and 2,293 tests.
 
 **Key Stats**:
 
 - 118 source files, 38,000+ lines of code
-- 2,020 tests (95%+ coverage)
-- 15 reasoning tools, 5 workflow presets
+- 2,293 tests (95%+ coverage)
+- 15 core reasoning tools + 6 SI + 4 session + 6 agent/team + 1 metrics = 32 tools total
+- 5 workflow presets
 - 4-phase self-improvement system with safety mechanisms
 - Tool chain tracking with pattern detection
 - Error enhancement with contextual alternatives
