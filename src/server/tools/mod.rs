@@ -163,7 +163,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_detect",
-        description = "Detect cognitive biases and logical fallacies in reasoning."
+        description = "Detect cognitive biases (anchoring, confirmation bias, availability heuristic, sunk cost) and logical fallacies (ad hominem, strawman, false dichotomy) in text or reasoning chains."
     )]
     async fn reasoning_detect(&self, req: Parameters<DetectRequest>) -> DetectResponse {
         self.handle_detect(req.0).await
@@ -199,7 +199,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_mcts",
-        description = "MCTS: explore=UCB1-guided search, auto_backtrack=quality-triggered backtracking."
+        description = "Monte Carlo Tree Search for exploring large solution spaces: explore=expand promising paths with UCB1 balance exploitation/exploration, auto_backtrack=retrace when quality degrades."
     )]
     async fn reasoning_mcts(&self, req: Parameters<MctsRequest>) -> MctsResponse {
         self.handle_mcts(req.0).await
@@ -207,7 +207,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_counterfactual",
-        description = "What-if analysis using Pearl's Ladder of Causation."
+        description = "Causal what-if analysis using Pearl's Ladder: Level 1=association (what correlates?), Level 2=intervention (what happens if I do X?), Level 3=counterfactual (what would have happened?)."
     )]
     async fn reasoning_counterfactual(
         &self,
