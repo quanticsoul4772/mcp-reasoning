@@ -184,7 +184,11 @@ impl super::ReasoningServer {
                             session_id,
                             branch_id: None,
                             branches: None,
-                            recommendation: Some(format!("ERROR: {e}")),
+                            recommendation: Some(format!(
+                                "create failed: {e}. \
+                                 Ensure content is non-empty. \
+                                 Retry with different content, or reduce num_branches (2-4)."
+                            )),
                             synthesis: None,
                             key_findings: None,
                             best_insights: None,
@@ -243,7 +247,11 @@ impl super::ReasoningServer {
                             session_id,
                             branch_id: None,
                             branches: None,
-                            recommendation: Some(format!("ERROR: {e}")),
+                            recommendation: Some(format!(
+                                "focus failed: {e}. \
+                                 Use operation='list' to see valid branch_id values \
+                                 for this session_id."
+                            )),
                             synthesis: None,
                             key_findings: None,
                             best_insights: None,
@@ -281,7 +289,11 @@ impl super::ReasoningServer {
                         session_id,
                         branch_id: None,
                         branches: None,
-                        recommendation: Some(format!("ERROR: {e}")),
+                        recommendation: Some(format!(
+                            "list failed: {e}. \
+                             Verify session_id is from a previous create call. \
+                             An empty list (not an error) means no branches were created yet."
+                        )),
                         synthesis: None,
                         key_findings: None,
                         best_insights: None,
@@ -321,7 +333,11 @@ impl super::ReasoningServer {
                             session_id,
                             branch_id: None,
                             branches: None,
-                            recommendation: Some(format!("ERROR: {e}")),
+                            recommendation: Some(format!(
+                                "complete failed: {e}. \
+                                 Use operation='list' to verify branch_id belongs to \
+                                 this session_id."
+                            )),
                             synthesis: None,
                             key_findings: None,
                             best_insights: None,
@@ -379,7 +395,11 @@ impl super::ReasoningServer {
                             session_id,
                             branch_id: None,
                             branches: None,
-                            recommendation: Some(format!("ERROR: {e}")),
+                            recommendation: Some(format!(
+                                "summarize failed: {e}. \
+                                 Run operation='create' first if no branches exist yet, \
+                                 or use operation='list' to confirm branches are present."
+                            )),
                             synthesis: None,
                             key_findings: None,
                             best_insights: None,
