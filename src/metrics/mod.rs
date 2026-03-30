@@ -664,16 +664,38 @@ impl MetricsCollector {
         &self,
         transitions: &[ToolTransition],
     ) -> HashMap<String, HashMap<String, TransitionStats>> {
-        let mut matrix: HashMap<String, HashMap<String, (u32, u32)>> = HashMap::new();
+        // (count, successful, dwell_times_ms)
+        type MatrixEntry = (u32, u32, Vec<u64>);
 
-        for transition in transitions {
-            let from_entry = matrix.entry(transition.from_tool.clone()).or_default();
-            let to_entry = from_entry
-                .entry(transition.to_tool.clone())
-                .or_insert((0, 0));
-            to_entry.0 += 1;
-            if transition.success {
-                to_entry.1 += 1;
+        // Build per-session ordered timeline for dwell-time computation
+        let mut sessions: HashMap<&str, Vec<&ToolTransition>> = HashMap::new();
+        for t in transitions {
+            sessions.entry(t.session_id.as_str()).or_default().push(t);
+        }
+        for v in sessions.values_mut() {
+            v.sort_by_key(|t| t.timestamp);
+        }
+
+        let mut matrix: HashMap<String, HashMap<String, MatrixEntry>> = HashMap::new();
+
+        for session_transitions in sessions.values() {
+            for (i, t) in session_transitions.iter().enumerate() {
+                let from_entry = matrix.entry(t.from_tool.clone()).or_default();
+                let to_entry = from_entry
+                    .entry(t.to_tool.clone())
+                    .or_insert((0, 0, Vec::new()));
+                to_entry.0 += 1;
+                if t.success {
+                    to_entry.1 += 1;
+                }
+                // Dwell = time since the prior transition that landed on from_tool
+                if let Some(prev) = session_transitions[..i]
+                    .iter()
+                    .rev()
+                    .find(|p| p.to_tool == t.from_tool)
+                {
+                    to_entry.2.push(t.timestamp.saturating_sub(prev.timestamp));
+                }
             }
         }
 
@@ -682,18 +704,23 @@ impl MetricsCollector {
             .map(|(from_tool, to_map)| {
                 let stats_map = to_map
                     .into_iter()
-                    .map(|(to_tool, (count, successful))| {
+                    .map(|(to_tool, (count, successful, dwells))| {
                         let success_rate = if count > 0 {
                             successful as f64 / count as f64
                         } else {
                             0.0
+                        };
+                        let avg_time_between_ms = if dwells.is_empty() {
+                            0
+                        } else {
+                            dwells.iter().sum::<u64>() / dwells.len() as u64
                         };
                         (
                             to_tool,
                             TransitionStats {
                                 count,
                                 success_rate,
-                                avg_time_between_ms: 0,
+                                avg_time_between_ms,
                             },
                         )
                     })
