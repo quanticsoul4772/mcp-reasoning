@@ -16,7 +16,7 @@ use crate::traits::{
 };
 
 /// Response from auto mode selection.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AutoResponse {
     /// Unique thought identifier.
     pub thought_id: String,
@@ -26,6 +26,8 @@ pub struct AutoResponse {
     pub selected_mode: ReasoningMode,
     /// Reasoning for the selection.
     pub reasoning: String,
+    /// Confidence in the mode selection (0.0–1.0).
+    pub confidence: f64,
     /// Content characteristics that influenced selection.
     pub characteristics: Vec<String>,
     /// Suggested parameters for the selected mode.
@@ -43,6 +45,7 @@ impl AutoResponse {
         session_id: impl Into<String>,
         selected_mode: ReasoningMode,
         reasoning: impl Into<String>,
+        confidence: f64,
         characteristics: Vec<String>,
         suggested_parameters: HashMap<String, serde_json::Value>,
     ) -> Self {
@@ -51,6 +54,7 @@ impl AutoResponse {
             session_id: session_id.into(),
             selected_mode,
             reasoning: reasoning.into(),
+            confidence,
             characteristics,
             suggested_parameters,
             alternative_mode: None,
@@ -147,6 +151,12 @@ where
             .unwrap_or("No reasoning provided")
             .to_string();
 
+        // Parse confidence (0.0–1.0), default to 0.7 if absent or out of range
+        let confidence = json
+            .get("confidence")
+            .and_then(serde_json::Value::as_f64)
+            .map_or(0.7, |c| c.clamp(0.0, 1.0));
+
         // Parse characteristics
         let characteristics =
             Self::parse_string_array(&json, "characteristics").unwrap_or_default();
@@ -161,9 +171,9 @@ where
         // Parse alternative mode
         let alternative_mode = Self::parse_alternative(&json);
 
-        // Generate thought ID and save
+        // Generate thought ID and save using actual confidence
         let thought_id = generate_thought_id();
-        let thought = Thought::new(&thought_id, &session.id, content, "auto", 0.9);
+        let thought = Thought::new(&thought_id, &session.id, content, "auto", confidence);
         self.storage
             .save_thought(&thought)
             .await
@@ -176,6 +186,7 @@ where
             session.id,
             selected_mode,
             reasoning,
+            confidence,
             characteristics,
             suggested_parameters,
         );
@@ -281,6 +292,7 @@ mod tests {
         r#"{
             "selected_mode": "linear",
             "reasoning": "The content requires step-by-step analysis",
+            "confidence": 0.88,
             "characteristics": ["Sequential problem", "Clear steps", "Single path"],
             "suggested_parameters": {
                 "min_confidence": 0.7,
@@ -315,11 +327,13 @@ mod tests {
             "s-1",
             ReasoningMode::Linear,
             "Step-by-step needed",
+            0.85,
             vec!["Characteristic".to_string()],
             HashMap::new(),
         );
         assert_eq!(response.thought_id, "t-1");
         assert_eq!(response.selected_mode, ReasoningMode::Linear);
+        assert!((response.confidence - 0.85).abs() < f64::EPSILON);
         assert!(response.alternative_mode.is_none());
     }
 
@@ -331,6 +345,7 @@ mod tests {
             "s-1",
             ReasoningMode::Linear,
             "Reason",
+            0.9,
             vec![],
             HashMap::new(),
         )
@@ -349,7 +364,7 @@ mod tests {
         params.insert("key".to_string(), serde_json::json!("value"));
 
         let response =
-            AutoResponse::new("t-1", "s-1", ReasoningMode::Tree, "Reason", vec![], params);
+            AutoResponse::new("t-1", "s-1", ReasoningMode::Tree, "Reason", 0.8, vec![], params);
 
         assert_eq!(
             response.suggested_parameters.get("key"),
@@ -385,6 +400,74 @@ mod tests {
         assert!(!response.reasoning.is_empty());
         assert_eq!(response.characteristics.len(), 3);
         assert!(response.alternative_mode.is_some());
+        // Confidence from mock response
+        assert!((response.confidence - 0.88).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_auto_select_confidence_missing_defaults_to_0_7() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"selected_mode": "linear", "reasoning": "Test"}"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = AutoMode::new(mock_storage, mock_client);
+        let result = mode.select("Content", None).await.unwrap();
+        assert!((result.confidence - 0.7).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_auto_select_confidence_clamped_above_1() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"selected_mode": "linear", "reasoning": "Test", "confidence": 1.5}"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = AutoMode::new(mock_storage, mock_client);
+        let result = mode.select("Content", None).await.unwrap();
+        assert!((result.confidence - 1.0).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_auto_select_confidence_clamped_below_0() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"selected_mode": "linear", "reasoning": "Test", "confidence": -0.5}"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = AutoMode::new(mock_storage, mock_client);
+        let result = mode.select("Content", None).await.unwrap();
+        assert!((result.confidence - 0.0).abs() < 1e-9);
     }
 
     #[tokio::test]

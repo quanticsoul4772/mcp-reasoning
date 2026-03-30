@@ -363,6 +363,7 @@ Respond with a JSON object in this exact format:
 {
   "selected_mode": "mode_name",
   "reasoning": "Why this mode is most appropriate",
+  "confidence": 0.85,
   "characteristics": ["Content characteristics that influenced selection"],
   "suggested_parameters": {
     "key": "value"
@@ -373,7 +374,8 @@ Respond with a JSON object in this exact format:
 Important:
 - Consider the user's likely goal
 - Match mode to content structure
-- Be specific about why alternatives are less suitable"#
+- Be specific about why alternatives are less suitable
+- confidence: 0.0–1.0 reflecting how well the content fits the selected mode (0.9+ = strong match, 0.7–0.9 = good fit, below 0.7 = uncertain)"#
 }
 
 #[cfg(test)]

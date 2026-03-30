@@ -413,7 +413,7 @@ impl super::ReasoningServer {
 
                 AutoResponse {
                     selected_mode: resp.selected_mode.to_string(),
-                    confidence: 0.85, // Default confidence for successful selection
+                    confidence: resp.confidence,
                     rationale: resp.reasoning,
                     result,
                     metadata: None,
