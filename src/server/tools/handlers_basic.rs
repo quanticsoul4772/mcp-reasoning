@@ -104,7 +104,12 @@ impl super::ReasoningServer {
             Err(e) => LinearResponse {
                 thought_id: String::new(),
                 session_id: input_session_id,
-                content: format!("ERROR: {e}"),
+                content: format!(
+                    "linear failed: {e}. \
+                     Ensure content is non-empty. \
+                     If this is a timeout, retry or increase timeout_ms. \
+                     If the API is unavailable, check ANTHROPIC_API_KEY."
+                ),
                 confidence: 0.0,
                 next_step: None,
                 metadata: None,
@@ -527,7 +532,12 @@ impl super::ReasoningServer {
             Err(e) => AutoResponse {
                 selected_mode: "linear".to_string(),
                 confidence: 0.0,
-                rationale: format!("ERROR: {e}"),
+                rationale: format!(
+                    "auto failed: {e}. \
+                     Ensure content is non-empty. \
+                     If the API is unavailable, check ANTHROPIC_API_KEY. \
+                     Fallback: use reasoning_linear directly."
+                ),
                 result: serde_json::Value::Null,
                 metadata: None,
             },
@@ -602,7 +612,11 @@ impl super::ReasoningServer {
                 selected_tool: "auto".to_string(),
                 problem_type: "unknown".to_string(),
                 confidence: 0.0,
-                reasoning: format!("ERROR: {e}"),
+                reasoning: format!(
+                    "meta routing failed: {e}. \
+                     Fallback: use reasoning_auto which applies the same selection logic. \
+                     If the API is unavailable, check ANTHROPIC_API_KEY."
+                ),
                 fallback_to_auto: true,
                 candidates_evaluated: 0,
                 metadata: None,
