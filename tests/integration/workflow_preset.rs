@@ -27,8 +27,8 @@ fn test_preset_registry_has_builtin_presets() {
     let registry = PresetRegistry::new();
     let presets = registry.list();
 
-    // Should have 5 built-in presets
-    assert_eq!(presets.len(), 5, "Should have 5 built-in presets");
+    // Should have 6 built-in presets
+    assert_eq!(presets.len(), 6, "Should have 6 built-in presets");
 
     // Check all expected presets exist
     let preset_ids: Vec<&str> = presets.iter().map(|p| p.id.as_str()).collect();
@@ -37,6 +37,7 @@ fn test_preset_registry_has_builtin_presets() {
     assert!(preset_ids.contains(&"architecture-decision"));
     assert!(preset_ids.contains(&"strategic-decision"));
     assert!(preset_ids.contains(&"evidence-conclusion"));
+    assert!(preset_ids.contains(&"brainstorming"));
 }
 
 #[test]
@@ -77,10 +78,12 @@ fn test_preset_registry_list_by_category() {
     assert_eq!(code_presets.len(), 1);
     assert_eq!(code_presets[0].id, "code-review");
 
-    // Analysis category should have 1 preset
+    // Analysis category should have 2 presets (debug-analysis + brainstorming)
     let analysis_presets = registry.list_by_category(&PresetCategory::Analysis);
-    assert_eq!(analysis_presets.len(), 1);
-    assert_eq!(analysis_presets[0].id, "debug-analysis");
+    assert_eq!(analysis_presets.len(), 2);
+    let analysis_ids: Vec<&str> = analysis_presets.iter().map(|p| p.id.as_str()).collect();
+    assert!(analysis_ids.contains(&"debug-analysis"));
+    assert!(analysis_ids.contains(&"brainstorming"));
 }
 
 // ============================================================================
