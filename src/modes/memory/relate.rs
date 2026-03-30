@@ -228,8 +228,7 @@ async fn find_similar_sessions<C: AnthropicClientTrait>(
         .map(str::to_lowercase)
         .map(|w| {
             // Strip common punctuation from word boundaries
-            w.trim_matches(|c: char| !c.is_alphanumeric())
-                .to_string()
+            w.trim_matches(|c: char| !c.is_alphanumeric()).to_string()
         })
         .filter(|w| w.len() >= 4)
         .collect::<std::collections::HashSet<_>>()
@@ -391,7 +390,10 @@ async fn find_temporal_neighbors(
 fn uf_find(parent: &mut HashMap<String, String>, x: &str) -> String {
     let mut current = x.to_string();
     loop {
-        let p = parent.get(&current).cloned().unwrap_or_else(|| current.clone());
+        let p = parent
+            .get(&current)
+            .cloned()
+            .unwrap_or_else(|| current.clone());
         if p == current {
             break;
         }
@@ -464,10 +466,7 @@ pub fn compute_clusters(
 }
 
 /// Extract the most frequent keywords shared across a set of sessions.
-fn extract_common_theme(
-    sessions: &[String],
-    contents: &HashMap<String, String>,
-) -> String {
+fn extract_common_theme(sessions: &[String], contents: &HashMap<String, String>) -> String {
     // Count keyword frequency across all sessions in the cluster
     let mut freq: HashMap<String, usize> = HashMap::new();
     for session_id in sessions {
