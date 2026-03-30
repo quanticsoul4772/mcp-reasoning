@@ -476,37 +476,61 @@ impl MetricsCollector {
             .map(|t| t.clone())
             .unwrap_or_default();
 
-        let mut stats_map: HashMap<String, (u32, u32, Vec<u64>)> = HashMap::new();
+        // Build per-session ordered timeline to compute dwell time on `tool`
+        let mut sessions: HashMap<String, Vec<&ToolTransition>> = HashMap::new();
+        for t in &transitions {
+            sessions.entry(t.session_id.clone()).or_default().push(t);
+        }
+        for v in sessions.values_mut() {
+            v.sort_by_key(|t| t.timestamp);
+        }
 
-        for transition in &transitions {
-            if transition.from_tool == tool {
-                let entry =
-                    stats_map
-                        .entry(transition.to_tool.clone())
-                        .or_insert((0, 0, Vec::new()));
-                entry.0 += 1; // count
-                if transition.success {
-                    entry.1 += 1; // successful count
+        // For each from_tool→to_tool transition, compute how long the user spent on `tool`
+        // before switching: timestamp(from→to) - timestamp(prev transition that landed on `tool`)
+        let mut stats_map: HashMap<String, (u32, u32, Vec<u64>)> = HashMap::new();
+        for session_transitions in sessions.values() {
+            for (i, t) in session_transitions.iter().enumerate() {
+                if t.from_tool != tool {
+                    continue;
                 }
-                // We don't track time between tools in this simple implementation
-                // Just use a placeholder for avg_time_between_ms
+                let entry = stats_map
+                    .entry(t.to_tool.clone())
+                    .or_insert((0, 0, Vec::new()));
+                entry.0 += 1;
+                if t.success {
+                    entry.1 += 1;
+                }
+                // Find the previous transition in this session that ended at `tool`
+                if let Some(prev) = session_transitions[..i]
+                    .iter()
+                    .rev()
+                    .find(|p| p.to_tool == tool)
+                {
+                    let dwell = t.timestamp.saturating_sub(prev.timestamp);
+                    entry.2.push(dwell);
+                }
             }
         }
 
         stats_map
             .into_iter()
-            .map(|(to_tool, (count, successful, _))| {
+            .map(|(to_tool, (count, successful, dwells))| {
                 let success_rate = if count > 0 {
                     successful as f64 / count as f64
                 } else {
                     0.0
+                };
+                let avg_time_between_ms = if dwells.is_empty() {
+                    0
+                } else {
+                    dwells.iter().sum::<u64>() / dwells.len() as u64
                 };
                 (
                     to_tool,
                     TransitionStats {
                         count,
                         success_rate,
-                        avg_time_between_ms: 0, // Simplified - would need timestamp tracking
+                        avg_time_between_ms,
                     },
                 )
             })
@@ -1242,6 +1266,46 @@ mod tests {
         assert!(json.contains("\"transitions\""));
         assert!(json.contains("\"entry_tools\""));
         assert!(json.contains("\"terminal_tools\""));
+    }
+
+    #[test]
+    fn test_avg_time_between_ms_computed_from_timestamps() {
+        let collector = MetricsCollector::new();
+
+        // Build two transitions in the same session with known timestamps:
+        //   t=1000: X → linear
+        //   t=1500: linear → divergent  (dwell on linear = 500ms)
+        //   t=2200: X2 → linear
+        //   t=2900: linear → divergent  (dwell on linear = 700ms)
+        // Expected avg = (500 + 700) / 2 = 600ms
+        let make = |from: &str, to: &str, ts: u64| ToolTransition {
+            from_tool: from.to_string(),
+            to_tool: to.to_string(),
+            session_id: "s1".to_string(),
+            success: true,
+            timestamp: ts,
+        };
+
+        collector.record_transition(make("setup", "linear", 1000));
+        collector.record_transition(make("linear", "divergent", 1500));
+        collector.record_transition(make("setup", "linear", 2200));
+        collector.record_transition(make("linear", "divergent", 2900));
+
+        let stats = collector.transitions_from("linear");
+        let div_stats = stats.get("divergent").expect("divergent stats");
+        assert_eq!(div_stats.count, 2);
+        assert_eq!(div_stats.avg_time_between_ms, 600);
+    }
+
+    #[test]
+    fn test_avg_time_between_ms_no_prior_transition() {
+        // If there's no prior transition landing on the from_tool, dwell is unknown → 0
+        let collector = MetricsCollector::new();
+        collector.record_transition(ToolTransition::new("linear", "tree", "s1", true));
+        let stats = collector.transitions_from("linear");
+        let tree_stats = stats.get("tree").expect("tree stats");
+        assert_eq!(tree_stats.count, 1);
+        assert_eq!(tree_stats.avg_time_between_ms, 0); // no prior arrival at linear
     }
 
     #[test]

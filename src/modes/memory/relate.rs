@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::error::ModeError;
 use crate::modes::memory::embeddings::get_session_content;
 use crate::modes::memory::types::{
-    RelationshipEdge, RelationshipGraph, RelationshipType, SessionNode,
+    RelationshipEdge, RelationshipGraph, RelationshipType, SessionCluster, SessionNode,
 };
 use crate::storage::SqliteStorage;
 use crate::traits::AnthropicClientTrait;
@@ -53,6 +53,8 @@ async fn analyze_session_relationships<C: AnthropicClientTrait>(
 
     queue.push_back((session_id.to_string(), 0));
 
+    let mut session_contents: HashMap<String, String> = HashMap::new();
+
     while let Some((current_id, current_depth)) = queue.pop_front() {
         if current_depth > depth || visited.contains(&current_id) {
             continue;
@@ -64,6 +66,12 @@ async fn analyze_session_relationships<C: AnthropicClientTrait>(
             if let Some(node) = load_session_node(storage, &current_id).await? {
                 nodes.insert(current_id.clone(), node);
             }
+        }
+
+        // Cache session content for clustering
+        if !session_contents.contains_key(&current_id) {
+            let content = get_session_content(storage, &current_id).await?;
+            session_contents.insert(current_id.clone(), content);
         }
 
         // Find related sessions
@@ -85,10 +93,12 @@ async fn analyze_session_relationships<C: AnthropicClientTrait>(
         }
     }
 
+    let clusters = compute_clusters(&edges, &session_contents);
+
     Ok(RelationshipGraph {
         nodes: nodes.into_values().collect(),
         edges,
-        clusters: Vec::new(), // Clustering not implemented yet
+        clusters,
     })
 }
 
@@ -107,11 +117,15 @@ async fn analyze_all_relationships<C: AnthropicClientTrait>(
 
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
+    let mut session_contents: HashMap<String, String> = HashMap::new();
 
     for session_id in &session_ids {
         if let Some(node) = load_session_node(storage, session_id).await? {
             nodes.push(node);
         }
+
+        let content = get_session_content(storage, session_id).await?;
+        session_contents.insert(session_id.clone(), content);
 
         let related = find_related_sessions(storage, client, session_id, min_strength).await?;
         for (related_id, relationship_type, strength) in related {
@@ -124,10 +138,12 @@ async fn analyze_all_relationships<C: AnthropicClientTrait>(
         }
     }
 
+    let clusters = compute_clusters(&edges, &session_contents);
+
     Ok(RelationshipGraph {
         nodes,
         edges,
-        clusters: Vec::new(),
+        clusters,
     })
 }
 
@@ -371,6 +387,124 @@ async fn find_temporal_neighbors(
         .collect())
 }
 
+/// Union-find path-compression helper (iterative to avoid recursion limits).
+fn uf_find(parent: &mut HashMap<String, String>, x: &str) -> String {
+    let mut current = x.to_string();
+    loop {
+        let p = parent.get(&current).cloned().unwrap_or_else(|| current.clone());
+        if p == current {
+            break;
+        }
+        // Path compression: point directly to grandparent
+        let gp = parent.get(&p).cloned().unwrap_or_else(|| p.clone());
+        parent.insert(current.clone(), gp.clone());
+        current = gp;
+    }
+    current
+}
+
+/// Cluster sessions using union-find over strong SimilarTopic edges.
+///
+/// Sessions with SimilarTopic strength ≥ 0.8 are grouped together.
+/// The common theme is derived from the most frequent keywords shared
+/// across all sessions in the cluster.
+pub fn compute_clusters(
+    edges: &[RelationshipEdge],
+    session_contents: &HashMap<String, String>,
+) -> Vec<SessionCluster> {
+    const CLUSTER_THRESHOLD: f64 = 0.8;
+
+    // Collect all session IDs that appear in strong SimilarTopic edges
+    let mut parent: HashMap<String, String> = HashMap::new();
+
+    let strong_edges: Vec<(&str, &str)> = edges
+        .iter()
+        .filter(|e| {
+            matches!(e.relationship_type, RelationshipType::SimilarTopic)
+                && e.strength >= CLUSTER_THRESHOLD
+        })
+        .map(|e| (e.from_session.as_str(), e.to_session.as_str()))
+        .collect();
+
+    // Initialize union-find
+    for &(a, b) in &strong_edges {
+        parent.entry(a.to_string()).or_insert_with(|| a.to_string());
+        parent.entry(b.to_string()).or_insert_with(|| b.to_string());
+    }
+
+    // Union-find: union all connected pairs
+    for &(a, b) in &strong_edges {
+        let root_a = uf_find(&mut parent, a);
+        let root_b = uf_find(&mut parent, b);
+        if root_a != root_b {
+            parent.insert(root_b, root_a);
+        }
+    }
+
+    // Group by root
+    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+    let keys: Vec<String> = parent.keys().cloned().collect();
+    for k in keys {
+        let root = uf_find(&mut parent, &k);
+        groups.entry(root).or_default().push(k);
+    }
+
+    // Build clusters with 2+ members
+    groups
+        .into_values()
+        .filter(|members| members.len() >= 2)
+        .map(|members| {
+            let theme = extract_common_theme(&members, session_contents);
+            SessionCluster {
+                sessions: members,
+                common_theme: theme,
+            }
+        })
+        .collect()
+}
+
+/// Extract the most frequent keywords shared across a set of sessions.
+fn extract_common_theme(
+    sessions: &[String],
+    contents: &HashMap<String, String>,
+) -> String {
+    // Count keyword frequency across all sessions in the cluster
+    let mut freq: HashMap<String, usize> = HashMap::new();
+    for session_id in sessions {
+        if let Some(content) = contents.get(session_id) {
+            let words: HashSet<String> = content
+                .split_whitespace()
+                .map(|w| {
+                    w.trim_matches(|c: char| !c.is_alphanumeric())
+                        .to_lowercase()
+                })
+                .filter(|w| w.len() >= 5)
+                .collect();
+            for word in words {
+                *freq.entry(word).or_insert(0) += 1;
+            }
+        }
+    }
+
+    // Return top-3 keywords that appear in more than one session
+    let min_sessions = sessions.len().min(2);
+    let mut top: Vec<(String, usize)> = freq
+        .into_iter()
+        .filter(|(_, count)| *count >= min_sessions)
+        .collect();
+    top.sort_by(|a, b| b.1.cmp(&a.1));
+
+    if top.is_empty() {
+        "mixed topics".to_string()
+    } else {
+        top.into_iter()
+            .take(3)
+            .map(|(w, _)| w)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -418,5 +552,76 @@ mod tests {
             .expect("relate sessions");
 
         assert_eq!(graph.nodes.len(), 1);
+    }
+
+    #[test]
+    fn test_compute_clusters_empty() {
+        let clusters = compute_clusters(&[], &HashMap::new());
+        assert!(clusters.is_empty());
+    }
+
+    #[test]
+    fn test_compute_clusters_groups_strong_edges() {
+        let edges = vec![
+            RelationshipEdge {
+                from_session: "s1".to_string(),
+                to_session: "s2".to_string(),
+                relationship_type: RelationshipType::SimilarTopic,
+                strength: 0.9,
+            },
+            RelationshipEdge {
+                from_session: "s2".to_string(),
+                to_session: "s3".to_string(),
+                relationship_type: RelationshipType::SimilarTopic,
+                strength: 0.85,
+            },
+        ];
+        let mut contents = HashMap::new();
+        contents.insert(
+            "s1".to_string(),
+            "reasoning about memory systems architecture".to_string(),
+        );
+        contents.insert(
+            "s2".to_string(),
+            "memory systems and reasoning patterns".to_string(),
+        );
+        contents.insert(
+            "s3".to_string(),
+            "reasoning systems memory design".to_string(),
+        );
+
+        let clusters = compute_clusters(&edges, &contents);
+        assert_eq!(clusters.len(), 1);
+        let cluster = &clusters[0];
+        assert_eq!(cluster.sessions.len(), 3);
+        // Theme should mention common keywords (memory, reasoning, systems all appear in 3 sessions)
+        assert!(!cluster.common_theme.is_empty());
+        assert_ne!(cluster.common_theme, "mixed topics");
+    }
+
+    #[test]
+    fn test_compute_clusters_ignores_weak_edges() {
+        // Edge below 0.8 threshold should not form a cluster
+        let edges = vec![RelationshipEdge {
+            from_session: "s1".to_string(),
+            to_session: "s2".to_string(),
+            relationship_type: RelationshipType::SimilarTopic,
+            strength: 0.7,
+        }];
+        let clusters = compute_clusters(&edges, &HashMap::new());
+        assert!(clusters.is_empty());
+    }
+
+    #[test]
+    fn test_compute_clusters_ignores_non_similar_topic() {
+        // SharedMode edges should not form clusters
+        let edges = vec![RelationshipEdge {
+            from_session: "s1".to_string(),
+            to_session: "s2".to_string(),
+            relationship_type: RelationshipType::SharedMode,
+            strength: 0.95,
+        }];
+        let clusters = compute_clusters(&edges, &HashMap::new());
+        assert!(clusters.is_empty());
     }
 }
