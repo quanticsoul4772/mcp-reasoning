@@ -77,7 +77,9 @@ pub async fn search_sessions<C: AnthropicClientTrait>(
     for row in &rows {
         let session_id: String = row.get("session_id");
         let score: f64 = row.get("score");
-        let entry = best_per_session.entry(session_id.clone()).or_insert(f64::MAX);
+        let entry = best_per_session
+            .entry(session_id.clone())
+            .or_insert(f64::MAX);
         if score < *entry {
             *entry = score;
         }
@@ -90,7 +92,9 @@ pub async fn search_sessions<C: AnthropicClientTrait>(
     session_order.sort_by(|a, b| {
         let score_a = best_per_session[a];
         let score_b = best_per_session[b];
-        score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
+        score_a
+            .partial_cmp(&score_b)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     // Normalize BM25 scores to [0.5, 1.0]:
@@ -118,10 +122,9 @@ pub async fn search_sessions<C: AnthropicClientTrait>(
         }
         if let Some(result) = load_search_result(storage, &session_id, similarity_score).await? {
             if let Some(ref filter) = mode_filter {
-                if let Some(ref mode) = result.primary_mode {
-                    if mode != filter {
-                        continue;
-                    }
+                match result.primary_mode.as_deref() {
+                    Some(mode) if mode == filter => {}
+                    _ => continue,
                 }
             }
             results.push(result);
@@ -354,5 +357,56 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].session_id, session1.id);
+    }
+
+    #[tokio::test]
+    async fn test_search_mode_filter_excludes_no_mode_sessions() {
+        // Regression test: sessions with no matching mode should be excluded
+        // even if primary_mode is None (previously they slipped through the filter)
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
+        let client = mock_anthropic_success("", 0, 0);
+
+        // Session using "linear" mode
+        let s_linear = storage.create_session().await.expect("create session");
+        storage
+            .save_stored_thought(&StoredThought::new(
+                uuid::Uuid::new_v4().to_string(),
+                &s_linear.id,
+                "linear",
+                "graph traversal algorithm depth first",
+                0.8,
+            ))
+            .await
+            .expect("save thought");
+
+        // Session using "tree" mode
+        let s_tree = storage.create_session().await.expect("create session");
+        storage
+            .save_stored_thought(&StoredThought::new(
+                uuid::Uuid::new_v4().to_string(),
+                &s_tree.id,
+                "tree",
+                "graph traversal algorithm breadth first",
+                0.8,
+            ))
+            .await
+            .expect("save thought");
+
+        // Search with mode_filter = "linear" — only s_linear should appear
+        let results = search_sessions(
+            &storage,
+            &client,
+            "graph traversal algorithm",
+            5,
+            0.0,
+            Some("linear".to_string()),
+        )
+        .await
+        .expect("search sessions");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].session_id, s_linear.id);
     }
 }
