@@ -138,6 +138,9 @@ async fn analyze_all_relationships<C: AnthropicClientTrait>(
         }
     }
 
+    // Deduplicate symmetric edges (SimilarTopic, SharedMode, TemporallyAdjacent are
+    // undirected relationships; both A→B and B→A are generated — keep only canonical form).
+    let edges = dedup_edges(edges);
     let clusters = compute_clusters(&edges, &session_contents);
 
     Ok(RelationshipGraph {
@@ -145,6 +148,44 @@ async fn analyze_all_relationships<C: AnthropicClientTrait>(
         edges,
         clusters,
     })
+}
+
+/// Deduplicate undirected relationship edges.
+///
+/// For symmetric relationship types, A→B and B→A represent the same edge.
+/// Keep only the one where `from_session <= to_session` (lexicographic order).
+/// `ContinuesFrom` and `CommonConclusion` are directional — kept as-is.
+fn dedup_edges(edges: Vec<RelationshipEdge>) -> Vec<RelationshipEdge> {
+    use std::collections::HashSet;
+
+    let mut seen: HashSet<(String, String, String)> = HashSet::new();
+    let mut result = Vec::with_capacity(edges.len());
+
+    for edge in edges {
+        let is_symmetric = matches!(
+            edge.relationship_type,
+            RelationshipType::SimilarTopic
+                | RelationshipType::SharedMode
+                | RelationshipType::TemporallyAdjacent
+        );
+
+        if is_symmetric {
+            // Canonical key: sort the two session IDs so A→B and B→A hash the same
+            let (a, b) = if edge.from_session <= edge.to_session {
+                (edge.from_session.clone(), edge.to_session.clone())
+            } else {
+                (edge.to_session.clone(), edge.from_session.clone())
+            };
+            let rel = format!("{:?}", edge.relationship_type);
+            if seen.insert((a, b, rel)) {
+                result.push(edge);
+            }
+        } else {
+            result.push(edge);
+        }
+    }
+
+    result
 }
 
 /// Load session node data.
@@ -622,5 +663,47 @@ mod tests {
         }];
         let clusters = compute_clusters(&edges, &HashMap::new());
         assert!(clusters.is_empty());
+    }
+
+    #[test]
+    fn test_dedup_edges_removes_reverse_symmetric() {
+        let make = |from: &str, to: &str, rt: RelationshipType| RelationshipEdge {
+            from_session: from.to_string(),
+            to_session: to.to_string(),
+            relationship_type: rt,
+            strength: 0.8,
+        };
+
+        let edges = vec![
+            make("s1", "s2", RelationshipType::SimilarTopic),
+            make("s2", "s1", RelationshipType::SimilarTopic), // duplicate
+            make("s1", "s2", RelationshipType::SharedMode),
+            make("s2", "s1", RelationshipType::SharedMode), // duplicate
+            make("s1", "s2", RelationshipType::TemporallyAdjacent),
+            make("s2", "s1", RelationshipType::TemporallyAdjacent), // duplicate
+        ];
+
+        let deduped = dedup_edges(edges);
+        // Each symmetric type should appear only once
+        assert_eq!(deduped.len(), 3);
+    }
+
+    #[test]
+    fn test_dedup_edges_preserves_directional() {
+        let make = |from: &str, to: &str, rt: RelationshipType| RelationshipEdge {
+            from_session: from.to_string(),
+            to_session: to.to_string(),
+            relationship_type: rt,
+            strength: 0.9,
+        };
+
+        // ContinuesFrom is directional — both directions should be kept if both exist
+        let edges = vec![
+            make("s1", "s2", RelationshipType::ContinuesFrom),
+            make("s2", "s1", RelationshipType::ContinuesFrom),
+        ];
+
+        let deduped = dedup_edges(edges);
+        assert_eq!(deduped.len(), 2);
     }
 }
