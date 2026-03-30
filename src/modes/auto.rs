@@ -363,8 +363,15 @@ mod tests {
         let mut params = HashMap::new();
         params.insert("key".to_string(), serde_json::json!("value"));
 
-        let response =
-            AutoResponse::new("t-1", "s-1", ReasoningMode::Tree, "Reason", 0.8, vec![], params);
+        let response = AutoResponse::new(
+            "t-1",
+            "s-1",
+            ReasoningMode::Tree,
+            "Reason",
+            0.8,
+            vec![],
+            params,
+        );
 
         assert_eq!(
             response.suggested_parameters.get("key"),

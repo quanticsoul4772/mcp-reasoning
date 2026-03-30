@@ -945,10 +945,10 @@ async fn test_checkpoint_mode_create_and_list() {
 mod server_tests {
     use super::*;
     use mcp_reasoning::server::{
-        AutoRequest, CheckpointRequest, ConfidenceThreshold, CounterfactualRequest, DecisionRequest,
-        DetectRequest, DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, MctsRequest,
-        MetricsRequest, PresetRequest, ReasoningServer, ReflectionRequest, TimelineRequest,
-        TreeRequest,
+        AutoRequest, CheckpointRequest, ConfidenceThreshold, CounterfactualRequest,
+        DecisionRequest, DetectRequest, DivergentRequest, EvidenceRequest, GraphRequest,
+        LinearRequest, MctsRequest, MetricsRequest, PresetRequest, ReasoningServer,
+        ReflectionRequest, TimelineRequest, TreeRequest,
     };
 
     /// Helper to create a `ReasoningServer` for testing.

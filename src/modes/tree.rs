@@ -666,10 +666,8 @@ where
             .unwrap_or_default();
 
         if !unresolved.is_empty() {
-            result = result.with_recommendation(format!(
-                "Unresolved questions: {}",
-                unresolved.join("; ")
-            ));
+            result = result
+                .with_recommendation(format!("Unresolved questions: {}", unresolved.join("; ")));
         }
 
         Ok(result)
@@ -1438,17 +1436,15 @@ mod tests {
             ])
         });
 
-        mock_client
-            .expect_complete()
-            .returning(|_, _| {
-                Ok(CompletionResponse {
-                    content: mock_summarize_response(),
-                    usage: Usage {
-                        input_tokens: 100,
-                        output_tokens: 150,
-                    },
-                })
-            });
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse {
+                content: mock_summarize_response(),
+                usage: Usage {
+                    input_tokens: 100,
+                    output_tokens: 150,
+                },
+            })
+        });
 
         let mut mode = TreeMode::new(mock_storage, mock_client);
         let result = mode.summarize("test-session").await;
@@ -1482,9 +1478,7 @@ mod tests {
         let mut mock_storage = MockStorageTrait::new();
         let mock_client = MockAnthropicClientTrait::new();
 
-        mock_storage
-            .expect_get_branches()
-            .returning(|_| Ok(vec![]));
+        mock_storage.expect_get_branches().returning(|_| Ok(vec![]));
 
         let mut mode = TreeMode::new(mock_storage, mock_client);
         let result = mode.summarize("empty-session").await;
@@ -1502,23 +1496,18 @@ mod tests {
         let mut mock_storage = MockStorageTrait::new();
         let mock_client = MockAnthropicClientTrait::new();
 
-        mock_storage
-            .expect_get_branches()
-            .returning(|_| {
-                Err(StorageError::QueryFailed {
-                    query: "get_branches".to_string(),
-                    message: "session not found".to_string(),
-                })
-            });
+        mock_storage.expect_get_branches().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "get_branches".to_string(),
+                message: "session not found".to_string(),
+            })
+        });
 
         let mut mode = TreeMode::new(mock_storage, mock_client);
         let result = mode.summarize("bad-session").await;
 
         assert!(result.is_err());
-        assert!(matches!(
-            result,
-            Err(ModeError::ApiUnavailable { .. })
-        ));
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
     }
 
     #[test]

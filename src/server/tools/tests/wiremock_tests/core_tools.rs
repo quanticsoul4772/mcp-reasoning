@@ -397,5 +397,8 @@ fn test_linear_request_confidence_json_rejects_out_of_range() {
     // should be rejected at deserialization, never reaching the handler.
     let bad_json = r#"{"content":"test","confidence":1.5}"#;
     let result = serde_json::from_str::<LinearRequest>(bad_json);
-    assert!(result.is_err(), "confidence:1.5 should be rejected at parse time");
+    assert!(
+        result.is_err(),
+        "confidence:1.5 should be rejected at parse time"
+    );
 }

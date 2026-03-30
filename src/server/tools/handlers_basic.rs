@@ -41,7 +41,12 @@ impl super::ReasoningServer {
 
         let result = match tokio::time::timeout(
             timeout_duration,
-            mode.process(&req.content, req.session_id, req.confidence.map(super::super::requests::ConfidenceThreshold::value)),
+            mode.process(
+                &req.content,
+                req.session_id,
+                req.confidence
+                    .map(super::super::requests::ConfidenceThreshold::value),
+            ),
         )
         .await
         {
@@ -353,25 +358,22 @@ impl super::ReasoningServer {
                 }
             }
             "summarize" => {
-                let summarize_result = match tokio::time::timeout(
-                    timeout_duration,
-                    mode.summarize(&session_id),
-                )
-                .await
-                {
-                    Ok(inner) => inner,
-                    Err(_elapsed) => {
-                        tracing::error!(
-                            tool = "reasoning_tree",
-                            operation = "summarize",
-                            timeout_ms = timeout_ms,
-                            "Tool execution timed out"
-                        );
-                        Err(ModeError::Timeout {
-                            elapsed_ms: timeout_ms,
-                        })
-                    }
-                };
+                let summarize_result =
+                    match tokio::time::timeout(timeout_duration, mode.summarize(&session_id)).await
+                    {
+                        Ok(inner) => inner,
+                        Err(_elapsed) => {
+                            tracing::error!(
+                                tool = "reasoning_tree",
+                                operation = "summarize",
+                                timeout_ms = timeout_ms,
+                                "Tool execution timed out"
+                            );
+                            Err(ModeError::Timeout {
+                                elapsed_ms: timeout_ms,
+                            })
+                        }
+                    };
                 match summarize_result {
                     Ok(resp) => (
                         TreeResponse {
