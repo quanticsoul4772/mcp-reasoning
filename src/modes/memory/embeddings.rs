@@ -17,14 +17,6 @@ ON CONFLICT(session_id) DO UPDATE SET
     created_at = datetime('now')
 ";
 
-const SQL_GET_SESSIONS_WITHOUT_EMBEDDINGS: &str = r"
-SELECT s.id
-FROM sessions s
-LEFT JOIN session_embeddings se ON s.id = se.session_id
-WHERE se.session_id IS NULL
-LIMIT 10
-";
-
 /// Get embedding for a session, generating if not cached.
 pub async fn get_session_embedding<C: AnthropicClientTrait>(
     storage: &SqliteStorage,
@@ -38,59 +30,12 @@ pub async fn get_session_embedding<C: AnthropicClientTrait>(
 
     // Generate embedding
     let content = get_session_content(storage, session_id).await?;
-    let embedding = generate_embedding(client, &content).await?;
+    let embedding = generate_embedding(client, &content)?;
 
     // Cache it
     store_embedding(storage, session_id, &embedding, &content).await?;
 
     Ok(embedding)
-}
-
-/// Get all session embeddings (generating missing ones).
-pub async fn get_all_embeddings<C: AnthropicClientTrait>(
-    storage: &SqliteStorage,
-    client: &C,
-) -> Result<Vec<(String, Vec<f32>)>, ModeError> {
-    // Generate missing embeddings first
-    ensure_embeddings(storage, client).await?;
-
-    // Get all sessions
-    let sessions: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
-        .fetch_all(&storage.get_pool())
-        .await
-        .map_err(|e| ModeError::StorageError {
-            message: format!("Failed to get sessions: {e}"),
-        })?;
-
-    let mut embeddings = Vec::new();
-    for session_id in sessions {
-        if let Some(embedding) = get_cached_embedding(storage, &session_id).await? {
-            embeddings.push((session_id, embedding));
-        }
-    }
-
-    Ok(embeddings)
-}
-
-/// Ensure embeddings exist for all sessions (generate missing ones).
-async fn ensure_embeddings<C: AnthropicClientTrait>(
-    storage: &SqliteStorage,
-    client: &C,
-) -> Result<(), ModeError> {
-    let missing: Vec<String> = sqlx::query_scalar(SQL_GET_SESSIONS_WITHOUT_EMBEDDINGS)
-        .fetch_all(&storage.get_pool())
-        .await
-        .map_err(|e| ModeError::StorageError {
-            message: format!("Failed to get missing: {e}"),
-        })?;
-
-    for session_id in missing {
-        let content = get_session_content(storage, &session_id).await?;
-        let embedding = generate_embedding(client, &content).await?;
-        store_embedding(storage, &session_id, &embedding, &content).await?;
-    }
-
-    Ok(())
 }
 
 /// Get cached embedding for a session.
@@ -170,7 +115,7 @@ async fn get_session_content(
 }
 
 /// Generate embedding for content (MVP: simple hash-based embedding).
-pub async fn generate_embedding<C: AnthropicClientTrait>(
+pub fn generate_embedding<C: AnthropicClientTrait>(
     _client: &C,
     content: &str,
 ) -> Result<Vec<f32>, ModeError> {

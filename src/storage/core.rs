@@ -150,6 +150,26 @@ impl SqliteStorage {
                 message: format!("Failed to run migration 005: {e}"),
             })?;
 
+        // Migration 006: Tool effectiveness tracking table
+        let schema_006 = include_str!("../../migrations/006_tool_effectiveness.sql");
+        sqlx::query(schema_006)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::MigrationFailed {
+                version: "006".to_string(),
+                message: format!("Failed to run migration 006: {e}"),
+            })?;
+
+        // Migration 007: FTS5 full-text search on thought content
+        let schema_007 = include_str!("../../migrations/007_thoughts_fts.sql");
+        sqlx::query(schema_007)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::MigrationFailed {
+                version: "007".to_string(),
+                message: format!("Failed to run migration 007: {e}"),
+            })?;
+
         Ok(())
     }
 
