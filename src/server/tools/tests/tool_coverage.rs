@@ -383,7 +383,7 @@ async fn test_graph_unknown_operation() {
         terminal_node_ids: None,
     };
     let resp = server.reasoning_graph(Parameters(req)).await;
-    assert!(resp.aggregated_insight.unwrap().contains("ERROR"));
+    assert!(resp.aggregated_insight.unwrap().contains("failed"));
 }
 
 // ============================================================================

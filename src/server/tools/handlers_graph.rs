@@ -201,7 +201,11 @@ impl super::ReasoningServer {
             session_id: session_id.clone(),
             node_id: None,
             nodes: None,
-            aggregated_insight: Some(format!("ERROR: {e}")),
+            aggregated_insight: Some(format!(
+                "graph {operation} failed: {e}. \
+                 Valid operations: init, generate, score, aggregate, refine, prune, finalize, state. \
+                 Use operation='init' first if no session_id exists, then 'generate' to add nodes."
+            )),
             conclusions: None,
             state: None,
             metadata: None,

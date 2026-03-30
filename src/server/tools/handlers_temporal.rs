@@ -44,7 +44,11 @@ impl super::ReasoningServer {
                 ),
                 Err(e) => (
                     TimelineResponse {
-                        timeline_id: format!("ERROR: {e}"),
+                        timeline_id: format!(
+                            "timeline create failed: {e}. \
+                             Provide non-empty content describing the scenario. \
+                             Use operation='branch' once a timeline_id exists."
+                        ),
                         branch_id: None,
                         branches: None,
                         comparison: None,
@@ -90,7 +94,11 @@ impl super::ReasoningServer {
                 ),
                 Err(e) => (
                     TimelineResponse {
-                        timeline_id: format!("ERROR: {e}"),
+                        timeline_id: format!(
+                            "timeline branch failed: {e}. \
+                             Provide a session_id from a previous create call. \
+                             Use operation='create' first if no timeline exists yet."
+                        ),
                         branch_id: None,
                         branches: None,
                         comparison: None,
@@ -132,7 +140,11 @@ impl super::ReasoningServer {
                 ),
                 Err(e) => (
                     TimelineResponse {
-                        timeline_id: format!("ERROR: {e}"),
+                        timeline_id: format!(
+                            "timeline compare failed: {e}. \
+                             Provide a session_id with at least 2 branches to compare. \
+                             Use operation='branch' first to create divergent paths."
+                        ),
                         branch_id: None,
                         branches: None,
                         comparison: None,
@@ -160,7 +172,11 @@ impl super::ReasoningServer {
                 ),
                 Err(e) => (
                     TimelineResponse {
-                        timeline_id: format!("ERROR: {e}"),
+                        timeline_id: format!(
+                            "timeline merge failed: {e}. \
+                             Provide a session_id with branches to synthesize. \
+                             Use operation='compare' first to identify divergence points."
+                        ),
                         branch_id: None,
                         branches: None,
                         comparison: None,
@@ -465,7 +481,11 @@ impl super::ReasoningServer {
                 }
             }
             Err(e) => CounterfactualResponse {
-                counterfactual_outcome: format!("ERROR: {e}"),
+                counterfactual_outcome: format!(
+                    "counterfactual failed: {e}. \
+                     Provide a scenario and intervention to analyze. \
+                     Use depth='counterfactual' for basic what-if, or 'interventional'/'causal' for deeper analysis."
+                ),
                 causal_chain: vec![],
                 session_id: req.session_id,
                 original_scenario: req.scenario,

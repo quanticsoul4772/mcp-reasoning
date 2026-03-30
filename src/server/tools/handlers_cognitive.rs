@@ -140,7 +140,10 @@ impl super::ReasoningServer {
                 session_id: input_session_id,
                 perspectives: vec![],
                 challenged_assumptions: None,
-                synthesis: Some(format!("ERROR: {e}")),
+                synthesis: Some(format!(
+                    "divergent failed: {e}. Ensure content is non-empty. \
+                     Try reducing num_perspectives (2-4) or retry without force_rebellion."
+                )),
                 metadata: None,
             },
         }
@@ -227,7 +230,11 @@ impl super::ReasoningServer {
                             session_id: None,
                             iterations_used: None,
                             strengths: None,
-                            weaknesses: Some(vec![format!("ERROR: {e}")]),
+                            weaknesses: Some(vec![format!(
+                                "reflection process failed: {e}. \
+                                 Provide non-empty content. \
+                                 Use operation='evaluate' to assess an existing session instead."
+                            )]),
                             recommendations: None,
                             refined_content: None,
                             coherence_score: None,
@@ -282,7 +289,11 @@ impl super::ReasoningServer {
                             session_id: None,
                             iterations_used: None,
                             strengths: None,
-                            weaknesses: Some(vec![format!("ERROR: {e}")]),
+                            weaknesses: Some(vec![format!(
+                                "reflection evaluate failed: {e}. \
+                                 Verify session_id is from a previous reasoning session. \
+                                 Use operation='process' with content to start a new reflection."
+                            )]),
                             recommendations: None,
                             refined_content: None,
                             coherence_score: None,

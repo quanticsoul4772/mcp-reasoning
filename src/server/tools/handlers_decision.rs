@@ -75,7 +75,11 @@ impl super::ReasoningServer {
                     ),
                     Err(e) => (
                         DecisionResponse {
-                            recommendation: format!("ERROR: {e}"),
+                            recommendation: format!(
+                                "weighted decision failed: {e}. \
+                                 Provide at least 2 options and a question/topic. \
+                                 Try decision_type='pairwise' for head-to-head comparison."
+                            ),
                             rankings: None,
                             stakeholder_map: None,
                             conflicts: None,
@@ -114,7 +118,11 @@ impl super::ReasoningServer {
                     ),
                     Err(e) => (
                         DecisionResponse {
-                            recommendation: format!("ERROR: {e}"),
+                            recommendation: format!(
+                                "pairwise decision failed: {e}. \
+                                 Provide at least 2 options for head-to-head comparison. \
+                                 Try decision_type='weighted' for multi-criteria scoring."
+                            ),
                             rankings: None,
                             stakeholder_map: None,
                             conflicts: None,
@@ -153,7 +161,11 @@ impl super::ReasoningServer {
                     ),
                     Err(e) => (
                         DecisionResponse {
-                            recommendation: format!("ERROR: {e}"),
+                            recommendation: format!(
+                                "topsis decision failed: {e}. \
+                                 TOPSIS requires numeric criteria weights alongside options. \
+                                 Try decision_type='weighted' if criteria weights are unavailable."
+                            ),
                             rankings: None,
                             stakeholder_map: None,
                             conflicts: None,
@@ -210,7 +222,11 @@ impl super::ReasoningServer {
                     ),
                     Err(e) => (
                         DecisionResponse {
-                            recommendation: format!("ERROR: {e}"),
+                            recommendation: format!(
+                                "perspectives decision failed: {e}. \
+                                 Provide a topic with stakeholders to map. \
+                                 Try decision_type='weighted' for options without stakeholder data."
+                            ),
                             rankings: None,
                             stakeholder_map: None,
                             conflicts: None,
@@ -334,7 +350,11 @@ impl super::ReasoningServer {
                             likelihood_ratio: None,
                             entropy: None,
                             confidence_interval: None,
-                            synthesis: Some(format!("ERROR: {e}")),
+                            synthesis: Some(format!(
+                                "evidence assess failed: {e}. \
+                                 Provide a claim or hypothesis to evaluate. \
+                                 Try evidence_type='probabilistic' for Bayesian belief updates."
+                            )),
                             metadata: None,
                         },
                         false,
@@ -384,7 +404,11 @@ impl super::ReasoningServer {
                             likelihood_ratio: None,
                             entropy: None,
                             confidence_interval: None,
-                            synthesis: Some(format!("ERROR: {e}")),
+                            synthesis: Some(format!(
+                                "probabilistic evidence failed: {e}. \
+                                 Provide a hypothesis with a prior probability and evidence. \
+                                 Try evidence_type='assess' for qualitative credibility scoring."
+                            )),
                             metadata: None,
                         },
                         false,
