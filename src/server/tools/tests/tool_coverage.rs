@@ -66,7 +66,7 @@ async fn test_decision_unknown_type() {
         session_id: None,
     };
     let resp = server.reasoning_decision(Parameters(req)).await;
-    assert!(resp.recommendation.contains("ERROR"));
+    assert!(resp.recommendation.contains("unknown"));
 }
 
 #[tokio::test]

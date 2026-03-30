@@ -240,7 +240,7 @@ impl super::ReasoningServer {
                 _ => (
                     DecisionResponse {
                         recommendation: format!(
-                            "ERROR: unknown type: {}",
+                            "unknown decision_type '{}'. Valid types: weighted, pairwise, topsis, perspectives.",
                             decision_type_for_timeout
                         ),
                         rankings: None,
@@ -267,8 +267,8 @@ impl super::ReasoningServer {
                 (
                     DecisionResponse {
                         recommendation: format!(
-                            "ERROR: Tool execution timed out after {}ms",
-                            timeout_ms
+                            "decision timed out after {timeout_ms}ms. \
+                             Retry with fewer options or a simpler question."
                         ),
                         rankings: None,
                         stakeholder_map: None,
