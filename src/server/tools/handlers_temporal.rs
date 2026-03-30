@@ -211,7 +211,10 @@ impl super::ReasoningServer {
                 );
                 (
                     TimelineResponse {
-                        timeline_id: format!("ERROR: Tool execution timed out after {}ms", timeout_ms),
+                        timeline_id: format!(
+                            "timeline timed out after {timeout_ms}ms. \
+                             Retry with shorter content or a simpler scenario."
+                        ),
                         branch_id: None,
                         branches: None,
                         comparison: None,
