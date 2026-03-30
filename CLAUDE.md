@@ -134,7 +134,7 @@ src/
 ├── server/
 │   ├── mod.rs           # McpServer + graceful shutdown
 │   ├── mcp.rs           # JSON-RPC protocol
-│   ├── tools.rs         # 15 tool schemas (rmcp macros)
+│   ├── tools.rs         # 32 tool schemas (rmcp macros)
 │   ├── handlers.rs      # HandlerRegistry (HashMap pattern)
 │   ├── transport.rs     # Stdio + HTTP transport
 │   ├── progress.rs      # ProgressEvent, ProgressReporter, milestones
@@ -143,7 +143,7 @@ src/
 │   └── types.rs         # AppState with progress broadcast channel
 ├── presets/
 │   ├── mod.rs           # PresetMode (list/run)
-│   └── builtin.rs       # 5 built-in presets
+│   └── mod.rs           # 6 built-in presets (code-review, debug-analysis, architecture-decision, strategic-decision, evidence-conclusion, brainstorming)
 ├── metrics/mod.rs       # Usage metrics + tool chain tracking (ToolTransition, ChainSummary)
 └── self_improvement/
     ├── mod.rs           # Re-exports
