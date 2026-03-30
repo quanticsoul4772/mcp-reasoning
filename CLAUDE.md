@@ -13,7 +13,7 @@ MCP Reasoning Server - A Rust-based MCP server providing structured reasoning ca
 - 118 source files, 38,000+ lines of code
 - 2,293 tests (95%+ coverage)
 - 15 core reasoning tools + 6 SI + 4 session + 6 agent/team + 1 metrics = 32 tools total
-- 5 workflow presets
+- 6 workflow presets (code-review, debug-analysis, architecture-decision, strategic-decision, evidence-conclusion, brainstorming)
 - 4-phase self-improvement system with safety mechanisms
 - Tool chain tracking with pattern detection
 - Error enhancement with contextual alternatives
