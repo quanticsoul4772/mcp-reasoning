@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 32 tools across reasoning, self-improvement, session management, and agent/team coordination (vs 40 in the predecessor mcp-langbase-reasoning).
+MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 32 tools across reasoning (16), self-improvement (6), session management (4), and agent/team coordination (6).
 
 **Status**: Complete. 38,000+ lines of Rust code and 2,458 tests.
 
@@ -12,7 +12,7 @@ MCP Reasoning Server - A Rust-based MCP server providing structured reasoning ca
 
 - 118 source files, 38,000+ lines of code
 - 2,458 tests (95%+ coverage)
-- 15 core reasoning tools + 6 SI + 4 session + 6 agent/team + 1 metrics = 32 tools total
+- 16 core reasoning tools + 6 SI + 4 session + 6 agent/team = 32 tools total
 - 6 workflow presets (code-review, debug-analysis, architecture-decision, strategic-decision, evidence-conclusion, brainstorming)
 - 4-phase self-improvement system with safety mechanisms
 - Tool chain tracking with pattern detection
@@ -193,16 +193,17 @@ src/
     └── cli/             # CLI commands for SI management
 ```
 
-## The 15 Reasoning Tools
+## The 16 Core Reasoning Tools
 
 | Tool | Description | Operations |
 |------|-------------|------------|
 | `reasoning_linear` | Sequential step-by-step | single |
-| `reasoning_tree` | Branching exploration | create, focus, list, complete |
+| `reasoning_tree` | Branching exploration | create, focus, list, complete, summarize |
 | `reasoning_divergent` | Multi-perspective | force_rebellion option |
 | `reasoning_reflection` | Meta-cognitive | process, evaluate |
 | `reasoning_checkpoint` | State management | create, list, restore |
 | `reasoning_auto` | Mode router | automatic selection |
+| `reasoning_meta` | Empirical mode selector | classifies problem, picks best tool from historical data |
 | `reasoning_graph` | Graph-of-Thoughts | init, generate, score, aggregate, refine, prune, finalize, state |
 | `reasoning_detect` | Bias/fallacy detection | biases, fallacies |
 | `reasoning_decision` | Decision analysis | weighted, pairwise, topsis, perspectives |
