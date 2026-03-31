@@ -117,12 +117,9 @@ where
             search_status.best_path_value,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(ExploreResponse::new(
             thought_id,
@@ -188,12 +185,9 @@ where
             recommendation.confidence,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(BacktrackResponse::new(
             thought_id,
@@ -283,12 +277,9 @@ where
             search_status.best_path_value,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         if let Some(p) = progress {
             p.report_milestone(ProgressMilestone::Complete);
@@ -386,12 +377,9 @@ where
             recommendation.confidence,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         if let Some(p) = progress {
             p.report_milestone(ProgressMilestone::Complete);
@@ -819,7 +807,7 @@ mod tests {
         let mode = MctsMode::new(mock_storage, mock_client);
         let result = mode.explore("Test", None).await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -848,7 +836,7 @@ mod tests {
         let mode = MctsMode::new(mock_storage, mock_client);
         let result = mode.auto_backtrack("node_1", None).await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

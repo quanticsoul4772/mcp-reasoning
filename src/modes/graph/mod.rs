@@ -114,12 +114,9 @@ where
             root.score,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(InitResponse::new(
             thought_id,
@@ -175,12 +172,9 @@ where
             0.7,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(GenerateResponse::new(
             thought_id,
@@ -236,12 +230,9 @@ where
             scores.overall,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(ScoreResponse::new(
             thought_id,
@@ -296,12 +287,9 @@ where
             synthesis.score,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(AggregateResponse::new(
             thought_id,
@@ -357,12 +345,9 @@ where
             refined_node.score,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(RefineResponse::new(
             thought_id,
@@ -418,12 +403,9 @@ where
             0.75,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(PruneResponse::new(
             thought_id,
@@ -483,12 +465,9 @@ where
             session_quality.overall,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(FinalizeResponse::new(
             thought_id,
@@ -555,12 +534,9 @@ where
             metrics.average_score,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(StateResponse::new(
             thought_id, session.id, structure, frontiers, metrics, next_steps,
@@ -1141,7 +1117,7 @@ mod tests {
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.init("Topic", None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1188,7 +1164,7 @@ mod tests {
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.generate(Some("Parent"), None, None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1214,7 +1190,7 @@ mod tests {
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.score(Some("Node"), None, None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1251,7 +1227,7 @@ mod tests {
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.aggregate("Nodes", None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1288,7 +1264,7 @@ mod tests {
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.refine("Node", None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1325,7 +1301,7 @@ mod tests {
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.prune("Graph", None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1362,7 +1338,7 @@ mod tests {
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.finalize("Graph", None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1388,7 +1364,7 @@ mod tests {
         let mode = GraphMode::new(mock_storage, mock_client);
         let result = mode.state(Some("Graph"), "test").await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

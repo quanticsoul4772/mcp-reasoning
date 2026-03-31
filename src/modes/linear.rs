@@ -191,12 +191,9 @@ where
         let thought_id = generate_thought_id();
         let thought = Thought::new(&thought_id, &session.id, &analysis, "linear", confidence);
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         // Build response
         let mut response = LinearResponse::new(&thought_id, &session.id, analysis, confidence);
@@ -636,8 +633,7 @@ mod tests {
         let mode = LinearMode::new(mock_storage, mock_client);
         let result = mode.process("Test content", None, None).await;
 
-        assert!(result.is_err());
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

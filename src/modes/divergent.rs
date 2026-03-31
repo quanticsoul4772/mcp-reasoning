@@ -229,12 +229,9 @@ where
         };
 
         let thought = Thought::new(&thought_id, &session.id, content, "divergent", avg_novelty);
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         // Build response
         let mut response = DivergentResponse::new(&thought_id, &session.id, perspectives);
@@ -362,12 +359,9 @@ where
         };
 
         let thought = Thought::new(&thought_id, &session.id, content, "divergent", avg_novelty);
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         // Build response
         let mut response = DivergentResponse::new(&thought_id, &session.id, perspectives);
@@ -1152,7 +1146,7 @@ mod tests {
         let mode = DivergentMode::new(mock_storage, mock_client);
         let result = mode.process("Test", None, None, false, false).await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1215,7 +1209,7 @@ mod tests {
             .process_streaming("Test", None, None, false, false, None)
             .await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

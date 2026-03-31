@@ -284,12 +284,9 @@ where
             analysis.counterfactual_level.confidence,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(CounterfactualResponse::new(
             thought_id,
@@ -382,12 +379,9 @@ where
             analysis.counterfactual_level.confidence,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         if let Some(p) = progress {
             p.report_milestone(ProgressMilestone::Complete);
@@ -1140,7 +1134,7 @@ mod tests {
         let mode = CounterfactualMode::new(mock_storage, mock_client);
         let result = mode.analyze("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -1433,7 +1427,7 @@ mod tests {
         let mode = CounterfactualMode::new(mock_storage, mock_client);
         let result = mode.analyze("Test scenario", None).await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1494,7 +1488,7 @@ mod tests {
         let mode = CounterfactualMode::new(mock_storage, mock_client);
         let result = mode.analyze_streaming("Test scenario", None, None).await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

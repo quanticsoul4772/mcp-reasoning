@@ -174,12 +174,9 @@ where
         // Generate thought ID and save using actual confidence
         let thought_id = generate_thought_id();
         let thought = Thought::new(&thought_id, &session.id, content, "auto", confidence);
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         let mut response = AutoResponse::new(
             thought_id,

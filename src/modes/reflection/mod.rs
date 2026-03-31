@@ -108,12 +108,9 @@ where
         // Generate thought ID and save
         let thought_id = generate_thought_id();
         let thought = Thought::new(&thought_id, &session.id, content, "reflection", 0.8);
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(ProcessResponse::new(
             thought_id,
@@ -240,12 +237,9 @@ where
             "reflection_evaluate",
             session_assessment.average(),
         );
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         let mut response = EvaluateResponse::new(
             thought_id,
@@ -351,12 +345,9 @@ where
         // Generate thought ID and save
         let thought_id = generate_thought_id();
         let thought = Thought::new(&thought_id, &session.id, content, "reflection", 0.8);
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         if let Some(p) = progress {
             p.report_milestone(ProgressMilestone::Complete);
@@ -513,12 +504,9 @@ where
             "reflection_evaluate",
             session_assessment.average(),
         );
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         let mut response = EvaluateResponse::new(
             thought_id,
@@ -1067,8 +1055,7 @@ mod tests {
         let mode = ReflectionMode::new(mock_storage, mock_client);
         let result = mode.process("Test content", None).await;
 
-        assert!(result.is_err());
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1106,8 +1093,7 @@ mod tests {
         let mode = ReflectionMode::new(mock_storage, mock_client);
         let result = mode.evaluate("test-session", None).await;
 
-        assert!(result.is_err());
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1166,8 +1152,7 @@ mod tests {
         let mode = ReflectionMode::new(mock_storage, mock_client);
         let result = mode.process_streaming("Test content", None, None).await;
 
-        assert!(result.is_err());
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1235,8 +1220,7 @@ mod tests {
         let mode = ReflectionMode::new(mock_storage, mock_client);
         let result = mode.evaluate_streaming("test-session", None, None).await;
 
-        assert!(result.is_err());
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

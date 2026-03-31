@@ -127,12 +127,9 @@ where
             ranking.first().map_or(0.0, |r| r.score),
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(WeightedResponse::new(
             thought_id,
@@ -191,12 +188,9 @@ where
             0.8,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(PairwiseResponse::new(
             thought_id,
@@ -257,12 +251,9 @@ where
             best_closeness,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(TopsisResponse::new(
             thought_id,
@@ -326,12 +317,9 @@ where
             0.75,
         );
 
-        self.storage
-            .save_thought(&thought)
-            .await
-            .map_err(|e| ModeError::ApiUnavailable {
-                message: format!("Failed to save thought: {e}"),
-            })?;
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
 
         Ok(PerspectivesResponse::new(
             thought_id,
@@ -707,7 +695,7 @@ mod tests {
         let mode = DecisionMode::new(mock_storage, mock_client);
         let result = mode.weighted("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -765,7 +753,7 @@ mod tests {
         let mode = DecisionMode::new(mock_storage, mock_client);
         let result = mode.pairwise("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -823,7 +811,7 @@ mod tests {
         let mode = DecisionMode::new(mock_storage, mock_client);
         let result = mode.topsis("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -881,7 +869,7 @@ mod tests {
         let mode = DecisionMode::new(mock_storage, mock_client);
         let result = mode.perspectives("Test", None).await;
 
-        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
