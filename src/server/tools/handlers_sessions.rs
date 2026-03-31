@@ -124,6 +124,7 @@ impl super::ReasoningServer {
                 }),
                 continuation_suggestions: context.continuation_suggestions,
                 metadata: None,
+                next_call: None,
             },
             Err(e) => {
                 tracing::error!(
@@ -145,6 +146,9 @@ impl super::ReasoningServer {
                     checkpoint: None,
                     continuation_suggestions: vec![],
                     metadata: None,
+                    next_call: Some(
+                        serde_json::json!({"tool": "reasoning_list_sessions", "args": {}}),
+                    ),
                 }
             }
         }

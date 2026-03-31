@@ -42,6 +42,7 @@ impl super::ReasoningServer {
                         execution_result: None,
                         session_id: None,
                         metadata: None,
+                        next_call: None,
                     },
                     true,
                 )
@@ -66,6 +67,9 @@ impl super::ReasoningServer {
                         }),
                         session_id: req.session_id,
                         metadata: None,
+                        next_call: Some(
+                            serde_json::json!({"tool": "reasoning_preset", "args": {"operation": "list"}}),
+                        ),
                     };
                 };
 
@@ -85,6 +89,9 @@ impl super::ReasoningServer {
                         }),
                         session_id: req.session_id,
                         metadata: None,
+                        next_call: Some(
+                            serde_json::json!({"tool": "reasoning_preset", "args": {"operation": "list"}}),
+                        ),
                     };
                 };
 
@@ -122,6 +129,7 @@ impl super::ReasoningServer {
                         }),
                         session_id: req.session_id,
                         metadata: None,
+                        next_call: None,
                     },
                     true,
                 )
@@ -143,6 +151,9 @@ impl super::ReasoningServer {
                     }),
                     session_id: req.session_id,
                     metadata: None,
+                    next_call: Some(
+                        serde_json::json!({"tool": "reasoning_preset", "args": {"operation": "list"}}),
+                    ),
                 },
                 false,
             ),

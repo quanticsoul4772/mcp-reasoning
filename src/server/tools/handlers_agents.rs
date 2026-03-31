@@ -39,6 +39,7 @@ impl super::ReasoningServer {
                 success: false,
                 status: "error".to_string(),
                 metadata: None,
+                next_call: Some(serde_json::json!({"tool": "reasoning_agent_list", "args": {}})),
             };
         }
 
@@ -54,6 +55,7 @@ impl super::ReasoningServer {
             success: true,
             status: "completed".to_string(),
             metadata: None,
+            next_call: None,
         }
     }
 
@@ -121,6 +123,9 @@ impl super::ReasoningServer {
                 context: serde_json::json!({"error": format!("Skill '{}' not found. Use reasoning_agent_metrics with query='summary' to list available skills.", req.skill_id)}),
                 success: false,
                 metadata: None,
+                next_call: Some(
+                    serde_json::json!({"tool": "reasoning_agent_metrics", "args": {"query": "summary"}}),
+                ),
             };
         };
 
@@ -138,6 +143,7 @@ impl super::ReasoningServer {
             context: serde_json::json!({"input": req.input, "status": "completed"}),
             success: true,
             metadata: None,
+            next_call: None,
         }
     }
 

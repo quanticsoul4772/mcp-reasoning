@@ -90,6 +90,7 @@ fn test_checkpoint_response_into_contents() {
             thought_count: 5,
         }]),
         restored_state: None,
+        next_call: None,
         metadata: None,
     };
     let contents = response.into_contents();
@@ -287,6 +288,7 @@ fn test_preset_response_into_contents() {
         execution_result: None,
         session_id: Some("s1".to_string()),
         metadata: None,
+        next_call: None,
     };
     let contents = response.into_contents();
     assert_eq!(contents.len(), 1);

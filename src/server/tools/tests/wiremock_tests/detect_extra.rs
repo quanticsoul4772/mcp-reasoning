@@ -245,6 +245,7 @@ async fn test_into_contents_implementations() {
         }]),
         restored_state: None,
         metadata: None,
+        next_call: None,
     };
     let _ = checkpoint_resp.into_contents();
 
@@ -339,6 +340,7 @@ async fn test_into_contents_implementations() {
         execution_result: None,
         session_id: None,
         metadata: None,
+        next_call: None,
     };
     let _ = preset_resp.into_contents();
 

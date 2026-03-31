@@ -164,6 +164,9 @@ pub struct CheckpointResponse {
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
+    /// Machine-readable suggestion for the next tool call on error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_call: Option<serde_json::Value>,
 }
 
 /// Response from auto mode selection.
@@ -556,6 +559,9 @@ pub struct PresetResponse {
     pub session_id: Option<String>,
     /// Metadata about execution timing and suggestions
     pub metadata: Option<ResponseMetadata>,
+    /// Machine-readable suggestion for the next tool call on error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_call: Option<serde_json::Value>,
 }
 
 /// Summary statistics.
@@ -807,6 +813,9 @@ pub struct ResumeSessionResponse {
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ResponseMetadata>,
+    /// Machine-readable suggestion for the next tool call on error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_call: Option<serde_json::Value>,
 }
 
 /// Summary of a thought in a session.
@@ -918,6 +927,9 @@ pub struct AgentInvokeResponse {
     /// Response metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ResponseMetadata>,
+    /// Machine-readable suggestion for the next tool call on error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_call: Option<serde_json::Value>,
 }
 
 /// Response from listing agents.
@@ -947,6 +959,9 @@ pub struct SkillRunResponse {
     /// Response metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ResponseMetadata>,
+    /// Machine-readable suggestion for the next tool call on error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_call: Option<serde_json::Value>,
 }
 
 /// Response from running an agent team.
@@ -1127,6 +1142,7 @@ mod tests {
             }]),
             restored_state: None,
             metadata: None,
+            next_call: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -1332,6 +1348,7 @@ mod tests {
             execution_result: None,
             session_id: Some("s-1".to_string()),
             metadata: None,
+            next_call: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
