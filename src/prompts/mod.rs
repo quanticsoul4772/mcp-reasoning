@@ -48,7 +48,7 @@ pub use decision::{
     decision_pairwise_prompt, decision_perspectives_prompt, decision_topsis_prompt,
     decision_weighted_prompt,
 };
-pub use detect::{detect_biases_prompt, detect_fallacies_prompt};
+pub use detect::{detect_biases_prompt, detect_fallacies_prompt, detect_knowledge_gaps_prompt};
 pub use evidence::{evidence_assess_prompt, evidence_probabilistic_prompt};
 pub use graph::{
     graph_aggregate_prompt, graph_finalize_prompt, graph_generate_prompt, graph_init_prompt,

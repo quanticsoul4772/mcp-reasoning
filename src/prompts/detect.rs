@@ -99,6 +99,52 @@ Important:
 - Consider context - some 'fallacies' may be valid in context"#
 }
 
+/// Prompt for detect mode (knowledge_gaps operation).
+///
+/// Identifies missing information, unchecked assumptions, and unexplored domains
+/// in reasoning — the "unknown unknowns" that could change a conclusion.
+#[must_use]
+pub fn detect_knowledge_gaps_prompt() -> &'static str {
+    r#"Analyze the content for knowledge gaps — information that is absent but would materially affect the reasoning or conclusion.
+
+Your task is to find UNKNOWN UNKNOWNS: things the reasoning doesn't address, not flaws in what it does address.
+
+Respond with a JSON object in this exact format:
+{
+  "gaps": [
+    {
+      "gap": "Concise name of the missing information (e.g., 'Competitor response to pricing change')",
+      "category": "missing_data|unchecked_assumption|unexplored_domain|unasked_question",
+      "impact": "How discovering this would affect the conclusion",
+      "would_change_conclusion": "yes|no|maybe",
+      "investigation": "Specific step to close this gap (a question to answer or data to find)"
+    }
+  ],
+  "unchallenged_assumptions": [
+    "Assumption 1 being taken as given",
+    "Assumption 2 being taken as given"
+  ],
+  "overall_assessment": {
+    "gap_count": 3,
+    "most_critical": "The gap most likely to change the conclusion",
+    "completeness_score": 0.6
+  }
+}
+
+Categories:
+- missing_data: Required facts, measurements, or evidence not present
+- unchecked_assumption: Premises accepted without verification
+- unexplored_domain: Entire perspective or field not considered
+- unasked_question: Important question the reasoning never poses
+
+Important:
+- Focus on ABSENT information, not flawed present information (use detect_type='biases' or 'fallacies' for that)
+- Only flag gaps that are genuinely material — ones where closing the gap could change the conclusion
+- would_change_conclusion is required for each gap — this is the most actionable field
+- completeness_score: 0.0 = critically incomplete, 1.0 = comprehensive
+- Aim for 3-7 gaps; fewer if reasoning is actually comprehensive"#
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -128,8 +174,17 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_knowledge_gaps_prompt_not_empty() {
+        let prompt = detect_knowledge_gaps_prompt();
+        assert!(!prompt.is_empty());
+        assert!(prompt.contains("gaps"));
+        assert!(prompt.to_lowercase().contains("unknown"));
+    }
+
+    #[test]
     fn test_detect_prompts_contain_json() {
         assert!(detect_biases_prompt().contains("JSON"));
         assert!(detect_fallacies_prompt().contains("JSON"));
+        assert!(detect_knowledge_gaps_prompt().contains("JSON"));
     }
 }

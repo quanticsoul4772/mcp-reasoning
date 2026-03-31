@@ -69,6 +69,7 @@ pub use decision::{
 pub use detect::{
     ArgumentStructure, ArgumentValidity, BiasAssessment, BiasSeverity, BiasesResponse, DetectMode,
     DetectedBias, DetectedFallacy, FallaciesResponse, FallacyAssessment, FallacyCategory,
+    GapCategory, KnowledgeGap, KnowledgeGapAssessment, KnowledgeGapsResponse,
 };
 pub use divergent::{DivergentMode, DivergentResponse, Perspective};
 pub use evidence::{

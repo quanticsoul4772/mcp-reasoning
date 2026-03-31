@@ -163,7 +163,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_detect",
-        description = "Detect cognitive biases (anchoring, confirmation bias, availability heuristic, sunk cost) and logical fallacies (ad hominem, strawman, false dichotomy) in text or reasoning chains."
+        description = "Detect flaws and gaps in reasoning: biases=cognitive distortions (anchoring, confirmation bias), fallacies=logical errors (ad hominem, strawman), knowledge_gaps=absent information that could change the conclusion (unknown unknowns, unchecked assumptions)."
     )]
     async fn reasoning_detect(&self, req: Parameters<DetectRequest>) -> DetectResponse {
         self.handle_detect(req.0).await

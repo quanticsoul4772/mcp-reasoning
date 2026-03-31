@@ -350,11 +350,59 @@ impl super::ReasoningServer {
                         false,
                     ),
                 },
+                "knowledge_gaps" => match mode.knowledge_gaps(content, req.session_id).await {
+                    Ok(resp) => (
+                        DetectResponse {
+                            detections: resp
+                                .gaps
+                                .into_iter()
+                                .map(|g| Detection {
+                                    detection_type: g.gap,
+                                    category: Some(g.category.as_str().to_string()),
+                                    severity: if g.would_change_conclusion == "yes" {
+                                        "high".to_string()
+                                    } else if g.would_change_conclusion == "maybe" {
+                                        "medium".to_string()
+                                    } else {
+                                        "low".to_string()
+                                    },
+                                    confidence: resp.overall_assessment.completeness_score,
+                                    evidence: g.investigation,
+                                    explanation: g.impact,
+                                    remediation: None,
+                                })
+                                .collect(),
+                            summary: Some(format!(
+                                "{} knowledge gaps detected. Most critical: {}. \
+                                 Completeness: {:.0}%. {} unchallenged assumptions.",
+                                resp.overall_assessment.gap_count,
+                                resp.overall_assessment.most_critical,
+                                resp.overall_assessment.completeness_score * 100.0,
+                                resp.unchallenged_assumptions.len(),
+                            )),
+                            overall_quality: Some(resp.overall_assessment.completeness_score),
+                            metadata: None,
+                        },
+                        true,
+                    ),
+                    Err(e) => (
+                        DetectResponse {
+                            detections: vec![],
+                            summary: Some(format!(
+                                "knowledge gap detection failed: {e}. \
+                                 Provide non-empty content or a valid thought_id."
+                            )),
+                            overall_quality: None,
+                            metadata: None,
+                        },
+                        false,
+                    ),
+                },
                 _ => (
                     DetectResponse {
                         detections: vec![],
                         summary: Some(format!(
-                            "Unknown detect type '{}'. Use 'biases' or 'fallacies'.",
+                            "Unknown detect type '{}'. Use 'biases', 'fallacies', or 'knowledge_gaps'.",
                             detect_type_for_timeout
                         )),
                         overall_quality: None,

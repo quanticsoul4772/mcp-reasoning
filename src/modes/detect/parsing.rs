@@ -8,7 +8,8 @@ use crate::error::ModeError;
 
 use super::types::{
     ArgumentStructure, ArgumentValidity, BiasAssessment, BiasSeverity, DetectedBias,
-    DetectedFallacy, FallacyAssessment, FallacyCategory,
+    DetectedFallacy, FallacyAssessment, FallacyCategory, GapCategory, KnowledgeGap,
+    KnowledgeGapAssessment,
 };
 
 // ============================================================================
@@ -311,6 +312,146 @@ pub fn parse_fallacy_assessment(json: &serde_json::Value) -> Result<FallacyAsses
         fallacy_count,
         argument_strength,
         most_critical,
+    })
+}
+
+// ============================================================================
+// Knowledge Gaps Parsing
+// ============================================================================
+
+/// Parses the `gaps` array from LLM JSON into a list of `KnowledgeGap` values.
+pub fn parse_knowledge_gaps(json: &serde_json::Value) -> Result<Vec<KnowledgeGap>, ModeError> {
+    let gaps_array = json
+        .get("gaps")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| ModeError::MissingField {
+            field: "gaps".to_string(),
+        })?;
+
+    gaps_array
+        .iter()
+        .map(|g| {
+            let gap = g
+                .get("gap")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| ModeError::MissingField {
+                    field: "gap".to_string(),
+                })?
+                .to_string();
+
+            let category_str = g
+                .get("category")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| ModeError::MissingField {
+                    field: "category".to_string(),
+                })?;
+
+            let category = match category_str.to_lowercase().as_str() {
+                "missing_data" => GapCategory::MissingData,
+                "unchecked_assumption" => GapCategory::UncheckedAssumption,
+                "unexplored_domain" => GapCategory::UnexploredDomain,
+                "unasked_question" => GapCategory::UnaskedQuestion,
+                _ => {
+                    return Err(ModeError::InvalidValue {
+                        field: "category".to_string(),
+                        reason: format!(
+                            "must be missing_data, unchecked_assumption, unexplored_domain, \
+                             or unasked_question, got {category_str}"
+                        ),
+                    })
+                }
+            };
+
+            let impact = g
+                .get("impact")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| ModeError::MissingField {
+                    field: "impact".to_string(),
+                })?
+                .to_string();
+
+            let would_change_conclusion = g
+                .get("would_change_conclusion")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("maybe")
+                .to_string();
+
+            let investigation = g
+                .get("investigation")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| ModeError::MissingField {
+                    field: "investigation".to_string(),
+                })?
+                .to_string();
+
+            Ok(KnowledgeGap {
+                gap,
+                category,
+                impact,
+                would_change_conclusion,
+                investigation,
+            })
+        })
+        .collect()
+}
+
+/// Parses the `unchallenged_assumptions` array from LLM JSON.
+pub fn parse_unchallenged_assumptions(json: &serde_json::Value) -> Vec<String> {
+    json.get("unchallenged_assumptions")
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Parses the `overall_assessment` object for knowledge gaps.
+pub fn parse_knowledge_gap_assessment(
+    json: &serde_json::Value,
+) -> Result<KnowledgeGapAssessment, ModeError> {
+    let assessment = json
+        .get("overall_assessment")
+        .ok_or_else(|| ModeError::MissingField {
+            field: "overall_assessment".to_string(),
+        })?;
+
+    // Gap counts are small integers (typically < 20)
+    #[allow(clippy::cast_possible_truncation)]
+    let gap_count = assessment
+        .get("gap_count")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| ModeError::MissingField {
+            field: "gap_count".to_string(),
+        })? as u32;
+
+    let most_critical = assessment
+        .get("most_critical")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| ModeError::MissingField {
+            field: "most_critical".to_string(),
+        })?
+        .to_string();
+
+    let completeness_score = assessment
+        .get("completeness_score")
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| ModeError::MissingField {
+            field: "completeness_score".to_string(),
+        })?;
+
+    if !(0.0..=1.0).contains(&completeness_score) {
+        return Err(ModeError::InvalidValue {
+            field: "completeness_score".to_string(),
+            reason: format!("must be between 0.0 and 1.0, got {completeness_score}"),
+        });
+    }
+
+    Ok(KnowledgeGapAssessment {
+        gap_count,
+        most_critical,
+        completeness_score,
     })
 }
 
@@ -909,6 +1050,247 @@ mod tests {
         let result = parse_fallacy_assessment(&json);
         assert!(
             matches!(result, Err(ModeError::MissingField { field }) if field == "most_critical")
+        );
+    }
+
+    // ========================================================================
+    // parse_knowledge_gaps tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_knowledge_gaps_success_all_categories() {
+        let json = json!({
+            "gaps": [
+                {
+                    "gap": "Market size data",
+                    "category": "missing_data",
+                    "impact": "Could invalidate market opportunity claim",
+                    "would_change_conclusion": "yes",
+                    "investigation": "Check industry reports for TAM"
+                },
+                {
+                    "gap": "That customers will adopt new feature",
+                    "category": "unchecked_assumption",
+                    "impact": "Adoption rate drives ROI",
+                    "would_change_conclusion": "yes",
+                    "investigation": "Run user interviews"
+                },
+                {
+                    "gap": "Regulatory environment",
+                    "category": "unexplored_domain",
+                    "impact": "Compliance costs not considered",
+                    "would_change_conclusion": "maybe",
+                    "investigation": "Consult legal team"
+                },
+                {
+                    "gap": "What happens if competitor launches first?",
+                    "category": "unasked_question",
+                    "impact": "Changes urgency and risk profile",
+                    "would_change_conclusion": "maybe",
+                    "investigation": "Monitor competitor roadmaps"
+                }
+            ]
+        });
+
+        let result = parse_knowledge_gaps(&json).unwrap();
+        assert_eq!(result.len(), 4);
+        assert!(matches!(result[0].category, GapCategory::MissingData));
+        assert!(matches!(
+            result[1].category,
+            GapCategory::UncheckedAssumption
+        ));
+        assert!(matches!(result[2].category, GapCategory::UnexploredDomain));
+        assert!(matches!(result[3].category, GapCategory::UnaskedQuestion));
+        assert_eq!(result[0].would_change_conclusion, "yes");
+        assert_eq!(result[2].would_change_conclusion, "maybe");
+    }
+
+    #[test]
+    fn test_parse_knowledge_gaps_missing_gaps_field() {
+        let json = json!({});
+        let result = parse_knowledge_gaps(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "gaps"));
+    }
+
+    #[test]
+    fn test_parse_knowledge_gaps_missing_gap_name() {
+        let json = json!({
+            "gaps": [{
+                "category": "missing_data",
+                "impact": "test",
+                "investigation": "test"
+            }]
+        });
+        let result = parse_knowledge_gaps(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "gap"));
+    }
+
+    #[test]
+    fn test_parse_knowledge_gaps_missing_category() {
+        let json = json!({
+            "gaps": [{
+                "gap": "test",
+                "impact": "test",
+                "investigation": "test"
+            }]
+        });
+        let result = parse_knowledge_gaps(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "category"));
+    }
+
+    #[test]
+    fn test_parse_knowledge_gaps_invalid_category() {
+        let json = json!({
+            "gaps": [{
+                "gap": "test",
+                "category": "bad_category",
+                "impact": "test",
+                "investigation": "test"
+            }]
+        });
+        let result = parse_knowledge_gaps(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "category")
+        );
+    }
+
+    #[test]
+    fn test_parse_knowledge_gaps_missing_impact() {
+        let json = json!({
+            "gaps": [{
+                "gap": "test",
+                "category": "missing_data",
+                "investigation": "test"
+            }]
+        });
+        let result = parse_knowledge_gaps(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "impact"));
+    }
+
+    #[test]
+    fn test_parse_knowledge_gaps_missing_investigation() {
+        let json = json!({
+            "gaps": [{
+                "gap": "test",
+                "category": "missing_data",
+                "impact": "test"
+            }]
+        });
+        let result = parse_knowledge_gaps(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "investigation")
+        );
+    }
+
+    #[test]
+    fn test_parse_knowledge_gaps_would_change_defaults_to_maybe() {
+        let json = json!({
+            "gaps": [{
+                "gap": "test",
+                "category": "unasked_question",
+                "impact": "test",
+                "investigation": "test"
+                // no would_change_conclusion field
+            }]
+        });
+        let result = parse_knowledge_gaps(&json).unwrap();
+        assert_eq!(result[0].would_change_conclusion, "maybe");
+    }
+
+    #[test]
+    fn test_parse_unchallenged_assumptions_success() {
+        let json = json!({
+            "unchallenged_assumptions": ["Assumption A", "Assumption B"]
+        });
+        let result = parse_unchallenged_assumptions(&json);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], "Assumption A");
+    }
+
+    #[test]
+    fn test_parse_unchallenged_assumptions_missing_returns_empty() {
+        let json = json!({});
+        let result = parse_unchallenged_assumptions(&json);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_knowledge_gap_assessment_success() {
+        let json = json!({
+            "overall_assessment": {
+                "gap_count": 3,
+                "most_critical": "Market size data",
+                "completeness_score": 0.4
+            }
+        });
+        let result = parse_knowledge_gap_assessment(&json).unwrap();
+        assert_eq!(result.gap_count, 3);
+        assert_eq!(result.most_critical, "Market size data");
+        assert!((result.completeness_score - 0.4).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_knowledge_gap_assessment_missing_overall() {
+        let json = json!({});
+        let result = parse_knowledge_gap_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "overall_assessment")
+        );
+    }
+
+    #[test]
+    fn test_parse_knowledge_gap_assessment_missing_gap_count() {
+        let json = json!({
+            "overall_assessment": {
+                "most_critical": "test",
+                "completeness_score": 0.5
+            }
+        });
+        let result = parse_knowledge_gap_assessment(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "gap_count"));
+    }
+
+    #[test]
+    fn test_parse_knowledge_gap_assessment_missing_most_critical() {
+        let json = json!({
+            "overall_assessment": {
+                "gap_count": 1,
+                "completeness_score": 0.5
+            }
+        });
+        let result = parse_knowledge_gap_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::MissingField { field }) if field == "most_critical")
+        );
+    }
+
+    #[test]
+    fn test_parse_knowledge_gap_assessment_invalid_completeness_too_high() {
+        let json = json!({
+            "overall_assessment": {
+                "gap_count": 1,
+                "most_critical": "test",
+                "completeness_score": 1.5
+            }
+        });
+        let result = parse_knowledge_gap_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "completeness_score")
+        );
+    }
+
+    #[test]
+    fn test_parse_knowledge_gap_assessment_invalid_completeness_negative() {
+        let json = json!({
+            "overall_assessment": {
+                "gap_count": 1,
+                "most_critical": "test",
+                "completeness_score": -0.1
+            }
+        });
+        let result = parse_knowledge_gap_assessment(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "completeness_score")
         );
     }
 }

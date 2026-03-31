@@ -1,8 +1,9 @@
 //! Bias and fallacy detection mode.
 //!
-//! This mode provides two operations:
+//! This mode provides three operations:
 //! - `biases`: Detect cognitive biases in reasoning
 //! - `fallacies`: Detect logical fallacies in arguments
+//! - `knowledge_gaps`: Find absent information that could change the conclusion
 //!
 //! # Output Schema
 //!
@@ -15,6 +16,11 @@
 //! - `fallacies_detected`: List of logical fallacies with explanations
 //! - `argument_structure`: Premises, conclusion, and validity assessment
 //! - `overall_assessment`: Summary including fallacy count and argument strength
+//!
+//! ## Knowledge Gaps Operation
+//! - `gaps`: List of absent information items with category and investigation steps
+//! - `unchallenged_assumptions`: Premises taken as given without verification
+//! - `overall_assessment`: Summary including gap count and completeness score
 
 mod parsing;
 mod types;
@@ -22,18 +28,20 @@ mod types;
 pub use types::{
     ArgumentStructure, ArgumentValidity, BiasAssessment, BiasSeverity, BiasesResponse,
     DetectedBias, DetectedFallacy, FallaciesResponse, FallacyAssessment, FallacyCategory,
+    GapCategory, KnowledgeGap, KnowledgeGapAssessment, KnowledgeGapsResponse,
 };
 
 use crate::error::ModeError;
 use crate::modes::{extract_json, generate_thought_id, validate_content};
-use crate::prompts::{detect_biases_prompt, detect_fallacies_prompt};
+use crate::prompts::{detect_biases_prompt, detect_fallacies_prompt, detect_knowledge_gaps_prompt};
 use crate::traits::{
     AnthropicClientTrait, CompletionConfig, Message, Session, StorageTrait, Thought,
 };
 
 use parsing::{
     parse_argument_structure, parse_bias_assessment, parse_biases, parse_fallacies,
-    parse_fallacy_assessment,
+    parse_fallacy_assessment, parse_knowledge_gap_assessment, parse_knowledge_gaps,
+    parse_unchallenged_assumptions,
 };
 
 // ============================================================================
@@ -229,6 +237,84 @@ where
             session.id,
             fallacies_detected,
             argument_structure,
+            overall_assessment,
+        ))
+    }
+
+    /// Detect knowledge gaps — absent information that could change the conclusion.
+    ///
+    /// Finds "unknown unknowns": missing data, unchecked assumptions, unexplored
+    /// domains, and questions the reasoning never poses. Distinct from bias detection
+    /// (cognitive distortions) and fallacy detection (logical errors): this identifies
+    /// what is **absent**, not what is flawed.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The content to analyze for knowledge gaps
+    /// * `session_id` - Optional session ID for context continuity
+    ///
+    /// # Returns
+    ///
+    /// A [`KnowledgeGapsResponse`] containing detected gaps and assessment.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if:
+    /// - Content is empty
+    /// - API call fails
+    /// - Response parsing fails
+    pub async fn knowledge_gaps(
+        &self,
+        content: &str,
+        session_id: Option<String>,
+    ) -> Result<KnowledgeGapsResponse, ModeError> {
+        validate_content(content)?;
+
+        let session = self.get_or_create_session(session_id).await?;
+
+        let prompt = detect_knowledge_gaps_prompt();
+        let user_message = format!("{prompt}\n\nContent to analyze:\n{content}");
+
+        let messages = vec![Message::user(user_message)];
+        let config = CompletionConfig::new()
+            .with_max_tokens(16384)
+            .with_temperature(0.3)
+            .with_deep_thinking();
+
+        let response = self.client.complete(messages, config).await?;
+        let json = extract_json(&response.content)?;
+
+        // Parse gaps array
+        let gaps = parse_knowledge_gaps(&json)?;
+
+        // Parse unchallenged assumptions (optional — returns empty vec if absent)
+        let unchallenged_assumptions = parse_unchallenged_assumptions(&json);
+
+        // Parse overall_assessment
+        let overall_assessment = parse_knowledge_gap_assessment(&json)?;
+
+        // Save thought
+        let thought_id = generate_thought_id();
+        let thought = Thought::new(
+            &thought_id,
+            &session.id,
+            format!("Knowledge gap detection: {} gaps found", gaps.len()),
+            "detect_knowledge_gaps",
+            overall_assessment.completeness_score,
+        );
+
+        self.storage
+            .save_thought(&thought)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: format!("Failed to save thought: {e}"),
+            })?;
+
+        Ok(KnowledgeGapsResponse::new(
+            thought_id,
+            session.id,
+            gaps,
+            unchallenged_assumptions,
             overall_assessment,
         ))
     }
@@ -718,5 +804,131 @@ mod tests {
         let mode = DetectMode::new(mock_storage, mock_client);
         let debug = format!("{mode:?}");
         assert!(debug.contains("DetectMode"));
+    }
+
+    // ========================================================================
+    // Knowledge Gaps Operation Tests
+    // ========================================================================
+
+    fn mock_knowledge_gaps_response() -> String {
+        r#"{
+            "gaps": [
+                {
+                    "gap": "Market size data",
+                    "category": "missing_data",
+                    "impact": "Could invalidate the market opportunity claim",
+                    "would_change_conclusion": "yes",
+                    "investigation": "Check industry reports for TAM"
+                }
+            ],
+            "unchallenged_assumptions": [
+                "Customers will adopt the new feature",
+                "Competitors will not respond"
+            ],
+            "overall_assessment": {
+                "gap_count": 1,
+                "most_critical": "Market size data",
+                "completeness_score": 0.4
+            }
+        }"#
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn test_knowledge_gaps_success() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|id| {
+            Ok(Session::new(
+                id.unwrap_or_else(|| "test-session".to_string()),
+            ))
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_knowledge_gaps_response();
+        mock_client.expect_complete().returning(move |_, _| {
+            Ok(CompletionResponse::new(
+                response_json.clone(),
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mode = DetectMode::new(mock_storage, mock_client);
+        let result = mode
+            .knowledge_gaps("Some reasoning content", Some("test-session".to_string()))
+            .await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.session_id, "test-session");
+        assert_eq!(response.gaps.len(), 1);
+        assert_eq!(response.gaps[0].gap, "Market size data");
+        assert!(matches!(
+            response.gaps[0].category,
+            GapCategory::MissingData
+        ));
+        assert_eq!(response.gaps[0].would_change_conclusion, "yes");
+        assert_eq!(response.unchallenged_assumptions.len(), 2);
+        assert_eq!(response.overall_assessment.gap_count, 1);
+        assert!((response.overall_assessment.completeness_score - 0.4).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_knowledge_gaps_empty_content_returns_error() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        let mode = DetectMode::new(mock_storage, mock_client);
+        let result = mode.knowledge_gaps("", None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_knowledge_gaps_storage_error() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_or_create_session().returning(|_| {
+            Err(StorageError::SessionNotFound {
+                session_id: "test-session".to_string(),
+            })
+        });
+
+        let mode = DetectMode::new(mock_storage, mock_client);
+        let result = mode.knowledge_gaps("Some content", None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_knowledge_gaps_invalid_completeness_score() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{
+                    "gaps": [],
+                    "unchallenged_assumptions": [],
+                    "overall_assessment": {
+                        "gap_count": 0,
+                        "most_critical": "None",
+                        "completeness_score": 1.5
+                    }
+                }"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = DetectMode::new(mock_storage, mock_client);
+        let result = mode.knowledge_gaps("Test content", None).await;
+        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "completeness_score")
+        );
     }
 }

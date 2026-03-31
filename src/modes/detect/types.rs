@@ -210,6 +210,98 @@ impl FallaciesResponse {
     }
 }
 
+// ============================================================================
+// Response Types - Knowledge Gaps
+// ============================================================================
+
+/// Category of knowledge gap.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GapCategory {
+    /// Required facts, measurements, or evidence not present.
+    MissingData,
+    /// Premises accepted without verification.
+    UncheckedAssumption,
+    /// Entire perspective or field not considered.
+    UnexploredDomain,
+    /// Important question the reasoning never poses.
+    UnaskedQuestion,
+}
+
+impl GapCategory {
+    /// Returns the snake_case string representation.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::MissingData => "missing_data",
+            Self::UncheckedAssumption => "unchecked_assumption",
+            Self::UnexploredDomain => "unexplored_domain",
+            Self::UnaskedQuestion => "unasked_question",
+        }
+    }
+}
+
+/// A single knowledge gap — absent information that could change the conclusion.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KnowledgeGap {
+    /// Name of the gap (e.g., "Competitor response to pricing change").
+    pub gap: String,
+    /// Category of gap.
+    pub category: GapCategory,
+    /// How discovering this would affect the conclusion.
+    pub impact: String,
+    /// Whether closing this gap would change the conclusion.
+    pub would_change_conclusion: String,
+    /// Specific step to close this gap.
+    pub investigation: String,
+}
+
+/// Overall assessment of knowledge gaps in content.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KnowledgeGapAssessment {
+    /// Number of gaps detected.
+    pub gap_count: u32,
+    /// The gap most likely to change the conclusion.
+    pub most_critical: String,
+    /// Completeness score (0.0 = critically incomplete, 1.0 = comprehensive).
+    pub completeness_score: f64,
+}
+
+/// Response from knowledge gap detection operation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KnowledgeGapsResponse {
+    /// Unique identifier for this thought.
+    pub thought_id: String,
+    /// Session this thought belongs to.
+    pub session_id: String,
+    /// List of detected knowledge gaps.
+    pub gaps: Vec<KnowledgeGap>,
+    /// Assumptions the reasoning takes as given without verification.
+    pub unchallenged_assumptions: Vec<String>,
+    /// Overall assessment.
+    pub overall_assessment: KnowledgeGapAssessment,
+}
+
+impl KnowledgeGapsResponse {
+    /// Create a new knowledge gaps response.
+    #[must_use]
+    pub fn new(
+        thought_id: impl Into<String>,
+        session_id: impl Into<String>,
+        gaps: Vec<KnowledgeGap>,
+        unchallenged_assumptions: Vec<String>,
+        overall_assessment: KnowledgeGapAssessment,
+    ) -> Self {
+        Self {
+            thought_id: thought_id.into(),
+            session_id: session_id.into(),
+            gaps,
+            unchallenged_assumptions,
+            overall_assessment,
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -286,5 +378,76 @@ mod tests {
         };
         let cloned = fallacy.clone();
         assert_eq!(fallacy, cloned);
+    }
+
+    #[test]
+    fn test_gap_category_serialize() {
+        assert_eq!(
+            serde_json::to_string(&GapCategory::MissingData).unwrap(),
+            "\"missing_data\""
+        );
+        assert_eq!(
+            serde_json::to_string(&GapCategory::UncheckedAssumption).unwrap(),
+            "\"unchecked_assumption\""
+        );
+        assert_eq!(
+            serde_json::to_string(&GapCategory::UnexploredDomain).unwrap(),
+            "\"unexplored_domain\""
+        );
+        assert_eq!(
+            serde_json::to_string(&GapCategory::UnaskedQuestion).unwrap(),
+            "\"unasked_question\""
+        );
+    }
+
+    #[test]
+    fn test_gap_category_as_str() {
+        assert_eq!(GapCategory::MissingData.as_str(), "missing_data");
+        assert_eq!(
+            GapCategory::UncheckedAssumption.as_str(),
+            "unchecked_assumption"
+        );
+        assert_eq!(GapCategory::UnexploredDomain.as_str(), "unexplored_domain");
+        assert_eq!(GapCategory::UnaskedQuestion.as_str(), "unasked_question");
+    }
+
+    #[test]
+    fn test_knowledge_gap_clone() {
+        let gap = KnowledgeGap {
+            gap: "Missing data".to_string(),
+            category: GapCategory::MissingData,
+            impact: "Changes conclusion".to_string(),
+            would_change_conclusion: "yes".to_string(),
+            investigation: "Research it".to_string(),
+        };
+        let cloned = gap.clone();
+        assert_eq!(gap, cloned);
+    }
+
+    #[test]
+    fn test_knowledge_gaps_response_new() {
+        let gaps = vec![KnowledgeGap {
+            gap: "Test gap".to_string(),
+            category: GapCategory::UnaskedQuestion,
+            impact: "Could flip decision".to_string(),
+            would_change_conclusion: "yes".to_string(),
+            investigation: "Ask stakeholders".to_string(),
+        }];
+        let assessment = KnowledgeGapAssessment {
+            gap_count: 1,
+            most_critical: "Test gap".to_string(),
+            completeness_score: 0.5,
+        };
+        let resp = KnowledgeGapsResponse::new(
+            "t1",
+            "s1",
+            gaps,
+            vec!["Assumption A".to_string()],
+            assessment,
+        );
+        assert_eq!(resp.thought_id, "t1");
+        assert_eq!(resp.session_id, "s1");
+        assert_eq!(resp.gaps.len(), 1);
+        assert_eq!(resp.unchallenged_assumptions.len(), 1);
     }
 }
