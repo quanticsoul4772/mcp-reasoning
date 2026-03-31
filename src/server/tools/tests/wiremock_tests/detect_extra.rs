@@ -185,6 +185,7 @@ async fn test_into_contents_implementations() {
         confidence: 0.8,
         next_step: Some("Continue".to_string()),
         metadata: None,
+        next_call: None,
     };
     let _ = linear_resp.into_contents();
 
@@ -202,6 +203,7 @@ async fn test_into_contents_implementations() {
         key_findings: None,
         best_insights: None,
         metadata: None,
+        next_call: None,
     };
     let _ = tree_resp.into_contents();
 
@@ -255,6 +257,7 @@ async fn test_into_contents_implementations() {
         rationale: "Rationale".to_string(),
         result: serde_json::json!({}),
         metadata: None,
+        next_call: None,
     };
     let _ = auto_resp.into_contents();
 

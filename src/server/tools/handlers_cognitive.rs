@@ -7,7 +7,8 @@ use crate::modes::{CheckpointContext, CheckpointMode, DivergentMode, ReflectionM
 use crate::server::metadata_builders;
 use crate::server::requests::{CheckpointRequest, DivergentRequest, ReflectionRequest};
 use crate::server::responses::{
-    Checkpoint, CheckpointResponse, DivergentResponse, Perspective, ReflectionResponse,
+    Checkpoint, CheckpointResponse, DivergentResponse, NextCallHint, Perspective,
+    ReflectionResponse,
 };
 
 use super::DEEP_THINKING;
@@ -491,9 +492,11 @@ impl super::ReasoningServer {
                         "error": format!("Unknown operation: {}. Use 'create', 'list', or 'restore'.", req.operation)
                     })),
                     metadata: None,
-                    next_call: Some(
-                        serde_json::json!({"tool": "reasoning_checkpoint", "args": {"operation": "list", "session_id": req.session_id}}),
-                    ),
+                    next_call: Some(NextCallHint {
+                        tool: "reasoning_checkpoint".to_string(),
+                        args: serde_json::json!({"operation": "list", "session_id": req.session_id}),
+                        reason: "list available checkpoints for this session".to_string(),
+                    }),
                 },
                 false,
             ),

@@ -7,7 +7,9 @@ use crate::modes::meta::MetaMode;
 use crate::modes::{AutoMode, LinearMode, TreeMode};
 use crate::server::metadata_builders;
 use crate::server::requests::{AutoRequest, LinearRequest, MetaRequest, TreeRequest};
-use crate::server::responses::{AutoResponse, Branch, LinearResponse, MetaResponse, TreeResponse};
+use crate::server::responses::{
+    AutoResponse, Branch, LinearResponse, MetaResponse, NextCallHint, TreeResponse,
+};
 
 use super::NO_THINKING;
 
@@ -98,14 +100,22 @@ impl super::ReasoningServer {
         };
 
         match result {
-            Ok(resp) => LinearResponse {
-                thought_id: resp.thought_id,
-                session_id: resp.session_id,
-                content: resp.content,
-                confidence: resp.confidence,
-                next_step: resp.next_step,
-                metadata,
-            },
+            Ok(resp) => {
+                let session_id_for_hint = resp.session_id.clone();
+                LinearResponse {
+                    thought_id: resp.thought_id,
+                    session_id: resp.session_id,
+                    content: resp.content,
+                    confidence: resp.confidence,
+                    next_step: resp.next_step,
+                    metadata,
+                    next_call: Some(NextCallHint {
+                        tool: "reasoning_checkpoint".to_string(),
+                        args: serde_json::json!({"operation": "create", "session_id": session_id_for_hint}),
+                        reason: "save progress after linear reasoning step".to_string(),
+                    }),
+                }
+            }
             Err(e) => LinearResponse {
                 thought_id: String::new(),
                 session_id: input_session_id,
@@ -118,6 +128,7 @@ impl super::ReasoningServer {
                 confidence: 0.0,
                 next_step: None,
                 metadata: None,
+                next_call: None,
             },
         }
     }
@@ -186,6 +197,7 @@ impl super::ReasoningServer {
                             key_findings: None,
                             best_insights: None,
                             metadata: None,
+                            next_call: None,
                         },
                         true,
                     ),
@@ -203,6 +215,7 @@ impl super::ReasoningServer {
                             key_findings: None,
                             best_insights: None,
                             metadata: None,
+                            next_call: None,
                         },
                         false,
                     ),
@@ -249,6 +262,7 @@ impl super::ReasoningServer {
                             key_findings: None,
                             best_insights: None,
                             metadata: None,
+                            next_call: None,
                         },
                         true,
                     ),
@@ -266,6 +280,7 @@ impl super::ReasoningServer {
                             key_findings: None,
                             best_insights: None,
                             metadata: None,
+                            next_call: None,
                         },
                         false,
                     ),
@@ -291,6 +306,7 @@ impl super::ReasoningServer {
                         key_findings: None,
                         best_insights: None,
                         metadata: None,
+                        next_call: None,
                     },
                     true,
                 ),
@@ -308,6 +324,7 @@ impl super::ReasoningServer {
                         key_findings: None,
                         best_insights: None,
                         metadata: None,
+                        next_call: None,
                     },
                     false,
                 ),
@@ -335,6 +352,7 @@ impl super::ReasoningServer {
                             key_findings: None,
                             best_insights: None,
                             metadata: None,
+                            next_call: None,
                         },
                         true,
                     ),
@@ -352,6 +370,7 @@ impl super::ReasoningServer {
                             key_findings: None,
                             best_insights: None,
                             metadata: None,
+                            next_call: None,
                         },
                         false,
                     ),
@@ -394,6 +413,7 @@ impl super::ReasoningServer {
                             key_findings: resp.key_findings,
                             best_insights: resp.best_insights,
                             metadata: None,
+                            next_call: None,
                         },
                         true,
                     ),
@@ -411,6 +431,7 @@ impl super::ReasoningServer {
                             key_findings: None,
                             best_insights: None,
                             metadata: None,
+                            next_call: None,
                         },
                         false,
                     ),
@@ -428,6 +449,7 @@ impl super::ReasoningServer {
                     key_findings: None,
                     best_insights: None,
                     metadata: None,
+                    next_call: None,
                 },
                 false,
             ),
@@ -523,12 +545,21 @@ impl super::ReasoningServer {
                     }))
                 });
 
+                let selected_mode_name = resp.selected_mode.to_string();
+                let session_id_for_hint = resp.session_id.clone();
                 AutoResponse {
-                    selected_mode: resp.selected_mode.to_string(),
+                    selected_mode: selected_mode_name.clone(),
                     confidence: resp.confidence,
                     rationale: resp.reasoning,
                     result,
                     metadata: None,
+                    next_call: Some(NextCallHint {
+                        tool: format!("reasoning_{selected_mode_name}"),
+                        args: serde_json::json!({"session_id": session_id_for_hint}),
+                        reason: format!(
+                            "auto selected {selected_mode_name}; call it now to begin reasoning"
+                        ),
+                    }),
                 }
             }
             Err(e) => AutoResponse {
@@ -542,6 +573,7 @@ impl super::ReasoningServer {
                 ),
                 result: serde_json::Value::Null,
                 metadata: None,
+                next_call: None,
             },
         }
     }

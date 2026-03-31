@@ -27,6 +27,17 @@ macro_rules! impl_into_contents {
 // Core Reasoning Responses
 // ============================================================================
 
+/// Machine-readable hint for the next tool call on error or workflow continuation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct NextCallHint {
+    /// Tool name to call next (e.g. "reasoning_checkpoint").
+    pub tool: String,
+    /// Arguments to pass verbatim to the next tool.
+    pub args: serde_json::Value,
+    /// Human-readable reason for this suggestion.
+    pub reason: String,
+}
+
 /// Response from linear reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct LinearResponse {
@@ -43,6 +54,9 @@ pub struct LinearResponse {
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
+    /// Machine-readable hint for the next step in the workflow.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_call: Option<NextCallHint>,
 }
 
 /// A branch in tree reasoning.
@@ -78,6 +92,9 @@ pub struct TreeResponse {
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
+    /// Machine-readable hint for the next step in the workflow.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_call: Option<NextCallHint>,
 }
 
 /// A perspective in divergent reasoning.
@@ -166,7 +183,7 @@ pub struct CheckpointResponse {
     pub metadata: Option<crate::metadata::ResponseMetadata>,
     /// Machine-readable suggestion for the next tool call on error.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_call: Option<serde_json::Value>,
+    pub next_call: Option<NextCallHint>,
 }
 
 /// Response from auto mode selection.
@@ -183,6 +200,9 @@ pub struct AutoResponse {
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
+    /// Machine-readable hint for the next step in the workflow.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_call: Option<NextCallHint>,
 }
 
 /// Response from meta-reasoning tool selection.
@@ -561,7 +581,7 @@ pub struct PresetResponse {
     pub metadata: Option<ResponseMetadata>,
     /// Machine-readable suggestion for the next tool call on error.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_call: Option<serde_json::Value>,
+    pub next_call: Option<NextCallHint>,
 }
 
 /// Summary statistics.
@@ -815,7 +835,7 @@ pub struct ResumeSessionResponse {
     pub metadata: Option<ResponseMetadata>,
     /// Machine-readable suggestion for the next tool call on error.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_call: Option<serde_json::Value>,
+    pub next_call: Option<NextCallHint>,
 }
 
 /// Summary of a thought in a session.
@@ -929,7 +949,7 @@ pub struct AgentInvokeResponse {
     pub metadata: Option<ResponseMetadata>,
     /// Machine-readable suggestion for the next tool call on error.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_call: Option<serde_json::Value>,
+    pub next_call: Option<NextCallHint>,
 }
 
 /// Response from listing agents.
@@ -961,7 +981,7 @@ pub struct SkillRunResponse {
     pub metadata: Option<ResponseMetadata>,
     /// Machine-readable suggestion for the next tool call on error.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_call: Option<serde_json::Value>,
+    pub next_call: Option<NextCallHint>,
 }
 
 /// Response from running an agent team.
@@ -1057,6 +1077,7 @@ mod tests {
             confidence: 0.85,
             next_step: Some("Continue".to_string()),
             metadata: None,
+            next_call: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -1081,6 +1102,7 @@ mod tests {
             key_findings: None,
             best_insights: None,
             metadata: None,
+            next_call: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
@@ -1158,6 +1180,7 @@ mod tests {
             rationale: "Simple analysis".to_string(),
             result: serde_json::json!({"key": "value"}),
             metadata: None,
+            next_call: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);

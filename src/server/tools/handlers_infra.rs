@@ -1,8 +1,8 @@
 use crate::metrics::{MetricEvent, Timer};
 use crate::server::requests::{MetricsRequest, PresetRequest};
 use crate::server::responses::{
-    Invocation, MetricsResponse, MetricsSummary, ModeStats, PresetExecution, PresetInfo,
-    PresetResponse,
+    Invocation, MetricsResponse, MetricsSummary, ModeStats, NextCallHint, PresetExecution,
+    PresetInfo, PresetResponse,
 };
 
 impl super::ReasoningServer {
@@ -42,7 +42,11 @@ impl super::ReasoningServer {
                         execution_result: None,
                         session_id: None,
                         metadata: None,
-                        next_call: None,
+                        next_call: Some(NextCallHint {
+                            tool: "reasoning_preset".to_string(),
+                            args: serde_json::json!({"operation": "run", "preset_id": "<choose from list>"}),
+                            reason: "pick a preset_id from the list above and run it".to_string(),
+                        }),
                     },
                     true,
                 )
@@ -67,9 +71,11 @@ impl super::ReasoningServer {
                         }),
                         session_id: req.session_id,
                         metadata: None,
-                        next_call: Some(
-                            serde_json::json!({"tool": "reasoning_preset", "args": {"operation": "list"}}),
-                        ),
+                        next_call: Some(NextCallHint {
+                            tool: "reasoning_preset".to_string(),
+                            args: serde_json::json!({"operation": "list"}),
+                            reason: "list available presets to find a valid preset_id".to_string(),
+                        }),
                     };
                 };
 
@@ -89,9 +95,14 @@ impl super::ReasoningServer {
                         }),
                         session_id: req.session_id,
                         metadata: None,
-                        next_call: Some(
-                            serde_json::json!({"tool": "reasoning_preset", "args": {"operation": "list"}}),
-                        ),
+                        next_call: Some(NextCallHint {
+                            tool: "reasoning_preset".to_string(),
+                            args: serde_json::json!({"operation": "list"}),
+                            reason: format!(
+                                "preset '{}' not found; list available presets",
+                                preset_id
+                            ),
+                        }),
                     };
                 };
 
@@ -151,9 +162,11 @@ impl super::ReasoningServer {
                     }),
                     session_id: req.session_id,
                     metadata: None,
-                    next_call: Some(
-                        serde_json::json!({"tool": "reasoning_preset", "args": {"operation": "list"}}),
-                    ),
+                    next_call: Some(NextCallHint {
+                        tool: "reasoning_preset".to_string(),
+                        args: serde_json::json!({"operation": "list"}),
+                        reason: format!("unknown operation '{}'; use list or run", operation),
+                    }),
                 },
                 false,
             ),

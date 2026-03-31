@@ -145,6 +145,7 @@ fn test_linear_response_serialize() {
         confidence: 0.85,
         next_step: Some("continue".to_string()),
         metadata: None,
+        next_call: None,
     };
     let json = serde_json::to_string(&response).expect("serialize");
     assert!(json.contains("thought_id"));

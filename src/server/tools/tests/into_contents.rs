@@ -11,6 +11,7 @@ fn test_linear_response_into_contents() {
         confidence: 0.85,
         next_step: Some("continue".to_string()),
         metadata: None,
+        next_call: None,
     };
     let contents = response.clone().into_contents();
     assert_eq!(contents.len(), 1);
@@ -36,6 +37,7 @@ fn test_tree_response_into_contents() {
         key_findings: None,
         best_insights: None,
         metadata: None,
+        next_call: None,
     };
     let contents = response.into_contents();
     assert_eq!(contents.len(), 1);
@@ -105,6 +107,7 @@ fn test_auto_response_into_contents() {
         rationale: "simple query".to_string(),
         result: serde_json::json!({"status": "ok"}),
         metadata: None,
+        next_call: None,
     };
     let contents = response.into_contents();
     assert_eq!(contents.len(), 1);

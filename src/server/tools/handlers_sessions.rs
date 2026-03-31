@@ -3,7 +3,7 @@ use crate::server::requests::{
     ListSessionsRequest, RelateSessionsRequest, ResumeSessionRequest, SearchSessionsRequest,
 };
 use crate::server::responses::{
-    CheckpointInfo, ListSessionsResponse, RelateSessionsResponse, RelationshipEdge,
+    CheckpointInfo, ListSessionsResponse, NextCallHint, RelateSessionsResponse, RelationshipEdge,
     ResumeSessionResponse, SearchResult, SearchSessionsResponse, SessionNode, SessionSummary,
     ThoughtSummary,
 };
@@ -146,9 +146,11 @@ impl super::ReasoningServer {
                     checkpoint: None,
                     continuation_suggestions: vec![],
                     metadata: None,
-                    next_call: Some(
-                        serde_json::json!({"tool": "reasoning_list_sessions", "args": {}}),
-                    ),
+                    next_call: Some(NextCallHint {
+                        tool: "reasoning_list_sessions".to_string(),
+                        args: serde_json::json!({}),
+                        reason: "list sessions to find a valid session_id to resume".to_string(),
+                    }),
                 }
             }
         }

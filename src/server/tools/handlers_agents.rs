@@ -8,7 +8,7 @@ use crate::server::requests::{
     TeamRunRequest,
 };
 use crate::server::responses::{
-    AgentInvokeResponse, AgentListResponse, AgentMetricsResponse, SkillRunResponse,
+    AgentInvokeResponse, AgentListResponse, AgentMetricsResponse, NextCallHint, SkillRunResponse,
     TeamListResponse, TeamRunResponse,
 };
 
@@ -39,7 +39,11 @@ impl super::ReasoningServer {
                 success: false,
                 status: "error".to_string(),
                 metadata: None,
-                next_call: Some(serde_json::json!({"tool": "reasoning_agent_list", "args": {}})),
+                next_call: Some(NextCallHint {
+                    tool: "reasoning_agent_list".to_string(),
+                    args: serde_json::json!({}),
+                    reason: "list available agents to find a valid agent_id".to_string(),
+                }),
             };
         }
 
@@ -123,9 +127,11 @@ impl super::ReasoningServer {
                 context: serde_json::json!({"error": format!("Skill '{}' not found. Use reasoning_agent_metrics with query='summary' to list available skills.", req.skill_id)}),
                 success: false,
                 metadata: None,
-                next_call: Some(
-                    serde_json::json!({"tool": "reasoning_agent_metrics", "args": {"query": "summary"}}),
-                ),
+                next_call: Some(NextCallHint {
+                    tool: "reasoning_agent_metrics".to_string(),
+                    args: serde_json::json!({"query": "summary"}),
+                    reason: "list available skills via agent metrics summary".to_string(),
+                }),
             };
         };
 
