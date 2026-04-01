@@ -108,6 +108,7 @@ fn test_auto_response_into_contents() {
         result: serde_json::json!({"status": "ok"}),
         metadata: None,
         next_call: None,
+        executed: None,
     };
     let contents = response.into_contents();
     assert_eq!(contents.len(), 1);

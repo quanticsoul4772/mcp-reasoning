@@ -258,6 +258,7 @@ async fn test_into_contents_implementations() {
         result: serde_json::json!({}),
         metadata: None,
         next_call: None,
+        executed: None,
     };
     let _ = auto_resp.into_contents();
 

@@ -1101,6 +1101,7 @@ mod server_tests {
             content: "Content for auto-routing".to_string(),
             session_id: None,
             hints: Some(vec!["technical".to_string(), "complex".to_string()]),
+            execute: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("auto-routing"));

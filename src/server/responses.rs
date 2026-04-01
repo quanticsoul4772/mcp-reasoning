@@ -203,6 +203,9 @@ pub struct AutoResponse {
     /// Machine-readable hint for the next step in the workflow.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_call: Option<NextCallHint>,
+    /// Whether the selected mode was immediately executed (execute=true was requested and the mode is supported).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executed: Option<bool>,
 }
 
 /// Response from meta-reasoning tool selection.
@@ -1181,6 +1184,7 @@ mod tests {
             result: serde_json::json!({"key": "value"}),
             metadata: None,
             next_call: None,
+            executed: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);

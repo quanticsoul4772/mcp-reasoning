@@ -407,6 +407,7 @@ async fn test_auto_success_path() {
         content: "Complex problem with multiple paths".to_string(),
         hints: Some(vec!["exploration".to_string()]),
         session_id: Some("s1".to_string()),
+        execute: None,
     };
 
     let resp = server.reasoning_auto(Parameters(req)).await;

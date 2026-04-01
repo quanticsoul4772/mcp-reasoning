@@ -157,6 +157,10 @@ pub struct AutoRequest {
     pub hints: Option<Vec<String>>,
     /// Session ID.
     pub session_id: Option<String>,
+    /// When true, select the mode and immediately execute it.
+    /// Supported modes: linear, divergent. Other modes return selection only with a next_call hint.
+    #[serde(default)]
+    pub execute: Option<bool>,
 }
 
 /// Request for meta-reasoning (empirical tool selection).

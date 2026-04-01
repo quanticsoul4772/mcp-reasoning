@@ -6,7 +6,7 @@ use crate::metrics::{MetricEvent, Timer};
 use crate::modes::meta::MetaMode;
 use crate::modes::{AutoMode, LinearMode, TreeMode};
 use crate::server::metadata_builders;
-use crate::server::requests::{AutoRequest, LinearRequest, MetaRequest, TreeRequest};
+use crate::server::requests::{AutoRequest, DivergentRequest, LinearRequest, MetaRequest, TreeRequest};
 use crate::server::responses::{
     AutoResponse, Branch, LinearResponse, MetaResponse, NextCallHint, TreeResponse,
 };
@@ -533,8 +533,8 @@ impl super::ReasoningServer {
 
         match result {
             Ok(resp) => {
-                // Build result with mode info and parameters
-                let result = serde_json::json!({
+                // Build selection metadata
+                let selection_meta = serde_json::json!({
                     "thought_id": resp.thought_id,
                     "session_id": resp.session_id,
                     "characteristics": resp.characteristics,
@@ -546,20 +546,75 @@ impl super::ReasoningServer {
                 });
 
                 let selected_mode_name = resp.selected_mode.to_string();
-                let session_id_for_hint = resp.session_id.clone();
+                let session_id = resp.session_id.clone();
+                let content = req.content.clone();
+                let should_execute = req.execute == Some(true);
+
+                // When execute=true, immediately run the selected mode (linear/divergent only).
+                // Other modes have required parameters that auto cannot infer — return next_call hint.
+                if should_execute {
+                    match selected_mode_name.as_str() {
+                        "linear" => {
+                            let exec_resp = self.handle_linear(LinearRequest {
+                                content,
+                                session_id: Some(session_id),
+                                confidence: None,
+                                timeout_ms: None,
+                            }).await;
+                            return AutoResponse {
+                                selected_mode: selected_mode_name,
+                                confidence: resp.confidence,
+                                rationale: resp.reasoning,
+                                result: serde_json::to_value(&exec_resp)
+                                    .unwrap_or(selection_meta),
+                                metadata: None,
+                                next_call: None,
+                                executed: Some(true),
+                            };
+                        }
+                        "divergent" => {
+                            let exec_resp = self.handle_divergent(DivergentRequest {
+                                content,
+                                session_id: Some(session_id),
+                                num_perspectives: None,
+                                challenge_assumptions: None,
+                                force_rebellion: None,
+                                progress_token: None,
+                            }).await;
+                            return AutoResponse {
+                                selected_mode: selected_mode_name,
+                                confidence: resp.confidence,
+                                rationale: resp.reasoning,
+                                result: serde_json::to_value(&exec_resp)
+                                    .unwrap_or(selection_meta),
+                                metadata: None,
+                                next_call: None,
+                                executed: Some(true),
+                            };
+                        }
+                        other => {
+                            tracing::debug!(
+                                mode = other,
+                                "execute=true requested but mode requires direct invocation; returning next_call hint"
+                            );
+                        }
+                    }
+                }
+
                 AutoResponse {
                     selected_mode: selected_mode_name.clone(),
                     confidence: resp.confidence,
                     rationale: resp.reasoning,
-                    result,
+                    result: selection_meta,
                     metadata: None,
                     next_call: Some(NextCallHint {
                         tool: format!("reasoning_{selected_mode_name}"),
-                        args: serde_json::json!({"session_id": session_id_for_hint}),
+                        args: serde_json::json!({"session_id": session_id}),
                         reason: format!(
                             "auto selected {selected_mode_name}; call it now to begin reasoning"
                         ),
                     }),
+                    executed: None,
                 }
             }
             Err(e) => AutoResponse {
@@ -573,7 +628,12 @@ impl super::ReasoningServer {
                 ),
                 result: serde_json::Value::Null,
                 metadata: None,
-                next_call: None,
+                next_call: Some(NextCallHint {
+                    tool: "reasoning_linear".to_string(),
+                    args: serde_json::json!({}),
+                    reason: "auto failed; linear is the safe fallback".to_string(),
+                }),
+                executed: None,
             },
         }
     }

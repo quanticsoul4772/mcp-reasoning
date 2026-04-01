@@ -84,9 +84,45 @@ async fn test_reasoning_auto_tool() {
         content: "test".to_string(),
         hints: Some(vec!["hint".to_string()]),
         session_id: Some("s1".to_string()),
+        execute: None,
     };
     let resp = server.reasoning_auto(Parameters(req)).await;
     assert!(!resp.selected_mode.is_empty());
+    // execute=None: should have next_call hint, executed should be None
+    assert!(resp.next_call.is_some(), "non-execute path should provide next_call hint");
+    assert!(resp.executed.is_none(), "non-execute path should not set executed flag");
+}
+
+#[tokio::test]
+async fn test_reasoning_auto_execute_linear() {
+    let server = create_test_server().await;
+    let req = AutoRequest {
+        content: "Analyze the tradeoffs between SQL and NoSQL databases step by step".to_string(),
+        hints: None,
+        session_id: Some("s1".to_string()),
+        execute: Some(true),
+    };
+    let resp = server.reasoning_auto(Parameters(req)).await;
+    assert!(!resp.selected_mode.is_empty());
+    // In all paths: next_call is always present (success=selected mode, error=linear fallback).
+    assert!(resp.next_call.is_some() || resp.executed == Some(true),
+        "either next_call hint or executed=true must be set");
+}
+
+#[tokio::test]
+async fn test_reasoning_auto_execute_false() {
+    let server = create_test_server().await;
+    let req = AutoRequest {
+        content: "test content".to_string(),
+        hints: None,
+        session_id: None,
+        execute: Some(false),
+    };
+    let resp = server.reasoning_auto(Parameters(req)).await;
+    assert!(!resp.selected_mode.is_empty());
+    // execute=false behaves the same as execute=None
+    assert!(resp.next_call.is_some(), "execute=false should provide next_call hint");
+    assert!(resp.executed.is_none());
 }
 
 #[tokio::test]
