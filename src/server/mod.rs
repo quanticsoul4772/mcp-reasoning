@@ -78,23 +78,23 @@ pub use params::{
 pub use progress::{create_progress_channel, ProgressEvent, ProgressMilestone, ProgressReporter};
 pub use requests::{
     AgentInvokeRequest, AgentListRequest, AgentMetricsRequest, AutoRequest, CheckpointRequest,
-    ConfidenceThreshold, CounterfactualRequest, DecisionRequest, DetectRequest, DivergentRequest,
-    EvidenceRequest, GraphRequest, LinearRequest, MctsRequest, MetricsRequest, PresetRequest,
-    ReflectionRequest, SiApproveRequest, SiDiagnosesRequest, SiRejectRequest, SiRollbackRequest,
-    SiStatusRequest, SiTriggerRequest, SkillRunRequest, TeamListRequest, TeamRunRequest,
-    TimelineRequest, TreeRequest,
+    ConfidenceRouteRequest, ConfidenceThreshold, CounterfactualRequest, DecisionRequest,
+    DetectRequest, DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, MctsRequest,
+    MetricsRequest, PresetRequest, ReflectionRequest, SiApproveRequest, SiDiagnosesRequest,
+    SiRejectRequest, SiRollbackRequest, SiStatusRequest, SiTriggerRequest, SkillRunRequest,
+    TeamListRequest, TeamRunRequest, TimelineRequest, TreeRequest,
 };
 pub use responses::{
     AgentInvokeResponse, AgentListResponse, AgentMetricsResponse, AutoResponse,
     BacktrackSuggestion, Branch, BranchComparison, CausalStep, Checkpoint, CheckpointResponse,
-    ConfidenceInterval, CounterfactualResponse, DecisionResponse, DetectResponse, Detection,
-    DivergentResponse, EvidenceAssessment, EvidenceResponse, GraphNode, GraphResponse, GraphState,
-    Invocation, LinearResponse, MctsNode, MctsResponse, MetricsResponse, MetricsSummary, ModeStats,
-    Perspective, PresetExecution, PresetInfo, PresetResponse, RankedOption, ReflectionResponse,
-    SiApproveResponse, SiDiagnosesResponse, SiExecutionSummary, SiLearningSummary,
-    SiPendingDiagnosis, SiRejectResponse, SiRollbackResponse, SiStatusResponse, SiTriggerResponse,
-    SkillRunResponse, StakeholderMap, TeamListResponse, TeamRunResponse, TimelineBranch,
-    TimelineResponse, TreeResponse,
+    ConfidenceInterval, ConfidenceRouteResponse, CounterfactualResponse, DecisionResponse,
+    DetectResponse, Detection, DivergentResponse, EvidenceAssessment, EvidenceResponse, GraphNode,
+    GraphResponse, GraphState, Invocation, LinearResponse, MctsNode, MctsResponse, MetricsResponse,
+    MetricsSummary, ModeStats, Perspective, PresetExecution, PresetInfo, PresetResponse,
+    RankedOption, ReflectionResponse, SiApproveResponse, SiDiagnosesResponse, SiExecutionSummary,
+    SiLearningSummary, SiPendingDiagnosis, SiRejectResponse, SiRollbackResponse, SiStatusResponse,
+    SiTriggerResponse, SkillRunResponse, StakeholderMap, TeamListResponse, TeamRunResponse,
+    TimelineBranch, TimelineResponse, TreeResponse,
 };
 pub use tools::ReasoningServer;
 pub use transport::{StdioTransport, TransportConfig};

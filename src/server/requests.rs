@@ -148,6 +148,20 @@ pub struct CheckpointRequest {
     pub new_direction: Option<String>,
 }
 
+/// Request for confidence-based routing.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ConfidenceRouteRequest {
+    /// Content to analyze and reason about.
+    pub content: String,
+    /// Session ID for context continuity.
+    pub session_id: Option<String>,
+    /// Confidence threshold above which the auto-selected mode is used directly (0.0-1.0, default 0.75).
+    /// Below this threshold, falls back to tree reasoning for thoroughness.
+    pub high_confidence_threshold: Option<f64>,
+    /// Compute budget: "low" forces linear (fast), "high" forces tree (thorough), "auto" (default) uses confidence routing.
+    pub budget: Option<String>,
+}
+
 /// Request for auto mode selection.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AutoRequest {

@@ -208,6 +208,29 @@ pub struct AutoResponse {
     pub executed: Option<bool>,
 }
 
+/// Response from confidence-based routing.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ConfidenceRouteResponse {
+    /// Mode actually executed (may differ from auto_suggested_mode when confidence was low).
+    pub executed_mode: String,
+    /// Mode that reasoning_auto would have suggested.
+    pub auto_suggested_mode: String,
+    /// Confidence score from auto-detection (0.0-1.0).
+    pub routing_confidence: f64,
+    /// Routing decision made: "direct" (high confidence), "escalated_to_tree" (low confidence), "budget_override".
+    pub routing_decision: String,
+    /// Human-readable explanation of why this mode was chosen.
+    pub routing_reason: String,
+    /// Reasoning result from the executed mode.
+    pub result: serde_json::Value,
+    /// Response metadata for discoverability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::ResponseMetadata>,
+    /// Machine-readable hint for the next step in the workflow.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_call: Option<NextCallHint>,
+}
+
 /// Response from meta-reasoning tool selection.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MetaResponse {
@@ -1056,6 +1079,7 @@ impl_into_contents!(
     TeamListResponse,
     AgentMetricsResponse,
     MetaResponse,
+    ConfidenceRouteResponse,
 );
 
 #[cfg(test)]

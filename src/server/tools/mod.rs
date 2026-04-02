@@ -19,21 +19,21 @@ use rmcp::{tool, tool_handler, tool_router};
 
 use super::requests::{
     AgentInvokeRequest, AgentListRequest, AgentMetricsRequest, AutoRequest, CheckpointRequest,
-    CounterfactualRequest, DecisionRequest, DetectRequest, DivergentRequest, EvidenceRequest,
-    GraphRequest, LinearRequest, ListSessionsRequest, MctsRequest, MetaRequest, MetricsRequest,
-    PresetRequest, ReflectionRequest, RelateSessionsRequest, ResumeSessionRequest,
-    SearchSessionsRequest, SiApproveRequest, SiDiagnosesRequest, SiRejectRequest,
-    SiRollbackRequest, SiStatusRequest, SiTriggerRequest, SkillRunRequest, TeamListRequest,
-    TeamRunRequest, TimelineRequest, TreeRequest,
+    ConfidenceRouteRequest, CounterfactualRequest, DecisionRequest, DetectRequest,
+    DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, ListSessionsRequest,
+    MctsRequest, MetaRequest, MetricsRequest, PresetRequest, ReflectionRequest,
+    RelateSessionsRequest, ResumeSessionRequest, SearchSessionsRequest, SiApproveRequest,
+    SiDiagnosesRequest, SiRejectRequest, SiRollbackRequest, SiStatusRequest, SiTriggerRequest,
+    SkillRunRequest, TeamListRequest, TeamRunRequest, TimelineRequest, TreeRequest,
 };
 use super::responses::{
     AgentInvokeResponse, AgentListResponse, AgentMetricsResponse, AutoResponse, CheckpointResponse,
-    CounterfactualResponse, DecisionResponse, DetectResponse, DivergentResponse, EvidenceResponse,
-    GraphResponse, LinearResponse, ListSessionsResponse, MctsResponse, MetaResponse,
-    MetricsResponse, PresetResponse, ReflectionResponse, RelateSessionsResponse,
-    ResumeSessionResponse, SearchSessionsResponse, SiApproveResponse, SiDiagnosesResponse,
-    SiRejectResponse, SiRollbackResponse, SiStatusResponse, SiTriggerResponse, SkillRunResponse,
-    TeamListResponse, TeamRunResponse, TimelineResponse, TreeResponse,
+    ConfidenceRouteResponse, CounterfactualResponse, DecisionResponse, DetectResponse,
+    DivergentResponse, EvidenceResponse, GraphResponse, LinearResponse, ListSessionsResponse,
+    MctsResponse, MetaResponse, MetricsResponse, PresetResponse, ReflectionResponse,
+    RelateSessionsResponse, ResumeSessionResponse, SearchSessionsResponse, SiApproveResponse,
+    SiDiagnosesResponse, SiRejectResponse, SiRollbackResponse, SiStatusResponse, SiTriggerResponse,
+    SkillRunResponse, TeamListResponse, TeamRunResponse, TimelineResponse, TreeResponse,
 };
 use super::types::AppState;
 
@@ -41,6 +41,7 @@ use super::types::AppState;
 mod handlers_agents;
 mod handlers_basic;
 mod handlers_cognitive;
+mod handlers_confidence;
 mod handlers_decision;
 mod handlers_graph;
 mod handlers_infra;
@@ -123,6 +124,21 @@ impl ReasoningServer {
     )]
     async fn reasoning_meta(&self, req: Parameters<MetaRequest>) -> MetaResponse {
         self.handle_meta(req.0).await
+    }
+
+    #[tool(
+        name = "reasoning_confidence_route",
+        description = "Confidence-aware routing: detects the best reasoning strategy, checks confidence, then executes it or escalates. \
+                       High confidence (≥0.75) → executes the auto-selected mode directly. \
+                       Low confidence → escalates to tree reasoning for thorough exploration. \
+                       Budget overrides: 'low' forces linear (fast), 'high' forces tree (thorough). \
+                       Returns the result plus a routing_trace showing confidence, decision, and why."
+    )]
+    async fn reasoning_confidence_route(
+        &self,
+        req: Parameters<ConfidenceRouteRequest>,
+    ) -> ConfidenceRouteResponse {
+        self.handle_confidence_route(req.0).await
     }
 
     // -- Cognitive tools --
