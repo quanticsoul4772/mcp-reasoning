@@ -6,7 +6,9 @@ use crate::metrics::{MetricEvent, Timer};
 use crate::modes::meta::MetaMode;
 use crate::modes::{AutoMode, LinearMode, TreeMode};
 use crate::server::metadata_builders;
-use crate::server::requests::{AutoRequest, DivergentRequest, LinearRequest, MetaRequest, TreeRequest};
+use crate::server::requests::{
+    AutoRequest, DivergentRequest, LinearRequest, MetaRequest, TreeRequest,
+};
 use crate::server::responses::{
     AutoResponse, Branch, LinearResponse, MetaResponse, NextCallHint, TreeResponse,
 };
@@ -555,38 +557,40 @@ impl super::ReasoningServer {
                 if should_execute {
                     match selected_mode_name.as_str() {
                         "linear" => {
-                            let exec_resp = self.handle_linear(LinearRequest {
-                                content,
-                                session_id: Some(session_id),
-                                confidence: None,
-                                timeout_ms: None,
-                            }).await;
+                            let exec_resp = self
+                                .handle_linear(LinearRequest {
+                                    content,
+                                    session_id: Some(session_id),
+                                    confidence: None,
+                                    timeout_ms: None,
+                                })
+                                .await;
                             return AutoResponse {
                                 selected_mode: selected_mode_name,
                                 confidence: resp.confidence,
                                 rationale: resp.reasoning,
-                                result: serde_json::to_value(&exec_resp)
-                                    .unwrap_or(selection_meta),
+                                result: serde_json::to_value(&exec_resp).unwrap_or(selection_meta),
                                 metadata: None,
                                 next_call: None,
                                 executed: Some(true),
                             };
                         }
                         "divergent" => {
-                            let exec_resp = self.handle_divergent(DivergentRequest {
-                                content,
-                                session_id: Some(session_id),
-                                num_perspectives: None,
-                                challenge_assumptions: None,
-                                force_rebellion: None,
-                                progress_token: None,
-                            }).await;
+                            let exec_resp = self
+                                .handle_divergent(DivergentRequest {
+                                    content,
+                                    session_id: Some(session_id),
+                                    num_perspectives: None,
+                                    challenge_assumptions: None,
+                                    force_rebellion: None,
+                                    progress_token: None,
+                                })
+                                .await;
                             return AutoResponse {
                                 selected_mode: selected_mode_name,
                                 confidence: resp.confidence,
                                 rationale: resp.reasoning,
-                                result: serde_json::to_value(&exec_resp)
-                                    .unwrap_or(selection_meta),
+                                result: serde_json::to_value(&exec_resp).unwrap_or(selection_meta),
                                 metadata: None,
                                 next_call: None,
                                 executed: Some(true),

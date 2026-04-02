@@ -7,6 +7,7 @@ use crate::server::responses::*;
 use crate::server::tools::ReasoningServer;
 use crate::server::types::AppState;
 
+mod handler_gaps;
 mod into_contents;
 mod request_deser;
 mod tool_coverage;

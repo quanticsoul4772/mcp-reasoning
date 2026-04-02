@@ -8,12 +8,16 @@ use crate::server::tools::ReasoningServer;
 use crate::server::types::AppState;
 
 mod analysis;
+mod basic_coverage;
+mod confidence;
 mod core_tools;
 mod detect_extra;
 mod extended;
+mod graph_coverage;
 mod handler_success;
 mod more_tests;
 mod temporal;
+mod temporal_coverage;
 
 // ============================================================================
 // Shared Wiremock Helpers

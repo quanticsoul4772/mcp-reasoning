@@ -219,7 +219,9 @@ pub struct AutoParams {
 
     /// When true, select the mode and immediately execute it (select+run in one call).
     /// Supported for linear and divergent modes. Other modes return selection with a next_call hint.
-    #[schemars(description = "Select and immediately execute the chosen mode (linear/divergent only)")]
+    #[schemars(
+        description = "Select and immediately execute the chosen mode (linear/divergent only)"
+    )]
     pub execute: Option<bool>,
 }
 

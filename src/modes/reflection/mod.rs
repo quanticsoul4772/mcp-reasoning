@@ -1240,4 +1240,185 @@ mod tests {
         let response = result.unwrap();
         assert!(response.key_insights.is_empty());
     }
+
+    #[tokio::test]
+    async fn test_reflection_evaluate_missing_strongest_elements() {
+        // Covers: MissingField error for "strongest_elements" (lines 202-204)
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_session()
+            .returning(|_| Ok(Some(Session::new("s"))));
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(vec![Thought::new("t-1", "s", "content", "linear", 0.8)]));
+
+        mock_client.expect_complete().returning(|_, _| {
+            // Missing strongest_elements
+            Ok(CompletionResponse::new(
+                r#"{"session_assessment": {"overall_quality": 0.8, "coherence": 0.8, "completeness": 0.8, "depth": 0.8}}"#,
+                Usage::new(50, 80),
+            ))
+        });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode.evaluate("s", None).await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ModeError::MissingField { field }) if field == "strongest_elements"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_reflection_evaluate_missing_areas_for_improvement() {
+        // Covers: MissingField error for "areas_for_improvement" (lines 209-211)
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_session()
+            .returning(|_| Ok(Some(Session::new("s"))));
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(vec![Thought::new("t-1", "s", "content", "linear", 0.8)]));
+
+        mock_client.expect_complete().returning(|_, _| {
+            // strongest_elements present but areas_for_improvement missing
+            Ok(CompletionResponse::new(
+                r#"{"session_assessment": {"overall_quality": 0.8, "coherence": 0.8, "completeness": 0.8, "depth": 0.8}, "strongest_elements": ["el1"]}"#,
+                Usage::new(50, 80),
+            ))
+        });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode.evaluate("s", None).await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ModeError::MissingField { field }) if field == "areas_for_improvement"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_reflection_evaluate_missing_key_insights() {
+        // Covers: MissingField error for "key_insights" (lines 216-217)
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_session()
+            .returning(|_| Ok(Some(Session::new("s"))));
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(vec![Thought::new("t-1", "s", "content", "linear", 0.8)]));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"session_assessment": {"overall_quality": 0.8, "coherence": 0.8, "completeness": 0.8, "depth": 0.8}, "strongest_elements": ["el1"], "areas_for_improvement": ["area1"]}"#,
+                Usage::new(50, 80),
+            ))
+        });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode.evaluate("s", None).await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ModeError::MissingField { field }) if field == "key_insights"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_reflection_evaluate_missing_recommendations() {
+        // Covers: MissingField error for "recommendations" (lines 221-222)
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_session()
+            .returning(|_| Ok(Some(Session::new("s"))));
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(vec![Thought::new("t-1", "s", "content", "linear", 0.8)]));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"session_assessment": {"overall_quality": 0.8, "coherence": 0.8, "completeness": 0.8, "depth": 0.8}, "strongest_elements": ["el1"], "areas_for_improvement": ["area1"], "key_insights": ["insight1"]}"#,
+                Usage::new(50, 80),
+            ))
+        });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode.evaluate("s", None).await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ModeError::MissingField { field }) if field == "recommendations"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_reflection_evaluate_success_full() {
+        // Covers: full success path of evaluate() including meta_observations
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_session()
+            .returning(|_| Ok(Some(Session::new("s"))));
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(vec![Thought::new("t-1", "s", "reasoning", "linear", 0.9)]));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"session_assessment": {"overall_quality": 0.85, "coherence": 0.9, "completeness": 0.75, "depth": 0.8}, "strongest_elements": ["clear logic"], "areas_for_improvement": ["more examples"], "key_insights": ["key insight 1"], "recommendations": ["continue A"], "meta_observations": "good process"}"#,
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode.evaluate("s", None).await;
+
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        assert_eq!(resp.strongest_elements, vec!["clear logic"]);
+        assert_eq!(resp.areas_for_improvement, vec!["more examples"]);
+        assert_eq!(resp.key_insights, vec!["key insight 1"]);
+        assert_eq!(resp.recommendations, vec!["continue A"]);
+        assert_eq!(resp.meta_observations, Some("good process".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_reflection_evaluate_with_summary_parameter() {
+        // Covers: the path where summary is provided (line 162) vs thoughts-based context
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_session()
+            .returning(|_| Ok(Some(Session::new("s"))));
+        mock_storage.expect_get_thoughts().returning(|_| Ok(vec![]));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"session_assessment": {"overall_quality": 0.7, "coherence": 0.7, "completeness": 0.7, "depth": 0.7}, "strongest_elements": ["s1"], "areas_for_improvement": ["a1"], "key_insights": ["i1"], "recommendations": ["r1"]}"#,
+                Usage::new(50, 80),
+            ))
+        });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        // Provide summary explicitly to skip using thoughts
+        let result = mode.evaluate("s", Some("summary text")).await;
+
+        assert!(result.is_ok());
+    }
 }

@@ -1521,4 +1521,216 @@ mod tests {
         assert_eq!(response.key_findings.as_ref().unwrap().len(), 2);
         assert_eq!(response.best_insights.as_ref().unwrap().len(), 1);
     }
+
+    #[tokio::test]
+    async fn test_tree_create_missing_branches_field() {
+        // Covers: MissingField error path when API returns JSON without "branches" key
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("s")));
+
+        // Return JSON without "branches" key
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"recommendation": "do something"}"#,
+                Usage::new(50, 80),
+            ))
+        });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.create("test content", None, None).await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ModeError::MissingField { field }) if field == "branches"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_tree_create_branches_not_array() {
+        // Covers: InvalidValue error path when "branches" is not an array
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("s")));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"branches": "not-an-array"}"#,
+                Usage::new(50, 80),
+            ))
+        });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.create("test content", None, None).await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ModeError::InvalidValue { field, .. }) if field == "branches"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_tree_complete_storage_error_get_branch() {
+        // Covers: ApiUnavailable when get_branch fails
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_branch().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "get_branch".to_string(),
+                message: "db error".to_string(),
+            })
+        });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.complete("session-1", "branch-1", true).await;
+
+        assert!(result.is_err());
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_tree_complete_storage_error_update_status() {
+        // Covers: ApiUnavailable when update_branch_status fails
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_branch().returning(|id| {
+            Ok(Some(StoredBranch::new(
+                id,
+                "session-1",
+                r#"{"title": "B"}"#,
+            )))
+        });
+        mock_storage
+            .expect_update_branch_status()
+            .returning(|_, _| {
+                Err(StorageError::QueryFailed {
+                    query: "update_branch_status".to_string(),
+                    message: "write error".to_string(),
+                })
+            });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.complete("session-1", "branch-1", true).await;
+
+        assert!(result.is_err());
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_tree_complete_abandoned_path() {
+        // Covers: the `else` branch (Abandoned status) when completed=false
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_branch().returning(|id| {
+            Ok(Some(StoredBranch::new(
+                id,
+                "session-1",
+                r#"{"title": "B"}"#,
+            )))
+        });
+        mock_storage
+            .expect_update_branch_status()
+            .returning(|_, _| Ok(()));
+        mock_storage.expect_get_branches().returning(|_| Ok(vec![]));
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.complete("session-1", "branch-1", false).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_tree_focus_storage_error_get_branch() {
+        // Covers: ApiUnavailable when get_branch fails in focus()
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_branch().returning(|_| {
+            Err(StorageError::QueryFailed {
+                query: "get_branch".to_string(),
+                message: "db error".to_string(),
+            })
+        });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.focus("session-1", "branch-1").await;
+
+        assert!(result.is_err());
+        assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_tree_summarize_success_with_findings() {
+        // Covers: the summarize() success path including key_findings and best_insights
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_branches().returning(|_| {
+            Ok(vec![StoredBranch::new(
+                "b-1",
+                "test-session",
+                r#"{"title": "Branch 1", "content": "Content 1"}"#,
+            )
+            .with_score(0.8)])
+        });
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"synthesis": "final answer", "key_findings": ["finding 1", "finding 2"], "best_insights": ["insight 1"], "unresolved": ["question 1"]}"#,
+                Usage::new(100, 200),
+            ))
+        });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.summarize("test-session").await;
+
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        assert_eq!(resp.synthesis.as_deref().unwrap(), "final answer");
+        assert!(resp.key_findings.as_ref().unwrap().len() == 2);
+        assert!(resp.best_insights.as_ref().unwrap().len() == 1);
+        // unresolved is non-empty → recommendation is set
+        assert!(resp.recommendation.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_tree_summarize_no_unresolved() {
+        // Covers: the path where unresolved is empty (no recommendation set)
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage.expect_get_branches().returning(|_| {
+            Ok(vec![StoredBranch::new(
+                "b-1",
+                "session",
+                r#"{"title": "B"}"#,
+            )])
+        });
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"synthesis": "done", "key_findings": [], "best_insights": [], "unresolved": []}"#,
+                Usage::new(50, 80),
+            ))
+        });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        let result = mode.summarize("session").await;
+
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        // Empty unresolved → no recommendation
+        assert!(resp.recommendation.is_none());
+    }
 }
