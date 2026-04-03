@@ -244,7 +244,11 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_mcts",
-        description = "Monte Carlo Tree Search for exploring large solution spaces: explore=expand promising paths with UCB1 balance exploitation/exploration, auto_backtrack=retrace when quality degrades."
+        description = "Monte Carlo Tree Search for open-ended optimization problems with a large search space — algorithm design, configuration tuning, or any problem where you need to explore many possible paths and converge on the best one. \
+                       explore=expand one promising node using UCB1 (balances trying new paths vs deepening promising ones). auto_backtrack=automatically retrace and try a different path when current trajectory quality degrades. \
+                       Use instead of reasoning_tree when the space is too large to enumerate — MCTS samples intelligently rather than exhaustively. \
+                       Use instead of reasoning_graph when paths don't cross-pollinate (each is an independent trajectory). \
+                       Returns the current tree state, best path found so far, and scores after each operation."
     )]
     async fn reasoning_mcts(&self, req: Parameters<MctsRequest>) -> MctsResponse {
         self.handle_mcts(req.0).await
@@ -252,7 +256,13 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_counterfactual",
-        description = "Causal what-if analysis using Pearl's Ladder: Level 1=association (what correlates?), Level 2=intervention (what happens if I do X?), Level 3=counterfactual (what would have happened?)."
+        description = "Causal reasoning across three levels of Pearl's Ladder of Causation: \
+                       Level 1 (association) — what correlates with what? (observational, no causal claim). \
+                       Level 2 (intervention) — what happens if I do X? (active change, breaks observational correlations). \
+                       Level 3 (counterfactual) — what would have happened had I done X differently? (retrospective, requires a causal model). \
+                       Use for root-cause analysis, policy evaluation, blame attribution, or any question starting with 'why' or 'what if'. \
+                       Use instead of reasoning_linear when the question is explicitly causal (correlation ≠ causation — linear can't make that distinction). \
+                       Returns causal graph, assumptions, and counterfactual estimates at the requested level."
     )]
     async fn reasoning_counterfactual(
         &self,
