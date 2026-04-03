@@ -233,7 +233,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_timeline",
-        description = "Temporal reasoning for time-ordered scenarios and alternative decision paths: create=establish sequence, branch=split paths, compare=evaluate options, merge=synthesize."
+        description = "Reason about sequences of events and how different choices at decision points change outcomes. Best for incident timelines, historical analysis, project planning, and scenario exploration. \
+                       create=establish a time-ordered event sequence. branch=split at a decision point to explore alternative paths from that moment. compare=evaluate two branches side-by-side. merge=synthesize diverged timelines back into a unified view. \
+                       Use instead of reasoning_tree when sequence and causality matter (events happen in order, earlier choices constrain later ones). \
+                       Returns the updated timeline or comparison after each operation."
     )]
     async fn reasoning_timeline(&self, req: Parameters<TimelineRequest>) -> TimelineResponse {
         self.handle_timeline(req.0).await
