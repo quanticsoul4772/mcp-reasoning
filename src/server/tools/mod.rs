@@ -96,7 +96,11 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_linear",
-        description = "Step-by-step reasoning for single-path analysis, explanations, and direct problem solving. Returns analysis with confidence score and suggested next step."
+        description = "Single-path reasoning for problems with one right direction: explaining a concept, debugging a clear error, summarizing, or step-by-step analysis. \
+                       Returns structured analysis with a confidence score and a suggested next step. \
+                       Use instead of reasoning_tree when you don't need to compare multiple approaches. \
+                       Use instead of reasoning_divergent when you need a conclusion, not perspectives. \
+                       Does NOT branch — if the answer requires exploring alternatives, use reasoning_tree."
     )]
     async fn reasoning_linear(&self, req: Parameters<LinearRequest>) -> LinearResponse {
         self.handle_linear(req.0).await
@@ -104,7 +108,11 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_tree",
-        description = "Branching exploration: create=start with 2-4 paths, focus=select branch, list=show branches, complete=mark finished, summarize=synthesize all branches into final answer."
+        description = "Branching exploration for problems with multiple valid approaches worth comparing before committing — architecture decisions, competing solutions, design trade-offs. \
+                       Operation sequence: create (start 2-4 branches) → focus (select a branch to develop) → list (review all branches) → complete (mark branch done) → summarize (synthesize into final answer). \
+                       Use instead of reasoning_linear when ≥2 plausible approaches need side-by-side evaluation. \
+                       Use instead of reasoning_graph when branches are independent (no cross-pollination between sub-problems). \
+                       Returns the current branch state after each operation; summarize returns the synthesized conclusion across all branches."
     )]
     async fn reasoning_tree(&self, req: Parameters<TreeRequest>) -> TreeResponse {
         self.handle_tree(req.0).await
@@ -145,7 +153,11 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_divergent",
-        description = "Break out of conventional thinking: generates multiple novel perspectives, challenges assumptions, optional force_rebellion for radical alternatives."
+        description = "Generate diverse perspectives when existing solutions feel stale or when you need to surface hidden assumptions. Best for brainstorming, perspective-taking, and breaking tunnel vision. \
+                       force_rebellion=true produces maximally contrarian positions — useful for revealing constraints you've stopped questioning. \
+                       Use instead of reasoning_tree when you want independent viewpoints, not competing solutions to the same spec. \
+                       Returns multiple perspectives each with their core assumptions, constraints they accept, and blind spots they carry. \
+                       Does NOT converge to a single answer — use reasoning_linear or reasoning_tree after if you need a decision."
     )]
     async fn reasoning_divergent(&self, req: Parameters<DivergentRequest>) -> DivergentResponse {
         self.handle_divergent(req.0).await
@@ -164,7 +176,12 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_checkpoint",
-        description = "Save and restore reasoning state: create=save, list=show, restore=return to checkpoint."
+        description = "Snapshot reasoning state so you can branch without losing the original path, or restore if a direction fails. \
+                       create=save current state with a label (use before exploring a risky direction). \
+                       list=show available checkpoints for this session with their labels and timestamps. \
+                       restore=return to a saved snapshot, discarding any reasoning done after that point. \
+                       Use before reasoning_tree branching or before committing to an approach you might want to undo. \
+                       Does NOT save the entire conversation — only current mode state, context, and thought chain."
     )]
     async fn reasoning_checkpoint(&self, req: Parameters<CheckpointRequest>) -> CheckpointResponse {
         self.handle_checkpoint(req.0).await
@@ -174,7 +191,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_graph",
-        description = "Graph-of-Thoughts for complex multi-faceted problems requiring decomposition and aggregation: init/generate/score/aggregate/refine/prune/finalize/state."
+        description = "Graph-of-Thoughts for problems too multi-faceted for linear or tree reasoning — system design, policy analysis, root-cause trees, research synthesis where sub-problems interact. \
+                       Typical workflow: init → generate (decompose into sub-thoughts) → score (rate each node) → aggregate (combine high-score paths) → refine (improve weak nodes) → prune (remove low-value nodes) → finalize (synthesize conclusion) → state (inspect graph at any point). \
+                       Use instead of reasoning_tree when sub-problems are interdependent and need cross-pollination between branches. \
+                       Returns the updated graph state after each operation; finalize returns a synthesized conclusion across all graph paths."
     )]
     async fn reasoning_graph(&self, req: Parameters<GraphRequest>) -> GraphResponse {
         self.handle_graph(req.0).await
@@ -266,7 +286,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_si_status",
-        description = "Get self-improvement system status including cycle stats and circuit breaker state."
+        description = "Get self-improvement system status: current cycle number, phase (idle/monitoring/analyzing/executing/learning), circuit breaker state (open/closed), consecutive failure count, and last action timestamp. \
+                       Use before reasoning_si_trigger to check whether a cycle is already running. \
+                       Circuit breaker opens after 3 consecutive failures — if reasoning_si_trigger appears to do nothing, check here first. \
+                       Does NOT show pending diagnoses — use reasoning_si_diagnoses for that."
     )]
     async fn reasoning_si_status(&self, req: Parameters<SiStatusRequest>) -> SiStatusResponse {
         self.handle_si_status(req.0).await
