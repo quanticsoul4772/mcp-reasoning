@@ -632,6 +632,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_execute_generates_session_id_when_absent() {
+        let executor = SkillExecutor::new(mock_storage(), mock_client());
+        let skill = simple_skill();
+        // Context with no session_id set — executor should generate one via UUID
+        let mut context = SkillContext::new("Test input");
+        assert!(context.session_id.is_none());
+
+        let result = executor.execute(&skill, context).await.unwrap();
+        assert!(!result.session_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_execute_uses_provided_session_id() {
+        let executor = SkillExecutor::new(mock_storage(), mock_client());
+        let skill = simple_skill();
+        let mut context = SkillContext::new("Test input");
+        context.session_id = Some("my-session-123".to_string());
+
+        let result = executor.execute(&skill, context).await.unwrap();
+        assert_eq!(result.session_id, "my-session-123");
+    }
+
+    #[tokio::test]
+    async fn test_execute_mode_storage_failure_is_non_fatal() {
+        // If save_thought fails, execute_mode should warn and still return Ok
+        let mut storage = MockStorageTrait::new();
+        storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "s1".to_string()))));
+        storage
+            .expect_save_thought()
+            .returning(|_| Err(crate::error::StorageError::Internal { message: "test failure".to_string() }));
+        storage.expect_get_thoughts().returning(|_| Ok(vec![]));
+
+        let executor = SkillExecutor::new(storage, mock_client());
+        let result = executor.execute_mode("linear", "test input", "s1").await;
+        // Storage failure should not propagate — just a tracing::warn
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_fail_strategy_records_failure_in_context() {
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Err(ModeError::ApiError {
+                message: "test error".to_string(),
+            })
+        });
+
+        let executor = SkillExecutor::new(mock_storage(), client);
+        let skill = Skill::new(
+            "fail-track",
+            "Fail Track",
+            "test",
+            SkillCategory::Analysis,
+            vec![SkillStep::new("linear").with_error_strategy(ErrorStrategy::Fail)],
+        );
+        let context = SkillContext::new("input");
+
+        let result = executor.execute(&skill, context).await.unwrap();
+        assert!(!result.success);
+        // Failure should be recorded in context
+        assert!(result.context.step_failed(0));
+    }
+
+    #[tokio::test]
     async fn test_execute_with_confidence_condition() {
         let executor = SkillExecutor::new(mock_storage(), mock_client());
         let skill = Skill::new(
