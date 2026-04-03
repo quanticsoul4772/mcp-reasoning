@@ -120,7 +120,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_auto",
-        description = "Start here when unsure which tool to use. Analyzes content and routes automatically to the best reasoning mode. Does NOT apply empirical usage history — use reasoning_meta instead when 10+ prior sessions exist."
+        description = "Routes to the appropriate reasoning mode by analyzing problem content. Use when no specific tool has been identified. Does NOT apply empirical usage history — use reasoning_meta instead when 10+ prior sessions exist."
     )]
     async fn reasoning_auto(&self, req: Parameters<AutoRequest>) -> AutoResponse {
         self.handle_auto(req.0).await
@@ -153,9 +153,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_divergent",
-        description = "Generate diverse perspectives when existing solutions feel stale or when you need to surface hidden assumptions. Best for brainstorming, perspective-taking, and breaking tunnel vision. \
-                       force_rebellion=true produces maximally contrarian positions — useful for revealing constraints you've stopped questioning. \
+        description = "Generate N independent perspectives on a problem, each from a distinct worldview, to surface assumptions a single solution path cannot reveal. \
+                       force_rebellion=true produces maximally contrarian positions — each perspective must reject the most obvious approach. \
                        Use instead of reasoning_tree when you want independent viewpoints, not competing solutions to the same spec. \
+                       Use when a single solution feels premature, when tunnel vision is suspected, or when stakeholder perspectives differ fundamentally. \
                        Returns multiple perspectives each with their core assumptions, constraints they accept, and blind spots they carry. \
                        Does NOT converge to a single answer — use reasoning_linear or reasoning_tree after if you need a decision."
     )]
@@ -233,9 +234,9 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_timeline",
-        description = "Reason about sequences of events and how different choices at decision points change outcomes. Best for incident timelines, historical analysis, project planning, and scenario exploration. \
+        description = "Reason about sequences of events and how different choices at decision points change outcomes. \
                        create=establish a time-ordered event sequence. branch=split at a decision point to explore alternative paths from that moment. compare=evaluate two branches side-by-side. merge=synthesize diverged timelines back into a unified view. \
-                       Use instead of reasoning_tree when sequence and causality matter (events happen in order, earlier choices constrain later ones). \
+                       Use instead of reasoning_tree when sequence and causality matter (events happen in order, earlier choices constrain later ones): incident timelines, historical analysis, project planning, scenario exploration. \
                        Returns the updated timeline or comparison after each operation."
     )]
     async fn reasoning_timeline(&self, req: Parameters<TimelineRequest>) -> TimelineResponse {
