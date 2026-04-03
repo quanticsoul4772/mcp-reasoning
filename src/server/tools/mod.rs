@@ -100,7 +100,8 @@ impl ReasoningServer {
                        Returns structured analysis with a confidence score and a suggested next step. \
                        Use instead of reasoning_tree when you don't need to compare multiple approaches. \
                        Use instead of reasoning_divergent when you need a conclusion, not perspectives. \
-                       Does NOT branch — if the answer requires exploring alternatives, use reasoning_tree."
+                       Does NOT branch — if the answer requires exploring alternatives, use reasoning_tree.",
+        output_schema = rmcp::handler::server::tool::schema_for_type::<super::responses::LinearResponse>()
     )]
     async fn reasoning_linear(&self, req: Parameters<LinearRequest>) -> LinearResponse {
         self.handle_linear(req.0).await
@@ -112,7 +113,8 @@ impl ReasoningServer {
                        Operation sequence: create (start 2-4 branches) → focus (select a branch to develop) → list (review all branches) → complete (mark branch done) → summarize (synthesize into final answer). \
                        Use instead of reasoning_linear when ≥2 plausible approaches need side-by-side evaluation. \
                        Use instead of reasoning_graph when branches are independent (no cross-pollination between sub-problems). \
-                       Returns the current branch state after each operation; summarize returns the synthesized conclusion across all branches."
+                       Returns the current branch state after each operation; summarize returns the synthesized conclusion across all branches.",
+        output_schema = rmcp::handler::server::tool::schema_for_type::<super::responses::TreeResponse>()
     )]
     async fn reasoning_tree(&self, req: Parameters<TreeRequest>) -> TreeResponse {
         self.handle_tree(req.0).await
@@ -120,7 +122,8 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_auto",
-        description = "Routes to the appropriate reasoning mode by analyzing problem content. Use when no specific tool has been identified. Does NOT apply empirical usage history — use reasoning_meta instead when 10+ prior sessions exist."
+        description = "Routes to the appropriate reasoning mode by analyzing problem content. Use when no specific tool has been identified. Does NOT apply empirical usage history — use reasoning_meta instead when 10+ prior sessions exist.",
+        output_schema = rmcp::handler::server::tool::schema_for_type::<super::responses::AutoResponse>()
     )]
     async fn reasoning_auto(&self, req: Parameters<AutoRequest>) -> AutoResponse {
         self.handle_auto(req.0).await
@@ -213,7 +216,8 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_decision",
-        description = "Decision analysis for choosing between options: weighted=score options against weighted criteria (most common), pairwise=compare options head-to-head, topsis=rank by ideal/worst distance, perspectives=map stakeholder viewpoints. Does NOT produce a single answer — returns scored rankings and rationale."
+        description = "Decision analysis for choosing between options: weighted=score options against weighted criteria (most common), pairwise=compare options head-to-head, topsis=rank by ideal/worst distance, perspectives=map stakeholder viewpoints. Does NOT produce a single answer — returns scored rankings and rationale.",
+        output_schema = rmcp::handler::server::tool::schema_for_type::<super::responses::DecisionResponse>()
     )]
     async fn reasoning_decision(&self, req: Parameters<DecisionRequest>) -> DecisionResponse {
         self.handle_decision(req.0).await
@@ -224,7 +228,8 @@ impl ReasoningServer {
         description = "Evaluate evidence quality and update beliefs from it. \
                        assess=credibility scoring for sources (authoritativeness, bias, recency, corroboration). \
                        probabilistic=Bayesian belief update — given prior probability and new evidence, returns posterior. \
-                       Use when deciding how much to trust a claim or source, not for reasoning about solutions."
+                       Use when deciding how much to trust a claim or source, not for reasoning about solutions.",
+        output_schema = rmcp::handler::server::tool::schema_for_type::<super::responses::EvidenceResponse>()
     )]
     async fn reasoning_evidence(&self, req: Parameters<EvidenceRequest>) -> EvidenceResponse {
         self.handle_evidence(req.0).await
