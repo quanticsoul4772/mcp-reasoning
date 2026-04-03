@@ -378,7 +378,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_agent_invoke",
-        description = "Invoke a specialized agent to work on a task using its capabilities."
+        description = "Invoke a single specialized agent by name to work on a focused task. \
+                       Use reasoning_agent_list first to see available agents and their roles. \
+                       For tasks requiring multiple agents with decomposition, use reasoning_team_run instead. \
+                       Returns the agent's output and any discovered sub-skills or performance data."
     )]
     async fn reasoning_agent_invoke(
         &self,
@@ -389,7 +392,9 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_agent_list",
-        description = "List available agents with optional role filter."
+        description = "List available specialized agents with their roles, capabilities, and default skills. \
+                       Filter by role to find agents suited for a specific task type (e.g., 'analyst', 'coder', 'reviewer'). \
+                       Use before reasoning_agent_invoke or reasoning_team_run to identify the right agent."
     )]
     async fn reasoning_agent_list(&self, req: Parameters<AgentListRequest>) -> AgentListResponse {
         self.handle_agent_list(req.0).await
@@ -397,7 +402,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_skill_run",
-        description = "Run a composable skill (tool chain) on input."
+        description = "Run a pre-built skill — a named sequence of reasoning steps chained together with context passing. \
+                       Skills compose multiple reasoning tools (linear → reflection → decision, etc.) into a single call. \
+                       Use reasoning_preset for the 6 common built-in workflows, or this tool for custom-registered skills. \
+                       Returns step-by-step results and the final context produced by the chain."
     )]
     async fn reasoning_skill_run(&self, req: Parameters<SkillRunRequest>) -> SkillRunResponse {
         self.handle_skill_run(req.0).await
@@ -405,7 +413,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_team_run",
-        description = "Run an agent team on a complex task with decomposition."
+        description = "Run a coordinated team of agents on a complex task that benefits from parallel specialization. \
+                       The team decomposes the task, assigns sub-tasks to specialist agents, and synthesizes results. \
+                       Use instead of reasoning_agent_invoke when the task has multiple independent components. \
+                       Use reasoning_team_list to see available team configurations before invoking."
     )]
     async fn reasoning_team_run(&self, req: Parameters<TeamRunRequest>) -> TeamRunResponse {
         self.handle_team_run(req.0).await
@@ -413,7 +424,9 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_team_list",
-        description = "List available team configurations."
+        description = "List available agent team configurations with their member agents and coordination strategy. \
+                       Use before reasoning_team_run to identify the right team for a task type. \
+                       Returns team names, member agent roles, and the decomposition strategy each team uses."
     )]
     async fn reasoning_team_list(&self, req: Parameters<TeamListRequest>) -> TeamListResponse {
         self.handle_team_list(req.0).await
@@ -421,7 +434,9 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_agent_metrics",
-        description = "Query agent performance, discovered skills, optimization suggestions."
+        description = "Query agent system performance: task success rates, latency, discovered skill patterns, and optimization suggestions. \
+                       Returns per-agent metrics plus system-wide recommendations for improving agent configuration. \
+                       Use after multiple reasoning_agent_invoke or reasoning_team_run calls to understand what's working."
     )]
     async fn reasoning_agent_metrics(
         &self,
