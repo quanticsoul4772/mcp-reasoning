@@ -661,9 +661,11 @@ mod tests {
         storage
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "s1".to_string()))));
-        storage
-            .expect_save_thought()
-            .returning(|_| Err(crate::error::StorageError::Internal { message: "test failure".to_string() }));
+        storage.expect_save_thought().returning(|_| {
+            Err(crate::error::StorageError::Internal {
+                message: "test failure".to_string(),
+            })
+        });
         storage.expect_get_thoughts().returning(|_| Ok(vec![]));
 
         let executor = SkillExecutor::new(storage, mock_client());

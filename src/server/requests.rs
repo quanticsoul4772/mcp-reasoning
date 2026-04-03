@@ -81,15 +81,17 @@ pub struct LinearRequest {
 /// Request for tree reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TreeRequest {
-    /// Operation: create/focus/list/complete.
+    /// Operation: create=start 2-4 exploration branches; focus=select a branch to develop further;
+    /// list=review all branches and their status; complete=mark a branch finished; summarize=synthesize
+    /// all branches into a final answer. Typical sequence: create → focus → list → complete → summarize.
     pub operation: Option<String>,
-    /// Content to explore (for create).
+    /// Content to explore (required for create).
     pub content: Option<String>,
-    /// Session ID.
+    /// Session ID. Reuse to continue an existing tree; omit to start fresh.
     pub session_id: Option<String>,
-    /// Branch ID (for focus/complete).
+    /// Branch ID (required for focus and complete operations).
     pub branch_id: Option<String>,
-    /// Number of branches (2-4).
+    /// Number of branches to create (2-4, default 3). Only used for create.
     pub num_branches: Option<u32>,
     /// Mark as completed.
     pub completed: Option<bool>,
@@ -115,17 +117,19 @@ pub struct DivergentRequest {
 /// Request for reflection.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ReflectionRequest {
-    /// Operation: process/evaluate.
+    /// Operation: process=iteratively self-critique and improve a prior reasoning output (pass previous
+    /// result as content); evaluate=assess an entire session for quality, consistency, and blind spots.
+    /// Omit to default to process.
     pub operation: Option<String>,
-    /// Content to reflect on.
+    /// Prior reasoning output to improve (for process), or topic to evaluate (for evaluate).
     pub content: Option<String>,
-    /// Thought ID to analyze.
+    /// Thought ID of a specific thought to analyze (alternative to content).
     pub thought_id: Option<String>,
-    /// Session ID.
+    /// Session ID. Required for evaluate; optional for process.
     pub session_id: Option<String>,
-    /// Max iterations (1-5).
+    /// Max critique-improve iterations (1-5, default 3). Only for process.
     pub max_iterations: Option<u32>,
-    /// Quality threshold (0.0-1.0).
+    /// Stop iterating when quality reaches this threshold (0.0-1.0, default 0.8). Only for process.
     pub quality_threshold: Option<f64>,
     /// Progress token for streaming notifications (auto-generated if not provided).
     pub progress_token: Option<String>,
@@ -134,17 +138,19 @@ pub struct ReflectionRequest {
 /// Request for checkpoint operations.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CheckpointRequest {
-    /// Operation: create/list/restore.
+    /// Operation: create=save current state with a label (use before exploring a risky direction);
+    /// list=show available checkpoints with labels and timestamps; restore=return to a saved
+    /// snapshot, discarding all reasoning done after that point.
     pub operation: String,
-    /// Session ID.
+    /// Session ID of the reasoning session to checkpoint.
     pub session_id: String,
-    /// Checkpoint ID (for restore).
+    /// Checkpoint ID to restore (required for restore; from list output).
     pub checkpoint_id: Option<String>,
-    /// Checkpoint name (for create).
+    /// Label for the checkpoint (for create, e.g. "before risky branch").
     pub name: Option<String>,
-    /// Description.
+    /// Description of what this checkpoint represents.
     pub description: Option<String>,
-    /// New direction after restore.
+    /// New reasoning direction to pursue after restoring (optional, for restore).
     pub new_direction: Option<String>,
 }
 
@@ -192,13 +198,16 @@ pub struct MetaRequest {
 /// Request for graph reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GraphRequest {
-    /// Operation type.
+    /// Operation: init=start graph with a problem; generate=expand node with continuations;
+    /// score=evaluate node quality; aggregate=merge multiple nodes; refine=improve a node;
+    /// prune=remove low-quality nodes below threshold; finalize=synthesize terminal nodes into answer;
+    /// state=show current graph structure. Typical sequence: init → generate → score → prune → finalize.
     pub operation: String,
-    /// Session ID.
+    /// Session ID. Required for all operations except init.
     pub session_id: String,
-    /// Content (for init).
+    /// Problem description (required for init).
     pub content: Option<String>,
-    /// Problem context.
+    /// Additional problem context passed to generation/scoring operations.
     pub problem: Option<String>,
     /// Target node ID.
     pub node_id: Option<String>,
@@ -215,7 +224,8 @@ pub struct GraphRequest {
 /// Request for detection.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DetectRequest {
-    /// Type: biases/fallacies.
+    /// Type: biases=detect cognitive distortions (anchoring, confirmation bias, availability heuristic);
+    /// fallacies=detect logical errors (ad hominem, strawman, false dichotomy, slippery slope).
     #[serde(rename = "type")]
     pub detect_type: String,
     /// Content to analyze.
@@ -235,7 +245,9 @@ pub struct DetectRequest {
 /// Request for decision analysis.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DecisionRequest {
-    /// Type: weighted/pairwise/topsis/perspectives.
+    /// Type: weighted=score options against weighted criteria (most common); pairwise=compare options
+    /// head-to-head in pairs; topsis=rank by distance from ideal/worst solution; perspectives=map
+    /// stakeholder viewpoints on a topic. Omit to default to weighted.
     #[serde(rename = "type")]
     pub decision_type: Option<String>,
     /// Decision question.
@@ -253,7 +265,8 @@ pub struct DecisionRequest {
 /// Request for evidence evaluation.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EvidenceRequest {
-    /// Type: assess/probabilistic.
+    /// Type: assess=evaluate evidence quality and credibility for a claim; probabilistic=Bayesian
+    /// belief update (provide prior + evidence to get posterior probability). Omit to default to assess.
     #[serde(rename = "type")]
     pub evidence_type: Option<String>,
     /// Claim (for assess).
@@ -271,7 +284,9 @@ pub struct EvidenceRequest {
 /// Request for timeline reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TimelineRequest {
-    /// Operation: create/branch/compare/merge.
+    /// Operation: create=start a timeline with an initial event sequence; branch=create an alternate
+    /// timeline from a decision point; compare=diff two timelines to show divergence; merge=synthesize
+    /// two timelines into a unified view.
     pub operation: String,
     /// Content.
     pub content: Option<String>,
