@@ -153,7 +153,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_reflection",
-        description = "Analyze and improve reasoning: process=iterative refinement, evaluate=session assessment."
+        description = "Meta-cognitive reasoning that operates on reasoning itself, not on the original problem. \
+                       process=iterative self-critique and improvement of a prior reasoning output (pass previous result as input). \
+                       evaluate=assess an entire reasoning session for quality, consistency, and blind spots. \
+                       Does NOT re-solve the original problem — use after reasoning_linear/tree/etc. to improve their output."
     )]
     async fn reasoning_reflection(&self, req: Parameters<ReflectionRequest>) -> ReflectionResponse {
         self.handle_reflection(req.0).await
@@ -197,7 +200,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_evidence",
-        description = "Evaluate evidence: assess=credibility scoring, probabilistic=Bayesian belief update."
+        description = "Evaluate evidence quality and update beliefs from it. \
+                       assess=credibility scoring for sources (authoritativeness, bias, recency, corroboration). \
+                       probabilistic=Bayesian belief update — given prior probability and new evidence, returns posterior. \
+                       Use when deciding how much to trust a claim or source, not for reasoning about solutions."
     )]
     async fn reasoning_evidence(&self, req: Parameters<EvidenceRequest>) -> EvidenceResponse {
         self.handle_evidence(req.0).await
@@ -236,7 +242,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_preset",
-        description = "Execute pre-defined reasoning workflows: list=show presets, run=execute workflow."
+        description = "Execute pre-built multi-step reasoning workflows that chain multiple tools automatically. \
+                       list=show available presets (code-review, debug-analysis, architecture-decision, strategic-decision, evidence-conclusion, brainstorming). \
+                       run=execute a named preset on your input — handles tool chaining internally. \
+                       Use instead of manually chaining tools for these common patterns."
     )]
     async fn reasoning_preset(&self, req: Parameters<PresetRequest>) -> PresetResponse {
         self.handle_preset(req.0).await
@@ -244,7 +253,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_metrics",
-        description = "Query metrics: summary/by_mode/invocations/fallbacks/config."
+        description = "Query usage and performance metrics for the reasoning server. \
+                       summary=aggregate stats across all tools. by_mode=breakdown per reasoning mode. \
+                       invocations=raw call log with timestamps. fallbacks=cases where auto-routing changed mode. \
+                       config=current server configuration. Use to understand which tools are effective before choosing reasoning_meta."
     )]
     async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsResponse {
         self.handle_metrics(req.0).await
@@ -281,7 +293,9 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_si_reject",
-        description = "Reject a pending diagnosis."
+        description = "Reject a pending self-improvement diagnosis to prevent its proposed actions from executing. \
+                       Requires a diagnosis_id from reasoning_si_diagnoses. Does NOT accept free-form instructions. \
+                       Safe action — no system changes occur. Use when a proposed action is unsafe, incorrect, or premature."
     )]
     async fn reasoning_si_reject(&self, req: Parameters<SiRejectRequest>) -> SiRejectResponse {
         self.handle_si_reject(req.0).await
@@ -289,7 +303,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_si_trigger",
-        description = "Trigger an immediate improvement cycle."
+        description = "Trigger an immediate self-improvement cycle without waiting for the scheduled interval. \
+                       Runs the full 4-phase cycle: metrics collection → LLM diagnosis → action proposal → approval gate. \
+                       Does NOT execute changes — proposed actions still require reasoning_si_approve. \
+                       Use when you want a fresh diagnosis now rather than waiting for the next automatic cycle."
     )]
     async fn reasoning_si_trigger(&self, req: Parameters<SiTriggerRequest>) -> SiTriggerResponse {
         self.handle_si_trigger(req.0).await
@@ -321,7 +338,10 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_resume",
-        description = "Resume a reasoning session with full context."
+        description = "Load a past reasoning session by ID, returning all thoughts, branches, and intermediate results. \
+                       Use after reasoning_list_sessions or reasoning_search to retrieve session content. \
+                       Returns the full reasoning trace including confidence scores, branch decisions, and final conclusions. \
+                       Does NOT continue reasoning — pass the returned context to a reasoning tool to extend the session."
     )]
     async fn reasoning_resume(
         &self,
@@ -343,7 +363,9 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_relate",
-        description = "Analyze relationships between reasoning sessions."
+        description = "Find conceptual connections between past reasoning sessions — shared themes, contradictions, or evolution of thinking on a topic. \
+                       Returns session pairs with relationship type and strength scores. \
+                       Use to discover if you have prior reasoning on a topic before starting fresh, or to spot conflicting conclusions across sessions."
     )]
     async fn reasoning_relate(
         &self,
