@@ -459,4 +459,47 @@ mod tests {
         assert_eq!(config.cooldown_duration, Duration::from_secs(300));
         assert_eq!(config.success_threshold, 2);
     }
+
+    #[test]
+    fn test_circuit_breaker_default_trait() {
+        // Exercises the Default impl (delegate to with_defaults)
+        let mut cb = CircuitBreaker::default();
+        assert_eq!(cb.state(), CircuitState::Closed);
+        assert!(cb.is_allowed());
+    }
+
+    #[test]
+    fn test_is_allowed_while_half_open() {
+        // After transitioning to HalfOpen, subsequent is_allowed() calls
+        // should return true without re-transitioning.
+        let config = CircuitBreakerConfig {
+            failure_threshold: 1,
+            cooldown_duration: Duration::from_millis(10),
+            success_threshold: 2,
+        };
+        let mut cb = CircuitBreaker::new(config);
+
+        cb.record_failure();
+        std::thread::sleep(Duration::from_millis(20));
+
+        // First call transitions Open → HalfOpen
+        assert!(cb.is_allowed());
+        assert_eq!(cb.state(), CircuitState::HalfOpen);
+
+        // Second call should still return true while in HalfOpen
+        assert!(cb.is_allowed());
+        assert_eq!(cb.state(), CircuitState::HalfOpen);
+    }
+
+    #[test]
+    fn test_record_success_while_open_transitions_to_half_open() {
+        // Defensive path: if record_success is somehow called while Open,
+        // the breaker should move to HalfOpen rather than staying blocked.
+        let mut cb = CircuitBreaker::with_defaults();
+        cb.trip();
+        assert_eq!(cb.state(), CircuitState::Open);
+
+        cb.record_success();
+        assert_eq!(cb.state(), CircuitState::HalfOpen);
+    }
 }
