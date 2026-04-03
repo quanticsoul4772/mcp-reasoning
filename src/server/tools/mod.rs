@@ -112,7 +112,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_auto",
-        description = "Start here when unsure which tool to use. Analyzes content and routes automatically to the best reasoning mode."
+        description = "Start here when unsure which tool to use. Analyzes content and routes automatically to the best reasoning mode. Does NOT apply empirical usage history — use reasoning_meta instead when 10+ prior sessions exist."
     )]
     async fn reasoning_auto(&self, req: Parameters<AutoRequest>) -> AutoResponse {
         self.handle_auto(req.0).await
@@ -120,7 +120,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_meta",
-        description = "Select the best reasoning tool based on historical effectiveness data. Classifies the problem type and recommends the most effective tool from empirical success rates. Falls back to reasoning_auto when no data exists."
+        description = "Select the best reasoning tool based on historical effectiveness data. Use instead of reasoning_auto when 10+ prior sessions exist — classifies the problem type and picks the tool with the highest empirical success rate for that class. Falls back to reasoning_auto when no data exists. Does NOT execute reasoning itself — returns a tool recommendation."
     )]
     async fn reasoning_meta(&self, req: Parameters<MetaRequest>) -> MetaResponse {
         self.handle_meta(req.0).await
@@ -189,7 +189,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_decision",
-        description = "Decision analysis: weighted/pairwise/topsis scoring or perspectives stakeholder mapping."
+        description = "Decision analysis for choosing between options: weighted=score options against weighted criteria (most common), pairwise=compare options head-to-head, topsis=rank by ideal/worst distance, perspectives=map stakeholder viewpoints. Does NOT produce a single answer — returns scored rankings and rationale."
     )]
     async fn reasoning_decision(&self, req: Parameters<DecisionRequest>) -> DecisionResponse {
         self.handle_decision(req.0).await
@@ -262,7 +262,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_si_diagnoses",
-        description = "Get pending diagnoses awaiting approval."
+        description = "Get pending self-improvement diagnoses awaiting approval. Returns diagnosis IDs and proposed actions — does NOT execute any changes. Use reasoning_si_approve or reasoning_si_reject with the returned diagnosis_id to act on them."
     )]
     async fn reasoning_si_diagnoses(
         &self,
@@ -273,7 +273,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_si_approve",
-        description = "Approve a pending diagnosis to execute its proposed actions."
+        description = "Approve a pending self-improvement diagnosis to execute its proposed actions. Requires a diagnosis_id from reasoning_si_diagnoses — does NOT accept free-form instructions. [DESTRUCTIVE: modifies system configuration]"
     )]
     async fn reasoning_si_approve(&self, req: Parameters<SiApproveRequest>) -> SiApproveResponse {
         self.handle_si_approve(req.0).await
@@ -297,7 +297,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_si_rollback",
-        description = "Rollback a previously executed action."
+        description = "Rollback a previously executed self-improvement action. Requires an action_id from reasoning_si_status — does NOT accept free-form descriptions. [DESTRUCTIVE: reverts system configuration changes]"
     )]
     async fn reasoning_si_rollback(
         &self,
@@ -310,7 +310,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_list_sessions",
-        description = "List reasoning sessions with pagination and filtering."
+        description = "List reasoning sessions with pagination and optional mode/date filtering. Returns session IDs, modes, and timestamps — does NOT return session content or reasoning results. Use reasoning_resume with a session_id to load full content."
     )]
     async fn reasoning_list_sessions(
         &self,
@@ -332,7 +332,7 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_search",
-        description = "Search reasoning sessions by semantic similarity."
+        description = "Search reasoning sessions by semantic similarity to a query string. Returns matching session IDs and similarity scores — does NOT return session content. Follow up with reasoning_resume to load the full content of a matched session."
     )]
     async fn reasoning_search(
         &self,
