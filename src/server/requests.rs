@@ -346,13 +346,18 @@ pub struct MctsRequest {
 /// Request for counterfactual analysis.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CounterfactualRequest {
-    /// Base scenario.
+    /// The base situation to analyze (e.g., "Company X launched product Y in Q1").
     pub scenario: String,
-    /// What-if change.
+    /// The hypothetical change to evaluate (e.g., "What if they had launched in Q3 instead?").
     pub intervention: String,
-    /// Session ID.
+    /// Session ID for context continuity.
     pub session_id: Option<String>,
-    /// Analysis depth: association/intervention/counterfactual.
+    /// Pearl's Ladder level — how deep the causal analysis goes:
+    /// association=correlations and patterns (Level 1, fastest);
+    /// intervention=effects of actively changing something (Level 2);
+    /// counterfactual=what would have happened under a different history (Level 3, most thorough).
+    /// Omit to default to counterfactual (full analysis).
+    #[schemars(example = &"association", example = &"intervention", example = &"counterfactual")]
     pub analysis_depth: Option<String>,
     /// Progress token for streaming notifications (auto-generated if not provided).
     pub progress_token: Option<String>,
@@ -377,9 +382,12 @@ pub struct PresetRequest {
 /// Request for metrics queries.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MetricsRequest {
-    /// Query: summary, by_mode, invocations, fallbacks, or config.
+    /// Query type: summary=overall usage stats; by_mode=stats for a specific reasoning mode
+    /// (requires mode_name); invocations=recent tool call log; fallbacks=cases where mode
+    /// selection fell back; config=current server configuration.
+    #[schemars(example = &"summary", example = &"by_mode", example = &"invocations", example = &"fallbacks", example = &"config")]
     pub query: String,
-    /// Mode name (for by_mode query).
+    /// Mode name to query (required for by_mode, e.g. "linear", "tree", "graph").
     pub mode_name: Option<String>,
     /// Tool name filter.
     pub tool_name: Option<String>,
