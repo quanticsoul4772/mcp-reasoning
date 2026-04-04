@@ -294,8 +294,9 @@ pub struct TimelineRequest {
     /// Operation: create=start a timeline with an initial event sequence; branch=create an alternate
     /// timeline from a decision point; compare=diff two timelines to show divergence; merge=synthesize
     /// two timelines into a unified view.
+    #[schemars(example = &"create", example = &"branch", example = &"compare", example = &"merge")]
     pub operation: String,
-    /// Content.
+    /// Initial event sequence or branching context (required for create and branch).
     pub content: Option<String>,
     /// Session ID.
     pub session_id: Option<String>,
@@ -316,7 +317,9 @@ pub struct TimelineRequest {
 /// Request for MCTS.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MctsRequest {
-    /// Operation: explore or auto_backtrack.
+    /// Operation: explore=run UCB1-guided MCTS iterations from a node; auto_backtrack=automatically
+    /// backtrack and re-explore when a path yields low reward. Omit to default to explore.
+    #[schemars(example = &"explore", example = &"auto_backtrack")]
     pub operation: Option<String>,
     /// Content (for explore).
     pub content: Option<String>,
@@ -358,7 +361,8 @@ pub struct CounterfactualRequest {
 /// Request for preset operations.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PresetRequest {
-    /// Operation: list/run.
+    /// Operation: list=show available presets with descriptions; run=execute a preset by ID.
+    #[schemars(example = &"list", example = &"run")]
     pub operation: String,
     /// Preset ID (for run).
     pub preset_id: Option<String>,
