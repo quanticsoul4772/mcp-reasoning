@@ -84,6 +84,7 @@ pub struct TreeRequest {
     /// Operation: create=start 2-4 exploration branches; focus=select a branch to develop further;
     /// list=review all branches and their status; complete=mark a branch finished; summarize=synthesize
     /// all branches into a final answer. Typical sequence: create → focus → list → complete → summarize.
+    #[schemars(example = &"create", example = &"focus", example = &"list", example = &"complete", example = &"summarize")]
     pub operation: Option<String>,
     /// Content to explore (required for create).
     pub content: Option<String>,
@@ -120,6 +121,7 @@ pub struct ReflectionRequest {
     /// Operation: process=iteratively self-critique and improve a prior reasoning output (pass previous
     /// result as content); evaluate=assess an entire session for quality, consistency, and blind spots.
     /// Omit to default to process.
+    #[schemars(example = &"process", example = &"evaluate")]
     pub operation: Option<String>,
     /// Prior reasoning output to improve (for process), or topic to evaluate (for evaluate).
     pub content: Option<String>,
@@ -141,6 +143,7 @@ pub struct CheckpointRequest {
     /// Operation: create=save current state with a label (use before exploring a risky direction);
     /// list=show available checkpoints with labels and timestamps; restore=return to a saved
     /// snapshot, discarding all reasoning done after that point.
+    #[schemars(example = &"create", example = &"list", example = &"restore")]
     pub operation: String,
     /// Session ID of the reasoning session to checkpoint.
     pub session_id: String,
@@ -202,6 +205,7 @@ pub struct GraphRequest {
     /// score=evaluate node quality; aggregate=merge multiple nodes; refine=improve a node;
     /// prune=remove low-quality nodes below threshold; finalize=synthesize terminal nodes into answer;
     /// state=show current graph structure. Typical sequence: init → generate → score → prune → finalize.
+    #[schemars(example = &"init", example = &"generate", example = &"score", example = &"prune", example = &"finalize", example = &"state")]
     pub operation: String,
     /// Session ID. Required for all operations except init.
     pub session_id: String,
@@ -227,6 +231,7 @@ pub struct DetectRequest {
     /// Type: biases=detect cognitive distortions (anchoring, confirmation bias, availability heuristic);
     /// fallacies=detect logical errors (ad hominem, strawman, false dichotomy, slippery slope).
     #[serde(rename = "type")]
+    #[schemars(example = &"biases", example = &"fallacies")]
     pub detect_type: String,
     /// Content to analyze.
     pub content: Option<String>,
@@ -249,6 +254,7 @@ pub struct DecisionRequest {
     /// head-to-head in pairs; topsis=rank by distance from ideal/worst solution; perspectives=map
     /// stakeholder viewpoints on a topic. Omit to default to weighted.
     #[serde(rename = "type")]
+    #[schemars(example = &"weighted", example = &"pairwise", example = &"topsis", example = &"perspectives")]
     pub decision_type: Option<String>,
     /// Decision question.
     pub question: Option<String>,
@@ -268,6 +274,7 @@ pub struct EvidenceRequest {
     /// Type: assess=evaluate evidence quality and credibility for a claim; probabilistic=Bayesian
     /// belief update (provide prior + evidence to get posterior probability). Omit to default to assess.
     #[serde(rename = "type")]
+    #[schemars(example = &"assess", example = &"probabilistic")]
     pub evidence_type: Option<String>,
     /// Claim (for assess).
     pub claim: Option<String>,
