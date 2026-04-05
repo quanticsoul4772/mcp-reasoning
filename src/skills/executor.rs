@@ -636,7 +636,7 @@ mod tests {
         let executor = SkillExecutor::new(mock_storage(), mock_client());
         let skill = simple_skill();
         // Context with no session_id set — executor should generate one via UUID
-        let mut context = SkillContext::new("Test input");
+        let context = SkillContext::new("Test input");
         assert!(context.session_id.is_none());
 
         let result = executor.execute(&skill, context).await.unwrap();

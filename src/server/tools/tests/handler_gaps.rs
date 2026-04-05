@@ -4,7 +4,6 @@ use rmcp::handler::server::wrapper::Parameters;
 
 use super::create_test_server;
 use crate::server::requests::*;
-use crate::storage::SqliteStorage;
 
 // ============================================================================
 // Meta Handler (handlers_basic.rs) — never tested before
