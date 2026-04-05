@@ -122,7 +122,11 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_auto",
-        description = "Routes to the appropriate reasoning mode by analyzing problem content. Use when no specific tool has been identified. Does NOT apply empirical usage history — use reasoning_meta instead when 10+ prior sessions exist.",
+        description = "Selects and optionally executes the best reasoning mode for the problem. \
+                       Set execute=true to get a result immediately. \
+                       Does NOT check confidence or escalate — if the problem difficulty is uncertain, \
+                       use reasoning_confidence_route instead (auto-escalates low-confidence to tree reasoning). \
+                       Does NOT apply empirical usage history — use reasoning_meta instead when 10+ prior sessions exist.",
         output_schema = rmcp::handler::server::tool::schema_for_type::<super::responses::AutoResponse>()
     )]
     async fn reasoning_auto(&self, req: Parameters<AutoRequest>) -> AutoResponse {
