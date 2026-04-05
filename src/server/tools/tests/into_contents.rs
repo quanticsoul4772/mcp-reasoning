@@ -109,6 +109,7 @@ fn test_auto_response_into_contents() {
         metadata: None,
         next_call: None,
         executed: None,
+        skill_suggestion: None,
     };
     let contents = response.into_contents();
     assert_eq!(contents.len(), 1);

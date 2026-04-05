@@ -10,7 +10,7 @@ use crate::server::requests::{
     AutoRequest, DivergentRequest, LinearRequest, MetaRequest, TreeRequest,
 };
 use crate::server::responses::{
-    AutoResponse, Branch, LinearResponse, MetaResponse, NextCallHint, TreeResponse,
+    AutoResponse, Branch, LinearResponse, MetaResponse, NextCallHint, SkillSuggestion, TreeResponse,
 };
 
 use super::NO_THINKING;
@@ -573,6 +573,7 @@ impl super::ReasoningServer {
                                 metadata: None,
                                 next_call: None,
                                 executed: Some(true),
+                                skill_suggestion: None,
                             };
                         }
                         "divergent" => {
@@ -594,6 +595,7 @@ impl super::ReasoningServer {
                                 metadata: None,
                                 next_call: None,
                                 executed: Some(true),
+                                skill_suggestion: None,
                             };
                         }
                         other => {
@@ -619,6 +621,7 @@ impl super::ReasoningServer {
                         ),
                     }),
                     executed: None,
+                    skill_suggestion: detect_skill_suggestion(&resp.characteristics),
                 }
             }
             Err(e) => AutoResponse {
@@ -638,6 +641,7 @@ impl super::ReasoningServer {
                     reason: "auto failed; linear is the safe fallback".to_string(),
                 }),
                 executed: None,
+                skill_suggestion: None,
             },
         }
     }
@@ -720,5 +724,34 @@ impl super::ReasoningServer {
                 metadata: None,
             },
         }
+    }
+}
+
+/// Detect if content characteristics suggest a skill workflow would outperform a single mode.
+/// Returns Some(SkillSuggestion) when factual/research signals are detected.
+fn detect_skill_suggestion(characteristics: &[String]) -> Option<SkillSuggestion> {
+    let research_signals = [
+        "factual",
+        "research",
+        "verification",
+        "claim",
+        "information gathering",
+        "fact",
+        "evidence",
+        "source",
+    ];
+    let matched = characteristics.iter().any(|c| {
+        let lower = c.to_lowercase();
+        research_signals.iter().any(|s| lower.contains(s))
+    });
+    if matched {
+        Some(SkillSuggestion {
+            skill_id: "claim-verification".to_string(),
+            reason: "Content contains factual claims — use claim-verification (CoVe) \
+                     to reduce confabulation (~28% improvement per Dhuliawala et al. 2024)"
+                .to_string(),
+        })
+    } else {
+        None
     }
 }

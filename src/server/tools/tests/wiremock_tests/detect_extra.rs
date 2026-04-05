@@ -259,6 +259,7 @@ async fn test_into_contents_implementations() {
         metadata: None,
         next_call: None,
         executed: None,
+        skill_suggestion: None,
     };
     let _ = auto_resp.into_contents();
 

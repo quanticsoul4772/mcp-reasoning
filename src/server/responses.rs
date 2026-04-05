@@ -186,6 +186,15 @@ pub struct CheckpointResponse {
     pub next_call: Option<NextCallHint>,
 }
 
+/// A suggestion to use a named skill workflow instead of a single reasoning mode.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SkillSuggestion {
+    /// Skill ID to run (e.g. "claim-verification").
+    pub skill_id: String,
+    /// Why this skill is recommended for this content.
+    pub reason: String,
+}
+
 /// Response from auto mode selection.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AutoResponse {
@@ -206,6 +215,10 @@ pub struct AutoResponse {
     /// Whether the selected mode was immediately executed (execute=true was requested and the mode is supported).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executed: Option<bool>,
+    /// Suggested skill workflow to run instead of (or after) the selected mode.
+    /// Present when content is better served by a multi-step skill pipeline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skill_suggestion: Option<SkillSuggestion>,
 }
 
 /// Response from confidence-based routing.
@@ -1209,6 +1222,7 @@ mod tests {
             metadata: None,
             next_call: None,
             executed: None,
+            skill_suggestion: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
