@@ -32,10 +32,10 @@ use mcp_reasoning::skills::types::{
 // ============================================================================
 
 #[test]
-fn test_registry_has_five_builtin_skills() {
+fn test_registry_has_six_builtin_skills() {
     let registry = SkillRegistry::new();
     let skills = registry.list();
-    assert_eq!(skills.len(), 5, "Should have 5 built-in skills");
+    assert_eq!(skills.len(), 6, "Should have 6 built-in skills");
 
     let skill_ids: Vec<&str> = skills.iter().map(|s| s.id.as_str()).collect();
     assert!(skill_ids.contains(&"deep-code-review"));
@@ -43,6 +43,7 @@ fn test_registry_has_five_builtin_skills() {
     assert!(skill_ids.contains(&"systems-analysis"));
     assert!(skill_ids.contains(&"risk-assessment"));
     assert!(skill_ids.contains(&"creative-solution"));
+    assert!(skill_ids.contains(&"claim-verification"));
 }
 
 #[test]
@@ -50,10 +51,10 @@ fn test_registry_with_presets_imports_all() {
     let preset_registry = PresetRegistry::new();
     let registry = SkillRegistry::with_presets(&preset_registry);
 
-    // Should have built-in skills (5) + imported presets (5)
+    // Should have built-in skills (6) + imported presets (6)
     assert!(
-        registry.list().len() >= 10,
-        "Should have at least 10 skills (5 builtin + 5 from presets)"
+        registry.list().len() >= 12,
+        "Should have at least 12 skills (6 builtin + 6 from presets)"
     );
 
     // Imported presets should be accessible

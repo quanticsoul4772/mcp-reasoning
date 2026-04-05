@@ -13,6 +13,7 @@ pub fn register_builtin_skills(registry: &mut SkillRegistry) {
     registry.register(systems_analysis());
     registry.register(risk_assessment());
     registry.register(creative_solution());
+    registry.register(claim_verification());
 }
 
 /// Deep code review: analyst + explorer adversarial review.
@@ -169,6 +170,63 @@ fn creative_solution() -> Skill {
     )
 }
 
+/// Claim verification via factored Chain-of-Verification (CoVe).
+///
+/// Step 3 uses `with_input_map` to pass only the verification questions —
+/// NOT the baseline response. This is the critical "factored" property: the
+/// model answering verification questions cannot copy errors from its own draft.
+/// Source: Dhuliawala et al. ACL 2024 — factored CoVe improves FACTSCORE by ~28%.
+fn claim_verification() -> Skill {
+    Skill::new(
+        "claim-verification",
+        "Claim Verification (CoVe)",
+        "Factored Chain-of-Verification: generate baseline, plan verification questions, \
+         answer each question WITHOUT the baseline in context (factored step prevents copying \
+         errors), then produce final verified response. Reduces research confabulation ~28%.",
+        SkillCategory::Research,
+        vec![
+            // Step 1: Generate baseline response
+            SkillStep::new("linear")
+                .with_description(
+                    "Generate initial response — answer the question or draft the claim",
+                )
+                .with_output_key("baseline"),
+            // Step 2: Plan shortform verification questions
+            SkillStep::new("linear")
+                .with_description(
+                    "Plan shortform verification questions for each factual claim in the baseline. \
+                     One question per claim (e.g. 'Does source X say Y or Z?'). Do not answer yet.",
+                )
+                .with_output_key("verification_questions"),
+            // Step 3: Factored verification — only receives questions, NOT the baseline
+            SkillStep::new("evidence")
+                .with_operation("assess")
+                .with_description(
+                    "Answer each verification question independently. \
+                     Do NOT reference the baseline response — this is the factored CoVe step. \
+                     Shortform answers only. Tag each answer CONFIRMED or CONTRADICTED.",
+                )
+                .with_input_map("verification_questions", "questions")
+                .with_output_key("verified_answers"),
+            // Step 4: Detect inconsistencies between baseline and verified answers
+            SkillStep::new("detect")
+                .with_operation("fallacies")
+                .with_description(
+                    "Identify claims in the baseline that conflict with the verified answers",
+                )
+                .with_output_key("inconsistencies")
+                .with_error_strategy(ErrorStrategy::Skip),
+            // Step 5: Produce final verified response
+            SkillStep::new("reflection")
+                .with_operation("evaluate")
+                .with_description(
+                    "Produce the final answer using verified_answers, correcting any \
+                     inconsistencies found. Tag each claim [VERIFIED] or [INFERRED].",
+                ),
+        ],
+    )
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -225,7 +283,38 @@ mod tests {
     fn test_register_builtin_skills() {
         let mut registry = SkillRegistry::default();
         register_builtin_skills(&mut registry);
-        assert_eq!(registry.list().len(), 5);
+        assert_eq!(registry.list().len(), 6);
+    }
+
+    #[test]
+    fn test_claim_verification() {
+        let skill = claim_verification();
+        assert_eq!(skill.id, "claim-verification");
+        assert_eq!(skill.category, SkillCategory::Research);
+        assert_eq!(skill.steps.len(), 5);
+        // Step 1: baseline generation
+        assert_eq!(skill.steps[0].mode, "linear");
+        assert_eq!(skill.steps[0].output_key.as_deref(), Some("baseline"));
+        // Step 2: plan verification questions
+        assert_eq!(skill.steps[1].mode, "linear");
+        assert_eq!(
+            skill.steps[1].output_key.as_deref(),
+            Some("verification_questions")
+        );
+        // Step 3: factored — only receives verification_questions, NOT baseline
+        assert_eq!(skill.steps[2].mode, "evidence");
+        assert_eq!(
+            skill.steps[2].input_mapping.get("verification_questions"),
+            Some(&"questions".to_string())
+        );
+        assert!(
+            !skill.steps[2].input_mapping.contains_key("baseline"),
+            "factored CoVe: baseline must NOT be in step 3 input"
+        );
+        // Step 4: detect inconsistencies (skippable)
+        assert_eq!(skill.steps[3].on_error, ErrorStrategy::Skip);
+        // Step 5: final verified response
+        assert_eq!(skill.steps[4].mode, "reflection");
     }
 
     #[test]
