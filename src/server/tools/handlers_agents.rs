@@ -4,12 +4,12 @@ use crate::agents::team::TeamInfo;
 use crate::agents::types::AgentInfo;
 use crate::metrics::{MetricEvent, Timer};
 use crate::server::requests::{
-    AgentInvokeRequest, AgentListRequest, AgentMetricsRequest, SkillRunRequest, TeamListRequest,
-    TeamRunRequest,
+    AgentInvokeRequest, AgentListRequest, AgentMetricsRequest, CrewInvokeRequest, SkillRunRequest,
+    TeamListRequest, TeamRunRequest,
 };
 use crate::server::responses::{
-    AgentInvokeResponse, AgentListResponse, AgentMetricsResponse, NextCallHint, SkillRunResponse,
-    TeamListResponse, TeamRunResponse,
+    AgentInvokeResponse, AgentListResponse, AgentMetricsResponse, CrewInvokeResponse, NextCallHint,
+    SkillRunResponse, TeamListResponse, TeamRunResponse,
 };
 
 impl super::ReasoningServer {
@@ -361,5 +361,102 @@ impl super::ReasoningServer {
         };
 
         self.state.metadata_builder.build(&metadata_req).await
+    }
+
+    pub(super) async fn handle_crew_invoke(&self, req: CrewInvokeRequest) -> CrewInvokeResponse {
+        let run_id = uuid::Uuid::new_v4().to_string();
+
+        // Validate crew_type
+        let crew_type = req.crew_type.to_lowercase();
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/agent".to_string());
+        let (crew_dir, script_args): (std::path::PathBuf, Vec<String>) = match crew_type.as_str() {
+            "research" => {
+                let dir = std::path::PathBuf::from(&home).join("crew-research");
+                (dir, vec![req.task.clone()])
+            }
+            "code" => {
+                let dir = std::path::PathBuf::from(&home).join("crew-code");
+                (dir, vec![req.task.clone()])
+            }
+            "infra" => {
+                let dir = std::path::PathBuf::from(&home).join("crew-infra");
+                (dir, vec![req.task.clone()])
+            }
+            _ => {
+                return CrewInvokeResponse {
+                    crew_type: req.crew_type,
+                    run_id,
+                    status: "error".to_string(),
+                    output_path: String::new(),
+                    message: format!(
+                        "Unknown crew_type '{}'. Valid values: research, code, infra.",
+                        crew_type
+                    ),
+                    error: Some(format!("invalid crew_type: {crew_type}")),
+                };
+            }
+        };
+
+        // Determine output path
+        let output_path = req
+            .output_file
+            .clone()
+            .unwrap_or_else(|| format!("/tmp/crew-{run_id}.md"));
+
+        // Build the python3 command: python3 run.py "task" --output /tmp/crew-<run_id>.md
+        let mut cmd = tokio::process::Command::new("python3");
+        cmd.current_dir(&crew_dir)
+            .arg("run.py")
+            .args(&script_args)
+            .arg("--output")
+            .arg(&output_path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+
+        // Apply repo_dir for code crew as an env var the crew can read
+        if let Some(repo) = &req.repo_dir {
+            cmd.env("CREW_REPO_DIR", repo);
+        }
+
+        // Spawn background process (non-blocking — crew may take 2-5 minutes)
+        match cmd.spawn() {
+            Ok(_child) => {
+                tracing::info!(
+                    tool = "reasoning_crew_invoke",
+                    crew_type = %crew_type,
+                    run_id = %run_id,
+                    output_path = %output_path,
+                    "Crew launched in background"
+                );
+                CrewInvokeResponse {
+                    crew_type,
+                    run_id: run_id.clone(),
+                    status: "started".to_string(),
+                    output_path: output_path.clone(),
+                    message: format!(
+                        "Crew launched (run_id={run_id}). Poll '{output_path}' for results. \
+                         Typical completion: 2-5 minutes."
+                    ),
+                    error: None,
+                }
+            }
+            Err(e) => {
+                tracing::error!(
+                    tool = "reasoning_crew_invoke",
+                    crew_type = %crew_type,
+                    error = %e,
+                    "Failed to spawn crew process"
+                );
+                CrewInvokeResponse {
+                    crew_type,
+                    run_id,
+                    status: "error".to_string(),
+                    output_path: String::new(),
+                    message: format!("Failed to launch crew: {e}"),
+                    error: Some(e.to_string()),
+                }
+            }
+        }
     }
 }

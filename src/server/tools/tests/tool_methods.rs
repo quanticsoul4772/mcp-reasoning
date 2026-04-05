@@ -521,3 +521,55 @@ async fn test_reasoning_team_list_filtered() {
     let resp = server.reasoning_team_list(Parameters(req)).await;
     assert_eq!(resp.total, 2);
 }
+
+#[tokio::test]
+async fn test_reasoning_crew_invoke_invalid_type() {
+    let server = create_test_server().await;
+    let req = crate::server::requests::CrewInvokeRequest {
+        task: "test task".to_string(),
+        crew_type: "invalid_crew".to_string(),
+        repo_dir: None,
+        output_file: None,
+    };
+    let resp = server.reasoning_crew_invoke(Parameters(req)).await;
+    assert_eq!(resp.status, "error");
+    assert!(resp.error.is_some());
+    assert!(resp.message.contains("invalid_crew"));
+}
+
+#[tokio::test]
+async fn test_reasoning_crew_invoke_research_type() {
+    let server = create_test_server().await;
+    let req = crate::server::requests::CrewInvokeRequest {
+        task: "research question".to_string(),
+        crew_type: "research".to_string(),
+        repo_dir: None,
+        output_file: Some("/tmp/test-crew-output.md".to_string()),
+    };
+    let resp = server.reasoning_crew_invoke(Parameters(req)).await;
+    // Status is "started" if crew dir exists, "error" if not (CI/test env)
+    assert!(resp.status == "started" || resp.status == "error");
+    assert_eq!(resp.crew_type, "research");
+}
+
+#[tokio::test]
+async fn test_reasoning_crew_invoke_all_valid_types_recognized() {
+    let server = create_test_server().await;
+    for crew_type in ["research", "code", "infra"] {
+        let req = crate::server::requests::CrewInvokeRequest {
+            task: "task".to_string(),
+            crew_type: crew_type.to_string(),
+            repo_dir: None,
+            output_file: None,
+        };
+        let resp = server.reasoning_crew_invoke(Parameters(req)).await;
+        // Valid crew types are recognized (not "error" due to unknown type)
+        // They may error if the crew dir is missing in this environment
+        assert_eq!(resp.crew_type, crew_type, "crew_type should be echoed back");
+        // Should not hit the unknown-type branch
+        assert!(
+            !resp.message.contains("Unknown crew_type"),
+            "crew_type {crew_type} should be recognized"
+        );
+    }
+}

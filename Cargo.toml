@@ -19,7 +19,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "process"] }
 
 # MCP SDK
 rmcp = { version = "1.3", features = ["server", "macros", "transport-io"] }

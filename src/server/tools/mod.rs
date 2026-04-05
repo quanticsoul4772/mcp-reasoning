@@ -19,21 +19,22 @@ use rmcp::{tool, tool_handler, tool_router};
 
 use super::requests::{
     AgentInvokeRequest, AgentListRequest, AgentMetricsRequest, AutoRequest, CheckpointRequest,
-    ConfidenceRouteRequest, CounterfactualRequest, DecisionRequest, DetectRequest,
-    DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest, ListSessionsRequest,
-    MctsRequest, MetaRequest, MetricsRequest, PresetRequest, ReflectionRequest,
-    RelateSessionsRequest, ResumeSessionRequest, SearchSessionsRequest, SiApproveRequest,
-    SiDiagnosesRequest, SiRejectRequest, SiRollbackRequest, SiStatusRequest, SiTriggerRequest,
-    SkillRunRequest, TeamListRequest, TeamRunRequest, TimelineRequest, TreeRequest,
+    ConfidenceRouteRequest, CounterfactualRequest, CrewInvokeRequest, DecisionRequest,
+    DetectRequest, DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest,
+    ListSessionsRequest, MctsRequest, MetaRequest, MetricsRequest, PresetRequest,
+    ReflectionRequest, RelateSessionsRequest, ResumeSessionRequest, SearchSessionsRequest,
+    SiApproveRequest, SiDiagnosesRequest, SiRejectRequest, SiRollbackRequest, SiStatusRequest,
+    SiTriggerRequest, SkillRunRequest, TeamListRequest, TeamRunRequest, TimelineRequest, TreeRequest,
 };
 use super::responses::{
     AgentInvokeResponse, AgentListResponse, AgentMetricsResponse, AutoResponse, CheckpointResponse,
-    ConfidenceRouteResponse, CounterfactualResponse, DecisionResponse, DetectResponse,
-    DivergentResponse, EvidenceResponse, GraphResponse, LinearResponse, ListSessionsResponse,
-    MctsResponse, MetaResponse, MetricsResponse, PresetResponse, ReflectionResponse,
-    RelateSessionsResponse, ResumeSessionResponse, SearchSessionsResponse, SiApproveResponse,
-    SiDiagnosesResponse, SiRejectResponse, SiRollbackResponse, SiStatusResponse, SiTriggerResponse,
-    SkillRunResponse, TeamListResponse, TeamRunResponse, TimelineResponse, TreeResponse,
+    ConfidenceRouteResponse, CounterfactualResponse, CrewInvokeResponse, DecisionResponse,
+    DetectResponse, DivergentResponse, EvidenceResponse, GraphResponse, LinearResponse,
+    ListSessionsResponse, MctsResponse, MetaResponse, MetricsResponse, PresetResponse,
+    ReflectionResponse, RelateSessionsResponse, ResumeSessionResponse, SearchSessionsResponse,
+    SiApproveResponse, SiDiagnosesResponse, SiRejectResponse, SiRollbackResponse, SiStatusResponse,
+    SiTriggerResponse, SkillRunResponse, TeamListResponse, TeamRunResponse, TimelineResponse,
+    TreeResponse,
 };
 use super::types::AppState;
 
@@ -489,6 +490,23 @@ impl ReasoningServer {
         req: Parameters<AgentMetricsRequest>,
     ) -> AgentMetricsResponse {
         self.handle_agent_metrics(req.0).await
+    }
+
+    #[tool(
+        name = "reasoning_crew_invoke",
+        description = "Invoke a CrewAI hierarchical crew for complex multi-agent tasks. \
+                       Crew types: 'research' (Sonnet manager + Searcher + Verifier Haiku agents, uses Exa search), \
+                       'code' (Sonnet manager + Planner + Implementer + Critic Haiku agents, actor-critic loop), \
+                       'infra' (Sonnet manager + Monitor + Fixer Haiku agents, service whitelist enforced). \
+                       The crew runs as a background process — returns immediately with a run_id and output_path. \
+                       Poll the output_path file for results. Use 'code' for multi-file refactors or new features; \
+                       use 'research' for multi-source investigation; use 'infra' for service health/repair events."
+    )]
+    async fn reasoning_crew_invoke(
+        &self,
+        req: Parameters<CrewInvokeRequest>,
+    ) -> CrewInvokeResponse {
+        self.handle_crew_invoke(req.0).await
     }
 }
 

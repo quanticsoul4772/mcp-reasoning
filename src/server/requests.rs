@@ -554,3 +554,19 @@ pub struct AgentMetricsRequest {
     /// Optional agent ID filter.
     pub agent_id: Option<String>,
 }
+
+/// Request to invoke a CrewAI hierarchical crew.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CrewInvokeRequest {
+    /// The task or research question for the crew.
+    pub task: String,
+    /// Crew type: "research" (Searcher+Verifier), "code" (Planner+Implementer+Critic),
+    /// or "infra" (Monitor+Fixer).
+    pub crew_type: String,
+    /// For code crew: the repository directory to work in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_dir: Option<String>,
+    /// Optional output file path. If provided, the crew writes its report there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_file: Option<String>,
+}

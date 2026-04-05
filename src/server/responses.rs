@@ -1000,6 +1000,24 @@ pub struct AgentListResponse {
     pub total: usize,
 }
 
+/// Response from invoking a CrewAI crew.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CrewInvokeResponse {
+    /// Crew type that was invoked.
+    pub crew_type: String,
+    /// Unique run ID for this crew invocation.
+    pub run_id: String,
+    /// Status: "started" (background) or "error".
+    pub status: String,
+    /// Path where the crew will write its output (poll this file for results).
+    pub output_path: String,
+    /// Human-readable description of what was launched.
+    pub message: String,
+    /// Error detail if status == "error".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// Response from running a skill.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SkillRunResponse {
@@ -1093,6 +1111,7 @@ impl_into_contents!(
     AgentMetricsResponse,
     MetaResponse,
     ConfidenceRouteResponse,
+    CrewInvokeResponse,
 );
 
 #[cfg(test)]
