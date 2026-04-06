@@ -14,6 +14,7 @@ pub fn register_builtin_skills(registry: &mut SkillRegistry) {
     registry.register(risk_assessment());
     registry.register(creative_solution());
     registry.register(claim_verification());
+    registry.register(root_cause_analysis());
 }
 
 /// Deep code review: analyst + explorer adversarial review.
@@ -227,6 +228,72 @@ fn claim_verification() -> Skill {
     )
 }
 
+/// Root cause analysis: timeline anchoring + evidence gathering + counterfactual fix validation.
+///
+/// Structured root cause analysis for bugs, failures, and incidents.
+/// Step 1 establishes a timeline of when the failure first appeared.
+/// Step 2 gathers evidence to differentiate root cause from symptoms.
+/// Step 3 uses Bayesian updating to rank candidate causes by probability.
+/// Step 4 applies counterfactual reasoning to verify proposed fixes actually
+///        remove the cause (not just suppress the symptom).
+/// Step 5 synthesizes a fix recommendation with confidence.
+fn root_cause_analysis() -> Skill {
+    Skill::new(
+        "root-cause-analysis",
+        "Root Cause Analysis",
+        "Structured incident/bug analysis: timeline anchoring, evidence gathering, Bayesian \
+         cause ranking, counterfactual fix validation. Distinguishes root cause from symptoms.",
+        SkillCategory::Analysis,
+        vec![
+            // Step 1: Build a timeline — when did this first appear?
+            SkillStep::new("timeline")
+                .with_operation("create")
+                .with_description(
+                    "Build a timeline of the failure: when it first appeared, what changed \
+                     before it, and how it evolved. Anchor all observations to specific events.",
+                )
+                .with_output_key("failure_timeline"),
+            // Step 2: Gather and assess evidence — what do we actually know?
+            SkillStep::new("evidence")
+                .with_operation("assess")
+                .with_description(
+                    "Assess the evidence: what error messages, logs, metrics, or observations \
+                     are available? Distinguish direct evidence (observed) from indirect \
+                     evidence (inferred). Tag each piece with its reliability.",
+                )
+                .with_output_key("evidence"),
+            // Step 3: Bayesian ranking of candidate causes
+            SkillStep::new("evidence")
+                .with_operation("probabilistic")
+                .with_description(
+                    "List the top 3-5 candidate root causes. For each: estimate prior \
+                     probability given base rates, then update based on evidence from step 2. \
+                     Rank by posterior probability. Explicitly rule out symptoms masquerading \
+                     as causes.",
+                )
+                .with_output_key("ranked_causes")
+                .with_condition(StepCondition::IfKeyExists("evidence".to_string())),
+            // Step 4: Counterfactual fix validation
+            SkillStep::new("counterfactual")
+                .with_description(
+                    "For the top-ranked cause: apply counterfactual reasoning. If the cause \
+                     did NOT exist, would the failure still occur? If yes, this is a symptom \
+                     not a root cause — revisit step 3. If no, propose a minimal fix that \
+                     removes exactly this cause.",
+                )
+                .with_output_key("fix_validation"),
+            // Step 5: Synthesize recommendation
+            SkillStep::new("reflection")
+                .with_operation("evaluate")
+                .with_description(
+                    "Synthesize: state the root cause with confidence level, explain why it \
+                     is the root (not a symptom), describe the fix, list verification steps \
+                     to confirm the fix works, and identify any systemic prevention measures.",
+                ),
+        ],
+    )
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -280,10 +347,42 @@ mod tests {
     }
 
     #[test]
+    fn test_root_cause_analysis() {
+        let skill = root_cause_analysis();
+        assert_eq!(skill.id, "root-cause-analysis");
+        assert_eq!(skill.category, SkillCategory::Analysis);
+        assert_eq!(skill.steps.len(), 5);
+        // Step 1: timeline
+        assert_eq!(skill.steps[0].mode, "timeline");
+        assert_eq!(skill.steps[0].operation.as_deref(), Some("create"));
+        assert_eq!(
+            skill.steps[0].output_key.as_deref(),
+            Some("failure_timeline")
+        );
+        // Step 2: evidence assess
+        assert_eq!(skill.steps[1].mode, "evidence");
+        assert_eq!(skill.steps[1].operation.as_deref(), Some("assess"));
+        assert_eq!(skill.steps[1].output_key.as_deref(), Some("evidence"));
+        // Step 3: probabilistic (conditional on evidence)
+        assert_eq!(skill.steps[2].mode, "evidence");
+        assert_eq!(skill.steps[2].operation.as_deref(), Some("probabilistic"));
+        assert!(matches!(
+            skill.steps[2].condition,
+            StepCondition::IfKeyExists(_)
+        ));
+        // Step 4: counterfactual fix validation
+        assert_eq!(skill.steps[3].mode, "counterfactual");
+        assert_eq!(skill.steps[3].output_key.as_deref(), Some("fix_validation"));
+        // Step 5: reflection synthesis
+        assert_eq!(skill.steps[4].mode, "reflection");
+        assert_eq!(skill.steps[4].operation.as_deref(), Some("evaluate"));
+    }
+
+    #[test]
     fn test_register_builtin_skills() {
         let mut registry = SkillRegistry::default();
         register_builtin_skills(&mut registry);
-        assert_eq!(registry.list().len(), 6);
+        assert_eq!(registry.list().len(), 7);
     }
 
     #[test]

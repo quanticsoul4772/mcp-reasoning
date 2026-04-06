@@ -32,10 +32,10 @@ use mcp_reasoning::skills::types::{
 // ============================================================================
 
 #[test]
-fn test_registry_has_six_builtin_skills() {
+fn test_registry_has_builtin_skills() {
     let registry = SkillRegistry::new();
     let skills = registry.list();
-    assert_eq!(skills.len(), 6, "Should have 6 built-in skills");
+    assert_eq!(skills.len(), 7, "Should have 7 built-in skills");
 
     let skill_ids: Vec<&str> = skills.iter().map(|s| s.id.as_str()).collect();
     assert!(skill_ids.contains(&"deep-code-review"));
@@ -44,6 +44,7 @@ fn test_registry_has_six_builtin_skills() {
     assert!(skill_ids.contains(&"risk-assessment"));
     assert!(skill_ids.contains(&"creative-solution"));
     assert!(skill_ids.contains(&"claim-verification"));
+    assert!(skill_ids.contains(&"root-cause-analysis"));
 }
 
 #[test]
