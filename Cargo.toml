@@ -22,7 +22,7 @@ path = "src/main.rs"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "process"] }
 
 # MCP SDK
-rmcp = { version = "1.3", features = ["server", "macros", "transport-io"] }
+rmcp = { version = "1.4", features = ["server", "macros", "transport-io"] }
 
 # HTTP client for Anthropic API
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "native-tls", "http2"] }
@@ -48,7 +48,7 @@ async-trait = "0.1"
 
 # Dependency deduplication: pin versions to avoid duplicates
 getrandom = "0.4"  # Avoid 0.3.4 vs 0.4.1 duplication
-hashbrown = "0.16"  # Avoid 0.15.5 vs 0.16.1 duplication
+hashbrown = "0.16"  # Avoid 0.15.5 vs 0.17.1 duplication
 
 # Streaming support
 futures-util = "0.3"
