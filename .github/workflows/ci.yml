@@ -42,11 +42,27 @@ jobs:
       - run: cargo clippy -- -D warnings
 
   test:
-    name: Test
+    name: Test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
+
+  # Cross-platform tests only run on push to main/master, not on every
+  # PR. Rust cross-platform regressions are rare; Linux CI catches
+  # nearly all real issues. Windows bills at 2x and macOS at 10x the
+  # Linux Actions rate, so running this matrix on every PR is the
+  # most expensive part of CI for vanishingly low additional signal.
+  test-cross-platform:
+    name: Test (${{ matrix.os }})
+    if: github.event_name == 'push'
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
