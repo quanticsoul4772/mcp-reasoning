@@ -6,9 +6,6 @@ on:
       - 'v*'
     branches:
       - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 env:
@@ -53,7 +50,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -61,6 +58,5 @@ jobs:
           platforms: linux/amd64
 
       - name: Test image
-        if: github.event_name != 'pull_request'
         run: |
           docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest --version
