@@ -48,7 +48,7 @@ async-trait = "0.1"
 
 # Dependency deduplication: pin versions to avoid duplicates
 getrandom = "0.4"  # Avoid 0.3.4 vs 0.4.1 duplication
-hashbrown = "0.16"  # Avoid 0.15.5 vs 0.17.1 duplication
+hashbrown = "0.17"  # Avoid 0.15.5 vs 0.17.1 duplication
 
 # Streaming support
 futures-util = "0.3"
