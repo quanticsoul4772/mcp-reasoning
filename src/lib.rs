@@ -37,6 +37,10 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 // Allowed pedantic lints for practical reasons
 #![allow(clippy::module_name_repetitions)]
+// `large_stack_arrays` fires on monomorphized/derive-macro codegen with a synthetic
+// crate-root span (no attributable source line); only surfaces under `--tests` and
+// `--benches`, never `--lib`.
+#![allow(clippy::large_stack_arrays)]
 #![allow(clippy::missing_const_for_fn)] // Many simple functions could be const but don't need to be
 #![allow(clippy::cast_precision_loss)] // u64/usize to f64 for metrics is acceptable
 #![allow(clippy::cast_possible_truncation)] // u128 milliseconds to u64 is safe in practice
@@ -338,7 +342,9 @@ pub mod doctest_helpers {
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::float_cmp
+    clippy::float_cmp,
+    // These tests deliberately exercise the Default impls of unit-struct mocks.
+    clippy::default_constructed_unit_structs
 )]
 mod doctest_helpers_tests {
     use super::doctest_helpers::*;

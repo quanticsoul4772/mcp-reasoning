@@ -104,7 +104,7 @@ pub async fn list_sessions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::similar_names)]
 mod tests {
     use super::*;
     use crate::storage::{SqliteStorage, StoredThought};
@@ -179,7 +179,7 @@ mod tests {
                 uuid::Uuid::new_v4().to_string(),
                 &session.id,
                 "linear",
-                &format!("Test thought {i}"),
+                format!("Test thought {i}"),
                 0.8,
             );
             storage

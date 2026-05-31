@@ -1,11 +1,7 @@
 use std::sync::Arc;
 
-use rmcp::handler::server::wrapper::Parameters;
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::MockServer;
 
-use crate::server::requests::*;
-use crate::server::responses::*;
 use crate::server::tools::ReasoningServer;
 use crate::server::types::AppState;
 
