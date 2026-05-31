@@ -25,6 +25,7 @@ Respond with a JSON object in this exact format:
       "bias": "Name of the bias (e.g., Confirmation Bias)",
       "evidence": "Specific text or reasoning that shows this bias",
       "severity": "low|medium|high",
+      "confidence": 0.85,
       "changes_conclusion": "yes|no|maybe — if this bias were removed, would the bottom-line recommendation change?",
       "impact": "How this bias affects the reasoning and whether it is conclusion-determinative",
       "debiasing": "Strategy to counteract this bias"
@@ -49,6 +50,8 @@ Important:
 - Distinguish bias from reasonable heuristics
 - changes_conclusion is required for each bias — this is the most actionable field
 - A bias present but not conclusion-altering (changes_conclusion=no) is less urgent than one that is
+- confidence: how certain you are (0.0-1.0) that THIS specific bias is present;
+  this is per-bias and independent of its severity
 - Debiasing suggestions should be practical and focus on the conclusion-altering biases first"#
 }
 
@@ -72,6 +75,7 @@ Respond with a JSON object in this exact format:
       "fallacy": "Name of the fallacy (e.g., Ad Hominem)",
       "category": "formal|informal|relevance|presumption",
       "passage": "The specific text containing the fallacy",
+      "confidence": 0.85,
       "explanation": "Why this is a fallacy",
       "correction": "How to fix or strengthen this argument"
     }
@@ -96,7 +100,9 @@ Common fallacies to check:
 Important:
 - Only flag genuine fallacies, not just weak arguments
 - Provide constructive corrections
-- Consider context - some 'fallacies' may be valid in context"#
+- Consider context - some 'fallacies' may be valid in context
+- confidence: how certain you are (0.0-1.0) that THIS specific fallacy is present;
+  this is per-fallacy and independent of the overall argument strength"#
 }
 
 /// Prompt for detect mode (knowledge_gaps operation).

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// A single detected cognitive bias.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DetectedBias {
     /// Name of the bias (e.g., "Confirmation Bias").
     pub bias: String,
@@ -19,6 +19,9 @@ pub struct DetectedBias {
     pub evidence: String,
     /// Severity level.
     pub severity: BiasSeverity,
+    /// Per-bias confidence that this bias is present (0.0-1.0),
+    /// independent of severity.
+    pub confidence: f64,
     /// Impact on reasoning.
     pub impact: String,
     /// Strategy to counteract.
@@ -100,7 +103,7 @@ impl BiasesResponse {
 // ============================================================================
 
 /// A single detected logical fallacy.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DetectedFallacy {
     /// Name of the fallacy (e.g., "Ad Hominem").
     pub fallacy: String,
@@ -108,6 +111,9 @@ pub struct DetectedFallacy {
     pub category: FallacyCategory,
     /// The passage containing the fallacy.
     pub passage: String,
+    /// Per-fallacy confidence that this fallacy is present (0.0-1.0),
+    /// independent of the overall argument strength.
+    pub confidence: f64,
     /// Explanation of why it's a fallacy.
     pub explanation: String,
     /// How to fix the argument.
@@ -360,6 +366,7 @@ mod tests {
             bias: "Test".to_string(),
             evidence: "E".to_string(),
             severity: BiasSeverity::High,
+            confidence: 0.9,
             impact: "I".to_string(),
             debiasing: "D".to_string(),
         };
@@ -373,6 +380,7 @@ mod tests {
             fallacy: "Test".to_string(),
             category: FallacyCategory::Formal,
             passage: "P".to_string(),
+            confidence: 0.8,
             explanation: "E".to_string(),
             correction: "C".to_string(),
         };
