@@ -75,6 +75,7 @@ Respond with a JSON object in this exact format:
       "fallacy": "Name of the fallacy (e.g., Ad Hominem)",
       "category": "formal|informal|relevance|presumption",
       "passage": "The specific text containing the fallacy",
+      "severity": "low|medium|high",
       "confidence": 0.85,
       "explanation": "Why this is a fallacy",
       "correction": "How to fix or strengthen this argument"
@@ -101,6 +102,8 @@ Important:
 - Only flag genuine fallacies, not just weak arguments
 - Provide constructive corrections
 - Consider context - some 'fallacies' may be valid in context
+- severity: per-fallacy — how damaging THIS fallacy is to the argument
+  (high = undermines the conclusion), independent of the overall argument strength
 - confidence: how certain you are (0.0-1.0) that THIS specific fallacy is present;
   this is per-fallacy and independent of the overall argument strength"#
 }

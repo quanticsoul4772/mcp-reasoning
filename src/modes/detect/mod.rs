@@ -28,7 +28,7 @@ mod types;
 pub use types::{
     ArgumentStructure, ArgumentValidity, BiasAssessment, BiasSeverity, BiasesResponse,
     DetectedBias, DetectedFallacy, FallaciesResponse, FallacyAssessment, FallacyCategory,
-    GapCategory, KnowledgeGap, KnowledgeGapAssessment, KnowledgeGapsResponse,
+    FallacySeverity, GapCategory, KnowledgeGap, KnowledgeGapAssessment, KnowledgeGapsResponse,
 };
 
 use crate::error::ModeError;
@@ -383,6 +383,7 @@ mod tests {
                     "fallacy": "Ad Hominem",
                     "category": "informal",
                     "passage": "You're wrong because you're stupid",
+                    "severity": "high",
                     "confidence": 0.9,
                     "explanation": "Attacks the person, not the argument",
                     "correction": "Address the argument's merits instead"

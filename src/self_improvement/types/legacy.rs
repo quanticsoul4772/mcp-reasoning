@@ -132,8 +132,7 @@ impl SelfImprovementAction {
             rollback_data: None,
             created_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
             executed_at: None,
         }
     }
@@ -162,8 +161,7 @@ impl SelfImprovementAction {
         self.executed_at = Some(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
         );
     }
 
@@ -173,8 +171,7 @@ impl SelfImprovementAction {
         self.executed_at = Some(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
         );
     }
 
@@ -219,8 +216,7 @@ impl SystemMetrics {
             mode_success_rates,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
         }
     }
 }
@@ -303,8 +299,7 @@ impl Lesson {
             applicable_contexts: Vec::new(),
             created_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
         }
     }
 

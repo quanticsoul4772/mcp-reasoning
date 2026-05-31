@@ -11,13 +11,14 @@ use crate::server::responses::*;
 async fn test_detect_low_argument_strength() {
     let mock_server = MockServer::start().await;
 
-    // Test fallacies with low argument strength (high severity)
+    // Per-fallacy severity comes from the model, not the overall argument strength.
     let fallacies_json = serde_json::json!({
         "fallacies_detected": [
             {
                 "fallacy": "strawman",
                 "category": "informal",
                 "passage": "The weak argument",
+                "severity": "high",
                 "confidence": 0.7,
                 "explanation": "Misrepresents position",
                 "correction": "Address actual argument"
@@ -58,7 +59,7 @@ async fn test_detect_low_argument_strength() {
         check_informal: None,
     };
     let resp = server.reasoning_detect(Parameters(req)).await;
-    // With argument_strength 0.3, severity should be "high"
+    // Per-fallacy severity "high" passes through from the model field.
     if let Some(detection) = resp.detections.first() {
         assert_eq!(detection.severity, "high");
     }
@@ -75,6 +76,7 @@ async fn test_detect_medium_argument_strength() {
                 "fallacy": "appeal to authority",
                 "category": "informal",
                 "passage": "Expert says so",
+                "severity": "medium",
                 "confidence": 0.65,
                 "explanation": "Relies on authority",
                 "correction": "Provide evidence"
@@ -115,7 +117,7 @@ async fn test_detect_medium_argument_strength() {
         check_informal: None,
     };
     let resp = server.reasoning_detect(Parameters(req)).await;
-    // With argument_strength 0.5, severity should be "medium"
+    // Per-fallacy severity "medium" passes through from the model field.
     if let Some(detection) = resp.detections.first() {
         assert_eq!(detection.severity, "medium");
     }
@@ -132,6 +134,7 @@ async fn test_detect_high_argument_strength() {
                 "fallacy": "minor issue",
                 "category": "informal",
                 "passage": "Good argument",
+                "severity": "low",
                 "confidence": 0.55,
                 "explanation": "Small flaw",
                 "correction": "Minor fix"
@@ -172,7 +175,7 @@ async fn test_detect_high_argument_strength() {
         check_informal: None,
     };
     let resp = server.reasoning_detect(Parameters(req)).await;
-    // With argument_strength 0.8, severity should be "low"
+    // Per-fallacy severity "low" passes through from the model field.
     if let Some(detection) = resp.detections.first() {
         assert_eq!(detection.severity, "low");
     }

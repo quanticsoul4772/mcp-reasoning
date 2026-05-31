@@ -428,7 +428,7 @@ async fn test_detect_mode_fallacies() {
     let server = MockServer::start().await;
 
     // JSON structure must match detect/parsing.rs expectations:
-    // - fallacies_detected: [{ fallacy, category, passage, confidence, explanation, correction }]
+    // - fallacies_detected: [{ fallacy, category, passage, severity, confidence, explanation, correction }]
     // - argument_structure: { premises, conclusion, validity }
     // - overall_assessment: { fallacy_count, argument_strength, most_critical }
     let response_json = json!({
@@ -437,6 +437,7 @@ async fn test_detect_mode_fallacies() {
                 "fallacy": "ad hominem",
                 "category": "informal",
                 "passage": "He's wrong because he's biased",
+                "severity": "high",
                 "confidence": 0.85,
                 "explanation": "Attacks person not argument",
                 "correction": "Address the argument directly"

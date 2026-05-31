@@ -145,7 +145,7 @@ fn extract_common_theme(sessions: &[String], contents: &HashMap<String, String>)
         .into_iter()
         .filter(|(_, count)| *count >= min_sessions)
         .collect();
-    top.sort_by(|a, b| b.1.cmp(&a.1));
+    top.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     if top.is_empty() {
         "mixed topics".to_string()

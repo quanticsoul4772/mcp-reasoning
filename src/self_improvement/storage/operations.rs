@@ -89,7 +89,8 @@ impl SelfImprovementStorage {
                 "INSERT INTO invocations (id, tool_name, latency_ms, success, quality_score, created_at) VALUES {placeholders}"
             );
 
-            let mut query = sqlx::query(&sql);
+            // Safe: only `?` placeholders are interpolated; values are bound below.
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
             for record in chunk {
                 query = query
                     .bind(&record.id)
@@ -514,7 +515,8 @@ impl SelfImprovementStorage {
                 "INSERT INTO learnings (id, action_id, reward_value, reward_breakdown_json, confidence, lessons_json, recommendations_json, created_at) VALUES {placeholders}"
             );
 
-            let mut query = sqlx::query(&sql);
+            // Safe: only `?` placeholders are interpolated; values are bound below.
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
             for record in chunk {
                 query = query
                     .bind(&record.id)

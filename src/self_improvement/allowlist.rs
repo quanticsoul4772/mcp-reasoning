@@ -102,8 +102,7 @@ impl RateTracker {
     fn record(&mut self) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_secs());
         self.actions.push(now);
         self.cleanup(now);
     }
@@ -111,8 +110,7 @@ impl RateTracker {
     fn count_in_last_hour(&mut self) -> u32 {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_secs());
         self.cleanup(now);
         self.actions.len() as u32
     }
