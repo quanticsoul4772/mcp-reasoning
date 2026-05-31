@@ -248,12 +248,15 @@ impl GapCategory {
 }
 
 /// A single knowledge gap — absent information that could change the conclusion.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KnowledgeGap {
     /// Name of the gap (e.g., "Competitor response to pricing change").
     pub gap: String,
     /// Category of gap.
     pub category: GapCategory,
+    /// Per-gap confidence that this gap is real and material (0.0-1.0),
+    /// independent of the overall completeness score.
+    pub confidence: f64,
     /// How discovering this would affect the conclusion.
     pub impact: String,
     /// Whether closing this gap would change the conclusion.
@@ -424,6 +427,7 @@ mod tests {
         let gap = KnowledgeGap {
             gap: "Missing data".to_string(),
             category: GapCategory::MissingData,
+            confidence: 0.85,
             impact: "Changes conclusion".to_string(),
             would_change_conclusion: "yes".to_string(),
             investigation: "Research it".to_string(),
@@ -437,6 +441,7 @@ mod tests {
         let gaps = vec![KnowledgeGap {
             gap: "Test gap".to_string(),
             category: GapCategory::UnaskedQuestion,
+            confidence: 0.85,
             impact: "Could flip decision".to_string(),
             would_change_conclusion: "yes".to_string(),
             investigation: "Ask stakeholders".to_string(),

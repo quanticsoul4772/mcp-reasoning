@@ -366,7 +366,7 @@ impl super::ReasoningServer {
                                     } else {
                                         "low".to_string()
                                     },
-                                    confidence: resp.overall_assessment.completeness_score,
+                                    confidence: g.confidence,
                                     evidence: g.investigation,
                                     explanation: g.impact,
                                     remediation: None,

@@ -810,6 +810,7 @@ mod tests {
                 {
                     "gap": "Market size data",
                     "category": "missing_data",
+                    "confidence": 0.8,
                     "impact": "Could invalidate the market opportunity claim",
                     "would_change_conclusion": "yes",
                     "investigation": "Check industry reports for TAM"

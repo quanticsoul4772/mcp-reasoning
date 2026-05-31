@@ -387,6 +387,8 @@ pub fn parse_knowledge_gaps(json: &serde_json::Value) -> Result<Vec<KnowledgeGap
                 }
             };
 
+            let confidence = parse_confidence(g)?;
+
             let impact = g
                 .get("impact")
                 .and_then(serde_json::Value::as_str)
@@ -412,6 +414,7 @@ pub fn parse_knowledge_gaps(json: &serde_json::Value) -> Result<Vec<KnowledgeGap
             Ok(KnowledgeGap {
                 gap,
                 category,
+                confidence,
                 impact,
                 would_change_conclusion,
                 investigation,
@@ -1168,6 +1171,7 @@ mod tests {
                 {
                     "gap": "Market size data",
                     "category": "missing_data",
+                    "confidence": 0.9,
                     "impact": "Could invalidate market opportunity claim",
                     "would_change_conclusion": "yes",
                     "investigation": "Check industry reports for TAM"
@@ -1175,6 +1179,7 @@ mod tests {
                 {
                     "gap": "That customers will adopt new feature",
                     "category": "unchecked_assumption",
+                    "confidence": 0.75,
                     "impact": "Adoption rate drives ROI",
                     "would_change_conclusion": "yes",
                     "investigation": "Run user interviews"
@@ -1182,6 +1187,7 @@ mod tests {
                 {
                     "gap": "Regulatory environment",
                     "category": "unexplored_domain",
+                    "confidence": 0.6,
                     "impact": "Compliance costs not considered",
                     "would_change_conclusion": "maybe",
                     "investigation": "Consult legal team"
@@ -1189,6 +1195,7 @@ mod tests {
                 {
                     "gap": "What happens if competitor launches first?",
                     "category": "unasked_question",
+                    "confidence": 0.5,
                     "impact": "Changes urgency and risk profile",
                     "would_change_conclusion": "maybe",
                     "investigation": "Monitor competitor roadmaps"
@@ -1199,6 +1206,7 @@ mod tests {
         let result = parse_knowledge_gaps(&json).unwrap();
         assert_eq!(result.len(), 4);
         assert!(matches!(result[0].category, GapCategory::MissingData));
+        assert!((result[0].confidence - 0.9).abs() < f64::EPSILON);
         assert!(matches!(
             result[1].category,
             GapCategory::UncheckedAssumption
@@ -1264,6 +1272,7 @@ mod tests {
             "gaps": [{
                 "gap": "test",
                 "category": "missing_data",
+                "confidence": 0.5,
                 "investigation": "test"
             }]
         });
@@ -1277,6 +1286,7 @@ mod tests {
             "gaps": [{
                 "gap": "test",
                 "category": "missing_data",
+                "confidence": 0.5,
                 "impact": "test"
             }]
         });
@@ -1287,11 +1297,43 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_knowledge_gaps_missing_confidence() {
+        let json = json!({
+            "gaps": [{
+                "gap": "test",
+                "category": "missing_data",
+                "impact": "test",
+                "investigation": "test"
+            }]
+        });
+        let result = parse_knowledge_gaps(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "confidence"));
+    }
+
+    #[test]
+    fn test_parse_knowledge_gaps_invalid_confidence() {
+        let json = json!({
+            "gaps": [{
+                "gap": "test",
+                "category": "missing_data",
+                "confidence": 1.5,
+                "impact": "test",
+                "investigation": "test"
+            }]
+        });
+        let result = parse_knowledge_gaps(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "confidence")
+        );
+    }
+
+    #[test]
     fn test_parse_knowledge_gaps_would_change_defaults_to_maybe() {
         let json = json!({
             "gaps": [{
                 "gap": "test",
                 "category": "unasked_question",
+                "confidence": 0.5,
                 "impact": "test",
                 "investigation": "test"
                 // no would_change_conclusion field

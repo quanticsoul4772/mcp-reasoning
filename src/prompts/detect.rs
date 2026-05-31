@@ -121,6 +121,7 @@ Respond with a JSON object in this exact format:
     {
       "gap": "Concise name of the missing information (e.g., 'Competitor response to pricing change')",
       "category": "missing_data|unchecked_assumption|unexplored_domain|unasked_question",
+      "confidence": 0.85,
       "impact": "How discovering this would affect the conclusion",
       "would_change_conclusion": "yes|no|maybe",
       "investigation": "Specific step to close this gap (a question to answer or data to find)"
@@ -147,6 +148,8 @@ Important:
 - Focus on ABSENT information, not flawed present information (use detect_type='biases' or 'fallacies' for that)
 - Only flag gaps that are genuinely material — ones where closing the gap could change the conclusion
 - would_change_conclusion is required for each gap — this is the most actionable field
+- confidence: how certain you are (0.0-1.0) that THIS specific gap is real and material;
+  this is per-gap and independent of the overall completeness_score
 - completeness_score: 0.0 = critically incomplete, 1.0 = comprehensive
 - Aim for 3-7 gaps; fewer if reasoning is actually comprehensive"#
 }
