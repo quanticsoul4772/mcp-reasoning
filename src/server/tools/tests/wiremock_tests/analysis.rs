@@ -99,6 +99,7 @@ async fn test_detect_all_types() {
             {
                 "bias": "confirmation bias",
                 "severity": "medium",
+                "confidence": 0.75,
                 "evidence": "Selected confirming evidence",
                 "impact": "May miss counterexamples",
                 "debiasing": "Consider opposing views"
@@ -142,6 +143,7 @@ async fn test_detect_all_types() {
                 "fallacy": "ad hominem",
                 "category": "informal",
                 "passage": "The argument",
+                "confidence": 0.8,
                 "explanation": "Attacks the person",
                 "correction": "Address the argument"
             }

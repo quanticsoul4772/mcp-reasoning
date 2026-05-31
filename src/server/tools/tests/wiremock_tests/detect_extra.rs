@@ -18,6 +18,7 @@ async fn test_detect_low_argument_strength() {
                 "fallacy": "strawman",
                 "category": "informal",
                 "passage": "The weak argument",
+                "confidence": 0.7,
                 "explanation": "Misrepresents position",
                 "correction": "Address actual argument"
             }
@@ -74,6 +75,7 @@ async fn test_detect_medium_argument_strength() {
                 "fallacy": "appeal to authority",
                 "category": "informal",
                 "passage": "Expert says so",
+                "confidence": 0.65,
                 "explanation": "Relies on authority",
                 "correction": "Provide evidence"
             }
@@ -130,6 +132,7 @@ async fn test_detect_high_argument_strength() {
                 "fallacy": "minor issue",
                 "category": "informal",
                 "passage": "Good argument",
+                "confidence": 0.55,
                 "explanation": "Small flaw",
                 "correction": "Minor fix"
             }

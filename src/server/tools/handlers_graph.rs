@@ -274,7 +274,7 @@ impl super::ReasoningServer {
                                     detection_type: b.bias,
                                     category: None, // Biases don't have categories
                                     severity: b.severity.as_str().to_string(),
-                                    confidence: resp.overall_assessment.reasoning_quality,
+                                    confidence: b.confidence,
                                     evidence: b.evidence,
                                     explanation: b.impact,
                                     remediation: Some(b.debiasing),
@@ -319,7 +319,7 @@ impl super::ReasoningServer {
                                     } else {
                                         "low".to_string()
                                     },
-                                    confidence: resp.overall_assessment.argument_strength,
+                                    confidence: f.confidence,
                                     evidence: f.passage,
                                     explanation: f.explanation,
                                     remediation: Some(f.correction),
@@ -366,7 +366,7 @@ impl super::ReasoningServer {
                                     } else {
                                         "low".to_string()
                                     },
-                                    confidence: resp.overall_assessment.completeness_score,
+                                    confidence: g.confidence,
                                     evidence: g.investigation,
                                     explanation: g.impact,
                                     remediation: None,
