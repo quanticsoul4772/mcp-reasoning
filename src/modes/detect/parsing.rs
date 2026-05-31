@@ -8,8 +8,8 @@ use crate::error::ModeError;
 
 use super::types::{
     ArgumentStructure, ArgumentValidity, BiasAssessment, BiasSeverity, DetectedBias,
-    DetectedFallacy, FallacyAssessment, FallacyCategory, GapCategory, KnowledgeGap,
-    KnowledgeGapAssessment,
+    DetectedFallacy, FallacyAssessment, FallacyCategory, FallacySeverity, GapCategory,
+    KnowledgeGap, KnowledgeGapAssessment,
 };
 
 /// Parse a required `confidence` field (0.0-1.0) from a detection item.
@@ -212,6 +212,25 @@ pub fn parse_fallacies(json: &serde_json::Value) -> Result<Vec<DetectedFallacy>,
                 })?
                 .to_string();
 
+            let severity_str = f
+                .get("severity")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| ModeError::MissingField {
+                    field: "severity".to_string(),
+                })?;
+
+            let severity = match severity_str.to_lowercase().as_str() {
+                "low" => FallacySeverity::Low,
+                "medium" => FallacySeverity::Medium,
+                "high" => FallacySeverity::High,
+                _ => {
+                    return Err(ModeError::InvalidValue {
+                        field: "severity".to_string(),
+                        reason: format!("must be low, medium, or high, got {severity_str}"),
+                    })
+                }
+            };
+
             let confidence = parse_confidence(f)?;
 
             let explanation = f
@@ -234,6 +253,7 @@ pub fn parse_fallacies(json: &serde_json::Value) -> Result<Vec<DetectedFallacy>,
                 fallacy,
                 category,
                 passage,
+                severity,
                 confidence,
                 explanation,
                 correction,
@@ -780,6 +800,7 @@ mod tests {
                     "fallacy": "affirming the consequent",
                     "category": "formal",
                     "passage": "If A then B. B. Therefore A.",
+                    "severity": "high",
                     "confidence": 0.95,
                     "explanation": "Invalid logical form",
                     "correction": "Cannot conclude A from B"
@@ -788,6 +809,7 @@ mod tests {
                     "fallacy": "ad hominem",
                     "category": "informal",
                     "passage": "He's wrong because he's biased",
+                    "severity": "medium",
                     "confidence": 0.8,
                     "explanation": "Attacks person not argument",
                     "correction": "Address the argument directly"
@@ -796,6 +818,7 @@ mod tests {
                     "fallacy": "red herring",
                     "category": "relevance",
                     "passage": "But what about...",
+                    "severity": "low",
                     "confidence": 0.7,
                     "explanation": "Changes the topic",
                     "correction": "Stay on topic"
@@ -804,6 +827,7 @@ mod tests {
                     "fallacy": "begging the question",
                     "category": "presumption",
                     "passage": "It's true because it's true",
+                    "severity": "high",
                     "confidence": 0.85,
                     "explanation": "Circular reasoning",
                     "correction": "Provide independent evidence"
@@ -814,6 +838,9 @@ mod tests {
         let result = parse_fallacies(&json).unwrap();
         assert_eq!(result.len(), 4);
         assert!(matches!(result[0].category, FallacyCategory::Formal));
+        assert!(matches!(result[0].severity, FallacySeverity::High));
+        assert!(matches!(result[1].severity, FallacySeverity::Medium));
+        assert!(matches!(result[2].severity, FallacySeverity::Low));
         assert!((result[0].confidence - 0.95).abs() < f64::EPSILON);
         assert!(matches!(result[1].category, FallacyCategory::Informal));
         assert!(matches!(result[2].category, FallacyCategory::Relevance));
@@ -895,6 +922,7 @@ mod tests {
                 "fallacy": "test",
                 "category": "formal",
                 "passage": "test",
+                "severity": "low",
                 "confidence": 0.5,
                 "correction": "test"
             }]
@@ -910,6 +938,7 @@ mod tests {
                 "fallacy": "test",
                 "category": "formal",
                 "passage": "test",
+                "severity": "low",
                 "confidence": 0.5,
                 "explanation": "test"
             }]
@@ -919,12 +948,48 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_fallacies_missing_severity() {
+        let json = json!({
+            "fallacies_detected": [{
+                "fallacy": "test",
+                "category": "formal",
+                "passage": "test",
+                "confidence": 0.5,
+                "explanation": "test",
+                "correction": "test"
+            }]
+        });
+        let result = parse_fallacies(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "severity"));
+    }
+
+    #[test]
+    fn test_parse_fallacies_invalid_severity() {
+        let json = json!({
+            "fallacies_detected": [{
+                "fallacy": "test",
+                "category": "formal",
+                "passage": "test",
+                "severity": "critical",
+                "confidence": 0.5,
+                "explanation": "test",
+                "correction": "test"
+            }]
+        });
+        let result = parse_fallacies(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "severity")
+        );
+    }
+
+    #[test]
     fn test_parse_fallacies_missing_confidence() {
         let json = json!({
             "fallacies_detected": [{
                 "fallacy": "test",
                 "category": "formal",
                 "passage": "test",
+                "severity": "low",
                 "explanation": "test",
                 "correction": "test"
             }]
@@ -940,6 +1005,7 @@ mod tests {
                 "fallacy": "test",
                 "category": "formal",
                 "passage": "test",
+                "severity": "low",
                 "confidence": -0.2,
                 "explanation": "test",
                 "correction": "test"

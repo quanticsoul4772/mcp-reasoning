@@ -111,6 +111,8 @@ pub struct DetectedFallacy {
     pub category: FallacyCategory,
     /// The passage containing the fallacy.
     pub passage: String,
+    /// Per-fallacy severity — how damaging this fallacy is to the argument.
+    pub severity: FallacySeverity,
     /// Per-fallacy confidence that this fallacy is present (0.0-1.0),
     /// independent of the overall argument strength.
     pub confidence: f64,
@@ -118,6 +120,30 @@ pub struct DetectedFallacy {
     pub explanation: String,
     /// How to fix the argument.
     pub correction: String,
+}
+
+/// Severity level for a detected fallacy.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum FallacySeverity {
+    /// Low severity - minor weakness in the argument.
+    Low,
+    /// Medium severity - noticeable weakness.
+    Medium,
+    /// High severity - undermines the argument's conclusion.
+    High,
+}
+
+impl FallacySeverity {
+    /// Returns the lowercase string representation.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
 }
 
 /// Category of logical fallacy.
@@ -383,6 +409,7 @@ mod tests {
             fallacy: "Test".to_string(),
             category: FallacyCategory::Formal,
             passage: "P".to_string(),
+            severity: FallacySeverity::High,
             confidence: 0.8,
             explanation: "E".to_string(),
             correction: "C".to_string(),

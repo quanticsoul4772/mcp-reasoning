@@ -312,13 +312,7 @@ impl super::ReasoningServer {
                                 .map(|f| Detection {
                                     detection_type: f.fallacy,
                                     category: Some(f.category.as_str().to_string()),
-                                    severity: if resp.overall_assessment.argument_strength < 0.4 {
-                                        "high".to_string()
-                                    } else if resp.overall_assessment.argument_strength < 0.7 {
-                                        "medium".to_string()
-                                    } else {
-                                        "low".to_string()
-                                    },
+                                    severity: f.severity.as_str().to_string(),
                                     confidence: f.confidence,
                                     evidence: f.passage,
                                     explanation: f.explanation,

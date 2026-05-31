@@ -143,6 +143,7 @@ async fn test_detect_all_types() {
                 "fallacy": "ad hominem",
                 "category": "informal",
                 "passage": "The argument",
+                "severity": "high",
                 "confidence": 0.8,
                 "explanation": "Attacks the person",
                 "correction": "Address the argument"
