@@ -11,6 +11,25 @@ use super::types::{
     DetectedFallacy, FallacyAssessment, FallacyCategory,
 };
 
+/// Parse a required `confidence` field (0.0-1.0) from a detection item.
+fn parse_confidence(item: &serde_json::Value) -> Result<f64, ModeError> {
+    let confidence = item
+        .get("confidence")
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| ModeError::MissingField {
+            field: "confidence".to_string(),
+        })?;
+
+    if !(0.0..=1.0).contains(&confidence) {
+        return Err(ModeError::InvalidValue {
+            field: "confidence".to_string(),
+            reason: format!("must be between 0.0 and 1.0, got {confidence}"),
+        });
+    }
+
+    Ok(confidence)
+}
+
 // ============================================================================
 // Bias Parsing
 // ============================================================================
@@ -61,6 +80,8 @@ pub fn parse_biases(json: &serde_json::Value) -> Result<Vec<DetectedBias>, ModeE
                 }
             };
 
+            let confidence = parse_confidence(b)?;
+
             let impact = b
                 .get("impact")
                 .and_then(serde_json::Value::as_str)
@@ -81,6 +102,7 @@ pub fn parse_biases(json: &serde_json::Value) -> Result<Vec<DetectedBias>, ModeE
                 bias,
                 evidence,
                 severity,
+                confidence,
                 impact,
                 debiasing,
             })
@@ -186,6 +208,8 @@ pub fn parse_fallacies(json: &serde_json::Value) -> Result<Vec<DetectedFallacy>,
                 })?
                 .to_string();
 
+            let confidence = parse_confidence(f)?;
+
             let explanation = f
                 .get("explanation")
                 .and_then(serde_json::Value::as_str)
@@ -206,6 +230,7 @@ pub fn parse_fallacies(json: &serde_json::Value) -> Result<Vec<DetectedFallacy>,
                 fallacy,
                 category,
                 passage,
+                confidence,
                 explanation,
                 correction,
             })
@@ -334,6 +359,7 @@ mod tests {
                     "bias": "confirmation bias",
                     "evidence": "Only supporting evidence cited",
                     "severity": "high",
+                    "confidence": 0.9,
                     "impact": "Skews conclusions",
                     "debiasing": "Seek disconfirming evidence"
                 },
@@ -341,6 +367,7 @@ mod tests {
                     "bias": "anchoring bias",
                     "evidence": "First number dominates",
                     "severity": "medium",
+                    "confidence": 0.6,
                     "impact": "Affects estimates",
                     "debiasing": "Consider multiple anchors"
                 },
@@ -348,6 +375,7 @@ mod tests {
                     "bias": "availability heuristic",
                     "evidence": "Recent events overweighted",
                     "severity": "low",
+                    "confidence": 0.4,
                     "impact": "Minor distortion",
                     "debiasing": "Use base rates"
                 }
@@ -358,6 +386,7 @@ mod tests {
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].bias, "confirmation bias");
         assert!(matches!(result[0].severity, BiasSeverity::High));
+        assert!((result[0].confidence - 0.9).abs() < f64::EPSILON);
         assert!(matches!(result[1].severity, BiasSeverity::Medium));
         assert!(matches!(result[2].severity, BiasSeverity::Low));
     }
@@ -437,6 +466,7 @@ mod tests {
                 "bias": "test",
                 "evidence": "test",
                 "severity": "low",
+                "confidence": 0.5,
                 "debiasing": "test"
             }]
         });
@@ -451,11 +481,45 @@ mod tests {
                 "bias": "test",
                 "evidence": "test",
                 "severity": "low",
+                "confidence": 0.5,
                 "impact": "test"
             }]
         });
         let result = parse_biases(&json);
         assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "debiasing"));
+    }
+
+    #[test]
+    fn test_parse_biases_missing_confidence() {
+        let json = json!({
+            "biases_detected": [{
+                "bias": "test",
+                "evidence": "test",
+                "severity": "low",
+                "impact": "test",
+                "debiasing": "test"
+            }]
+        });
+        let result = parse_biases(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "confidence"));
+    }
+
+    #[test]
+    fn test_parse_biases_invalid_confidence_too_high() {
+        let json = json!({
+            "biases_detected": [{
+                "bias": "test",
+                "evidence": "test",
+                "severity": "low",
+                "confidence": 1.5,
+                "impact": "test",
+                "debiasing": "test"
+            }]
+        });
+        let result = parse_biases(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "confidence")
+        );
     }
 
     // ========================================================================
@@ -567,6 +631,7 @@ mod tests {
                     "fallacy": "affirming the consequent",
                     "category": "formal",
                     "passage": "If A then B. B. Therefore A.",
+                    "confidence": 0.95,
                     "explanation": "Invalid logical form",
                     "correction": "Cannot conclude A from B"
                 },
@@ -574,6 +639,7 @@ mod tests {
                     "fallacy": "ad hominem",
                     "category": "informal",
                     "passage": "He's wrong because he's biased",
+                    "confidence": 0.8,
                     "explanation": "Attacks person not argument",
                     "correction": "Address the argument directly"
                 },
@@ -581,6 +647,7 @@ mod tests {
                     "fallacy": "red herring",
                     "category": "relevance",
                     "passage": "But what about...",
+                    "confidence": 0.7,
                     "explanation": "Changes the topic",
                     "correction": "Stay on topic"
                 },
@@ -588,6 +655,7 @@ mod tests {
                     "fallacy": "begging the question",
                     "category": "presumption",
                     "passage": "It's true because it's true",
+                    "confidence": 0.85,
                     "explanation": "Circular reasoning",
                     "correction": "Provide independent evidence"
                 }
@@ -597,6 +665,7 @@ mod tests {
         let result = parse_fallacies(&json).unwrap();
         assert_eq!(result.len(), 4);
         assert!(matches!(result[0].category, FallacyCategory::Formal));
+        assert!((result[0].confidence - 0.95).abs() < f64::EPSILON);
         assert!(matches!(result[1].category, FallacyCategory::Informal));
         assert!(matches!(result[2].category, FallacyCategory::Relevance));
         assert!(matches!(result[3].category, FallacyCategory::Presumption));
@@ -677,6 +746,7 @@ mod tests {
                 "fallacy": "test",
                 "category": "formal",
                 "passage": "test",
+                "confidence": 0.5,
                 "correction": "test"
             }]
         });
@@ -691,11 +761,45 @@ mod tests {
                 "fallacy": "test",
                 "category": "formal",
                 "passage": "test",
+                "confidence": 0.5,
                 "explanation": "test"
             }]
         });
         let result = parse_fallacies(&json);
         assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "correction"));
+    }
+
+    #[test]
+    fn test_parse_fallacies_missing_confidence() {
+        let json = json!({
+            "fallacies_detected": [{
+                "fallacy": "test",
+                "category": "formal",
+                "passage": "test",
+                "explanation": "test",
+                "correction": "test"
+            }]
+        });
+        let result = parse_fallacies(&json);
+        assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "confidence"));
+    }
+
+    #[test]
+    fn test_parse_fallacies_invalid_confidence_negative() {
+        let json = json!({
+            "fallacies_detected": [{
+                "fallacy": "test",
+                "category": "formal",
+                "passage": "test",
+                "confidence": -0.2,
+                "explanation": "test",
+                "correction": "test"
+            }]
+        });
+        let result = parse_fallacies(&json);
+        assert!(
+            matches!(result, Err(ModeError::InvalidValue { field, .. }) if field == "confidence")
+        );
     }
 
     // ========================================================================

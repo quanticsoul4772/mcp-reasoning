@@ -284,6 +284,7 @@ mod tests {
                     "bias": "Confirmation Bias",
                     "evidence": "Only citing supporting evidence",
                     "severity": "high",
+                    "confidence": 0.85,
                     "impact": "Ignores contradictory data",
                     "debiasing": "Seek disconfirming evidence"
                 }
@@ -305,6 +306,7 @@ mod tests {
                     "fallacy": "Ad Hominem",
                     "category": "informal",
                     "passage": "You're wrong because you're stupid",
+                    "confidence": 0.9,
                     "explanation": "Attacks the person, not the argument",
                     "correction": "Address the argument's merits instead"
                 }
@@ -358,6 +360,7 @@ mod tests {
         assert_eq!(response.biases_detected.len(), 1);
         assert_eq!(response.biases_detected[0].bias, "Confirmation Bias");
         assert_eq!(response.biases_detected[0].severity, BiasSeverity::High);
+        assert!((response.biases_detected[0].confidence - 0.85).abs() < f64::EPSILON);
         assert_eq!(response.overall_assessment.bias_count, 1);
         assert!((response.overall_assessment.reasoning_quality - 0.6).abs() < f64::EPSILON);
     }

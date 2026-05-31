@@ -378,7 +378,7 @@ async fn test_detect_mode_biases() {
     let server = MockServer::start().await;
 
     // JSON structure must match detect/parsing.rs expectations:
-    // - biases_detected: [{ bias, evidence, severity, impact, debiasing }]
+    // - biases_detected: [{ bias, evidence, severity, confidence, impact, debiasing }]
     // - overall_assessment: { bias_count, most_severe, reasoning_quality }
     // - debiased_version: string
     let response_json = json!({
@@ -387,6 +387,7 @@ async fn test_detect_mode_biases() {
                 "bias": "confirmation bias",
                 "evidence": "Only supporting evidence cited",
                 "severity": "high",
+                "confidence": 0.9,
                 "impact": "Skews conclusions",
                 "debiasing": "Seek disconfirming evidence"
             }
@@ -426,7 +427,7 @@ async fn test_detect_mode_fallacies() {
     let server = MockServer::start().await;
 
     // JSON structure must match detect/parsing.rs expectations:
-    // - fallacies_detected: [{ fallacy, category, passage, explanation, correction }]
+    // - fallacies_detected: [{ fallacy, category, passage, confidence, explanation, correction }]
     // - argument_structure: { premises, conclusion, validity }
     // - overall_assessment: { fallacy_count, argument_strength, most_critical }
     let response_json = json!({
@@ -435,6 +436,7 @@ async fn test_detect_mode_fallacies() {
                 "fallacy": "ad hominem",
                 "category": "informal",
                 "passage": "He's wrong because he's biased",
+                "confidence": 0.85,
                 "explanation": "Attacks person not argument",
                 "correction": "Address the argument directly"
             }
