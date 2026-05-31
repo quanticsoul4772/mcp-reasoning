@@ -109,8 +109,7 @@ impl SelfImprovementConfig {
     #[must_use]
     pub fn from_env() -> Self {
         let require_approval = env::var("SELF_IMPROVEMENT_REQUIRE_APPROVAL")
-            .map(|v| v.to_lowercase() != "false")
-            .unwrap_or(DEFAULT_REQUIRE_APPROVAL);
+            .map_or(DEFAULT_REQUIRE_APPROVAL, |v| v.to_lowercase() != "false");
 
         let min_invocations_for_analysis =
             env::var("SELF_IMPROVEMENT_MIN_INVOCATIONS").map_or(DEFAULT_MIN_INVOCATIONS, |value| {

@@ -69,8 +69,7 @@ impl MetricEvent {
             success,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
             problem_type: None,
             quality_rating: None,
         }
@@ -157,8 +156,7 @@ impl FallbackEvent {
             reason: reason.into(),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
         }
     }
 }
@@ -198,8 +196,7 @@ impl ToolTransition {
             success,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_millis() as u64),
         }
     }
 }
@@ -540,10 +537,7 @@ impl MetricsCollector {
     /// Get total number of recorded invocations.
     #[must_use]
     pub fn total_invocations(&self) -> u64 {
-        self.events
-            .read()
-            .map(|events| events.len() as u64)
-            .unwrap_or(0)
+        self.events.read().map_or(0, |events| events.len() as u64)
     }
 
     /// Get tool effectiveness data filtered by problem type context.
@@ -752,7 +746,7 @@ impl MetricsCollector {
                 (tool.clone(), *from_count as i32 - to_count as i32)
             })
             .collect();
-        entry_tools.sort_by(|a, b| b.1.cmp(&a.1));
+        entry_tools.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         // Terminal tools: appear as to_tool but rarely as from_tool
         let mut terminal_tools: Vec<(String, i32)> = to_counts
@@ -763,7 +757,7 @@ impl MetricsCollector {
                 (tool.clone(), *to_count as i32 - from_count as i32)
             })
             .collect();
-        terminal_tools.sort_by(|a, b| b.1.cmp(&a.1));
+        terminal_tools.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         (
             entry_tools.into_iter().take(5).map(|(t, _)| t).collect(),
@@ -850,7 +844,7 @@ impl MetricsCollector {
             .collect();
 
         // Sort by occurrences descending
-        chains.sort_by(|a, b| b.occurrences.cmp(&a.occurrences));
+        chains.sort_by_key(|b| std::cmp::Reverse(b.occurrences));
 
         // Return top 10 chains
         chains.into_iter().take(10).collect()

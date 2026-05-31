@@ -61,9 +61,11 @@ pub async fn list_sessions(
         "
     );
 
-    // Get total count matching the filter
+    // Get total count matching the filter.
+    // SQL is safe: only `{mode_join}` (a fixed literal) is interpolated; the
+    // filter value is bound, not interpolated.
     let total: u32 = if let Some(ref filter) = mode_filter {
-        sqlx::query_scalar(&count_sql)
+        sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql.as_str()))
             .bind(filter)
             .fetch_one(&storage.get_pool())
             .await
@@ -71,7 +73,7 @@ pub async fn list_sessions(
                 message: format!("Failed to count sessions: {e}"),
             })?
     } else {
-        sqlx::query_scalar(&count_sql)
+        sqlx::query_scalar(sqlx::AssertSqlSafe(count_sql.as_str()))
             .fetch_one(&storage.get_pool())
             .await
             .map_err(|e| ModeError::StorageError {
@@ -79,16 +81,16 @@ pub async fn list_sessions(
             })?
     };
 
-    // Get sessions
+    // Get sessions (same safety note as count_sql above).
     let rows = if let Some(ref filter) = mode_filter {
-        sqlx::query(&list_sql)
+        sqlx::query(sqlx::AssertSqlSafe(list_sql.as_str()))
             .bind(filter)
             .bind(limit)
             .bind(offset)
             .fetch_all(&storage.get_pool())
             .await
     } else {
-        sqlx::query(&list_sql)
+        sqlx::query(sqlx::AssertSqlSafe(list_sql.as_str()))
             .bind(limit)
             .bind(offset)
             .fetch_all(&storage.get_pool())

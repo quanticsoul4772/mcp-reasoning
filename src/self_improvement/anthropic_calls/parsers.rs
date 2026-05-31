@@ -78,7 +78,7 @@ pub fn parse_action_response(response: &str) -> Result<SuggestedAction, ModeErro
             let reason = parsed.reason.unwrap_or_else(|| "No action needed".into());
             Ok(SuggestedAction::NoOp {
                 reason,
-                revisit_after: std::time::Duration::from_secs(3600),
+                revisit_after: std::time::Duration::from_hours(1),
             })
         }
         _ => Err(ModeError::InvalidValue {
