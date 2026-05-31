@@ -74,6 +74,12 @@ pub struct ReasoningServer {
     /// Shared application state.
     pub state: Arc<AppState>,
     /// Tool router for handling tool calls.
+    ///
+    /// Required by rmcp's `#[tool_router]`/`#[tool_handler]` pattern: initialized
+    /// via `Self::tool_router()` and consumed by the macro-generated `ServerHandler`
+    /// impl. The `dead_code` lint is a false positive (the read happens inside macro
+    /// expansion) surfaced by a recent rmcp version bump.
+    #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
