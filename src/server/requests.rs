@@ -70,7 +70,10 @@ pub struct LinearRequest {
     pub content: String,
     /// Session ID for context continuity.
     pub session_id: Option<String>,
-    /// Minimum confidence threshold (0.0-1.0). Responses below this score are rejected.
+    /// Minimum confidence threshold (0.0-1.0). The analysis is always returned;
+    /// if its confidence falls below this value the response is flagged with
+    /// `meets_threshold = false` rather than discarded, so the caller can decide
+    /// whether to use, retry, or escalate it.
     /// Invalid values (NaN, infinity, out of range) are rejected at parse time.
     pub confidence: Option<ConfidenceThreshold>,
     /// Per-request timeout override in milliseconds. Overrides server default when set.

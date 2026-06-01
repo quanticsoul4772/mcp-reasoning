@@ -39,6 +39,18 @@ pub struct LinearResponse {
     /// Suggested next reasoning step.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_step: Option<String>,
+    /// Whether `confidence` met the requested `min_confidence` threshold.
+    ///
+    /// `None` when no threshold was requested; `Some(false)` flags a result that
+    /// fell short — the analysis is still returned so the caller can decide.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meets_threshold: Option<bool>,
+    /// Whether the model judged it lacked the information to reach a conclusion.
+    ///
+    /// When true, `analysis`/`next_step` describe what is missing rather than an
+    /// answer, and `confidence` reflects confidence in that judgement, not a result.
+    #[serde(default)]
+    pub insufficient_context: bool,
 }
 
 impl LinearResponse {
@@ -56,6 +68,8 @@ impl LinearResponse {
             content: content.into(),
             confidence,
             next_step: None,
+            meets_threshold: None,
+            insufficient_context: false,
         }
     }
 
@@ -63,6 +77,20 @@ impl LinearResponse {
     #[must_use]
     pub fn with_next_step(mut self, next_step: impl Into<String>) -> Self {
         self.next_step = Some(next_step.into());
+        self
+    }
+
+    /// Record whether the requested confidence threshold was met.
+    #[must_use]
+    pub fn with_meets_threshold(mut self, meets_threshold: Option<bool>) -> Self {
+        self.meets_threshold = meets_threshold;
+        self
+    }
+
+    /// Record whether the model reported insufficient context to conclude.
+    #[must_use]
+    pub fn with_insufficient_context(mut self, insufficient_context: bool) -> Self {
+        self.insufficient_context = insufficient_context;
         self
     }
 }
@@ -189,15 +217,17 @@ where
             });
         }
 
-        // Check minimum confidence if specified
-        if let Some(min) = min_confidence {
-            if confidence < min {
-                return Err(ModeError::InvalidValue {
-                    field: "confidence".to_string(),
-                    reason: format!("confidence {confidence} is below minimum threshold {min}"),
-                });
-            }
-        }
+        // Evaluate the optional confidence threshold WITHOUT discarding the
+        // analysis. The model already did the work (and we paid for it), so a
+        // below-threshold result is flagged and returned rather than thrown away,
+        // letting the caller decide whether to use it, retry, or escalate.
+        let meets_threshold = min_confidence.map(|min| confidence >= min);
+
+        // Optional calibration signal: absent ⇒ the model had enough context.
+        let insufficient_context = json
+            .get("insufficient_context")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
 
         let next_step = json
             .get("next_step")
@@ -213,7 +243,9 @@ where
         }
 
         // Build response
-        let mut response = LinearResponse::new(&thought_id, &session.id, analysis, confidence);
+        let mut response = LinearResponse::new(&thought_id, &session.id, analysis, confidence)
+            .with_meets_threshold(meets_threshold)
+            .with_insufficient_context(insufficient_context);
         if let Some(step) = next_step {
             response = response.with_next_step(step);
         }
@@ -613,13 +645,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_linear_process_below_min_confidence() {
+    async fn test_linear_process_below_min_confidence_returns_flagged() {
         let mut mock_storage = MockStorageTrait::new();
         let mut mock_client = MockAnthropicClientTrait::new();
 
         mock_storage
             .expect_get_or_create_session()
             .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_json_response("Low confidence analysis", 0.5, None);
         mock_client.expect_complete().returning(move |_, _| {
@@ -630,15 +663,15 @@ mod tests {
         });
 
         let mode = LinearMode::new(mock_storage, mock_client);
-        // Require minimum confidence of 0.7
+        // Below the requested 0.7 threshold: the analysis is returned and flagged,
+        // not discarded.
         let result = mode.process("Test content", None, Some(0.7)).await;
 
-        assert!(result.is_err());
-        assert!(matches!(
-            result,
-            Err(ModeError::InvalidValue { field, reason })
-            if field == "confidence" && reason.contains("below minimum threshold")
-        ));
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.meets_threshold, Some(false));
+        assert!(response.content.contains("Low confidence analysis"));
+        assert!((response.confidence - 0.5).abs() < f64::EPSILON);
     }
 
     #[tokio::test]
@@ -665,7 +698,86 @@ mod tests {
 
         assert!(result.is_ok());
         let response = result.unwrap();
+        assert_eq!(response.meets_threshold, Some(true));
         assert!((response.confidence - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_linear_process_no_threshold_leaves_meets_threshold_none() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_json_response("Analysis", 0.5, None);
+        mock_client.expect_complete().returning(move |_, _| {
+            Ok(CompletionResponse::new(
+                response_json.clone(),
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = LinearMode::new(mock_storage, mock_client);
+        let result = mode.process("Test content", None, None).await;
+
+        assert!(result.is_ok());
+        // No threshold requested → flag is absent.
+        assert_eq!(result.unwrap().meets_threshold, None);
+    }
+
+    #[tokio::test]
+    async fn test_linear_process_parses_insufficient_context() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"analysis": "Not enough information to conclude", "confidence": 0.2, "insufficient_context": true}"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = LinearMode::new(mock_storage, mock_client);
+        let result = mode.process("ambiguous input", None, None).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(response.insufficient_context);
+        assert!((response.confidence - 0.2).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_linear_process_insufficient_context_defaults_false() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("test-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        // Field omitted → defaults to false.
+        let response_json = mock_json_response("Confident analysis", 0.9, None);
+        mock_client.expect_complete().returning(move |_, _| {
+            Ok(CompletionResponse::new(
+                response_json.clone(),
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = LinearMode::new(mock_storage, mock_client);
+        let result = mode.process("clear input", None, None).await;
+
+        assert!(result.is_ok());
+        assert!(!result.unwrap().insufficient_context);
     }
 
     #[tokio::test]

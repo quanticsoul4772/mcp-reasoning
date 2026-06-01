@@ -179,7 +179,7 @@ async fn test_linear_mode_invalid_confidence() {
 }
 
 #[tokio::test]
-async fn test_linear_mode_below_min_confidence() {
+async fn test_linear_mode_below_min_confidence_returns_flagged() {
     use mcp_reasoning::modes::LinearMode;
 
     let server = MockServer::start().await;
@@ -202,9 +202,11 @@ async fn test_linear_mode_below_min_confidence() {
     let state = create_test_state(&server).await;
     let mode = LinearMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
+    // Below the 0.5 threshold: the analysis is returned and flagged, not discarded.
     let result = mode.process("Test content", None, Some(0.5)).await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("below minimum"));
+    let response = result.expect("below-threshold result should still be returned");
+    assert_eq!(response.meets_threshold, Some(false));
+    assert!(response.content.contains("Low confidence analysis"));
 }
 
 // ============================================================================
