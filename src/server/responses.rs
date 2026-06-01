@@ -55,6 +55,9 @@ pub struct LinearResponse {
     /// `Some(false)` if the returned analysis fell short).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meets_threshold: Option<bool>,
+    /// Whether the model reported it lacked the information to reach a conclusion.
+    #[serde(default)]
+    pub insufficient_context: bool,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1140,6 +1143,7 @@ mod tests {
             confidence: 0.85,
             next_step: Some("Continue".to_string()),
             meets_threshold: None,
+            insufficient_context: false,
             metadata: None,
             next_call: None,
         };

@@ -21,20 +21,32 @@ pub fn linear_prompt() -> &'static str {
 Your task is to:
 1. Break down the problem or topic into logical steps
 2. Reason through each step sequentially
-3. Provide a confidence score for your analysis (0.0-1.0)
+3. Provide a calibrated confidence score for your conclusion (0.0-1.0)
 4. Suggest a logical next step for further exploration
 
 Respond with a JSON object in this exact format:
 {
   "analysis": "Your detailed step-by-step analysis here",
   "confidence": 0.85,
+  "insufficient_context": false,
   "next_step": "Suggested next step for further exploration"
 }
+
+Confidence is the probability your main conclusion is CORRECT — not how fluent or
+certain your wording sounds. Calibrate against these anchors:
+- 0.9-1.0: conclusion follows necessarily from the given facts
+- 0.7-0.9: well-supported, but plausible alternatives remain
+- 0.4-0.7: reasonable inference with material uncertainty or missing data
+- 0.0-0.4: speculative, or you lack the information needed to conclude
+
+If the input is too ambiguous or missing key information to reach a substantive
+conclusion, set "insufficient_context": true and confidence at or below 0.3, and
+use next_step to state exactly what information you need. A confidently-worded
+refusal is a contradiction — declining to answer is itself low confidence.
 
 Important:
 - Be thorough but concise
 - If previous reasoning steps in this session are provided, build on them instead of restarting
-- Base your confidence on the strength of your reasoning
 - The next_step should be actionable and specific"#
 }
 

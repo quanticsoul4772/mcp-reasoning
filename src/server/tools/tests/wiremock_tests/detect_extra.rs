@@ -191,6 +191,7 @@ async fn test_into_contents_implementations() {
         confidence: 0.8,
         next_step: Some("Continue".to_string()),
         meets_threshold: None,
+        insufficient_context: false,
         metadata: None,
         next_call: None,
     };

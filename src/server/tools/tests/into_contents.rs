@@ -11,6 +11,7 @@ fn test_linear_response_into_contents() {
         confidence: 0.85,
         next_step: Some("continue".to_string()),
         meets_threshold: None,
+        insufficient_context: false,
         metadata: None,
         next_call: None,
     };

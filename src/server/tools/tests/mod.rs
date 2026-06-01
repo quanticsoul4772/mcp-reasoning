@@ -146,6 +146,7 @@ fn test_linear_response_serialize() {
         confidence: 0.85,
         next_step: Some("continue".to_string()),
         meets_threshold: None,
+        insufficient_context: false,
         metadata: None,
         next_call: None,
     };
