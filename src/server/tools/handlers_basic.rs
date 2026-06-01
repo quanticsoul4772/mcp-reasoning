@@ -110,6 +110,7 @@ impl super::ReasoningServer {
                     content: resp.content,
                     confidence: resp.confidence,
                     next_step: resp.next_step,
+                    meets_threshold: resp.meets_threshold,
                     metadata,
                     next_call: Some(NextCallHint {
                         tool: "reasoning_checkpoint".to_string(),
@@ -129,6 +130,7 @@ impl super::ReasoningServer {
                 ),
                 confidence: 0.0,
                 next_step: None,
+                meets_threshold: None,
                 metadata: None,
                 next_call: None,
             },

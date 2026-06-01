@@ -10,6 +10,7 @@ fn test_linear_response_into_contents() {
         content: "reasoning content".to_string(),
         confidence: 0.85,
         next_step: Some("continue".to_string()),
+        meets_threshold: None,
         metadata: None,
         next_call: None,
     };

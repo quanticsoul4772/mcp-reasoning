@@ -51,6 +51,10 @@ pub struct LinearResponse {
     pub confidence: f64,
     /// Suggested next reasoning step.
     pub next_step: Option<String>,
+    /// Whether `confidence` met the requested threshold (`None` if none requested,
+    /// `Some(false)` if the returned analysis fell short).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meets_threshold: Option<bool>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1135,6 +1139,7 @@ mod tests {
             content: "Analysis result".to_string(),
             confidence: 0.85,
             next_step: Some("Continue".to_string()),
+            meets_threshold: None,
             metadata: None,
             next_call: None,
         };
