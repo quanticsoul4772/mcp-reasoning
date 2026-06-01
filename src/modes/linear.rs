@@ -12,6 +12,8 @@
 
 #![allow(clippy::missing_const_for_fn)]
 
+use std::fmt::Write as _;
+
 use serde::{Deserialize, Serialize};
 
 use crate::error::ModeError;
@@ -131,12 +133,27 @@ where
         // Validate input
         validate_content(content)?;
 
+        // Only an explicitly referenced session can have prior reasoning to build
+        // on; a new (None) session starts empty, so skip the history lookup.
+        let has_prior_session = session_id.is_some();
+
         // Get or create session
         let session = self.get_or_create_session(session_id).await?;
 
-        // Build the prompt
+        // Load earlier thoughts so sequential reasoning builds on prior steps.
+        let prior_context = if has_prior_session {
+            self.load_prior_context(&session.id).await
+        } else {
+            String::new()
+        };
+
+        // Build the prompt, prepending session history when present.
         let prompt = get_prompt_for_mode(ReasoningMode::Linear, None);
-        let user_message = format!("{prompt}\n\nContent to analyze:\n{content}");
+        let user_message = if prior_context.is_empty() {
+            format!("{prompt}\n\nContent to analyze:\n{content}")
+        } else {
+            format!("{prompt}\n\n{prior_context}\nContent to analyze:\n{content}")
+        };
 
         // Call the API
         let messages = vec![Message::user(user_message)];
@@ -218,6 +235,62 @@ where
             })?;
         Ok(session)
     }
+
+    /// Load recent prior thoughts for a session, formatted as a context block.
+    ///
+    /// The most recent [`MAX_CONTEXT_THOUGHTS`] thoughts are included (oldest to
+    /// newest), each truncated to [`MAX_CONTEXT_THOUGHT_CHARS`] characters to bound
+    /// prompt size. Returns an empty string when there is no history.
+    ///
+    /// Loading context is an enhancement, not a precondition: if the lookup fails
+    /// the call proceeds without history (logged) rather than failing outright.
+    async fn load_prior_context(&self, session_id: &str) -> String {
+        let thoughts = match self.storage.get_thoughts(session_id).await {
+            Ok(thoughts) => thoughts,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load prior thoughts — proceeding without session context"
+                );
+                return String::new();
+            }
+        };
+
+        if thoughts.is_empty() {
+            return String::new();
+        }
+
+        let start = thoughts.len().saturating_sub(MAX_CONTEXT_THOUGHTS);
+        let mut block =
+            String::from("Previous reasoning steps in this session (oldest to newest):\n");
+        for (idx, thought) in thoughts[start..].iter().enumerate() {
+            let content = truncate_chars(&thought.content, MAX_CONTEXT_THOUGHT_CHARS);
+            let _ = writeln!(
+                block,
+                "{}. [{}, confidence {:.2}] {content}",
+                idx + 1,
+                thought.mode,
+                thought.confidence,
+            );
+        }
+        block
+    }
+}
+
+/// Maximum number of prior thoughts to include as session context.
+const MAX_CONTEXT_THOUGHTS: usize = 5;
+/// Maximum characters per prior thought when building the context block.
+const MAX_CONTEXT_THOUGHT_CHARS: usize = 600;
+
+/// Truncate a string to at most `max` characters (char-safe), appending an
+/// ellipsis when truncated.
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max).collect();
+        format!("{truncated}…")
+    }
 }
 
 impl<S, C> std::fmt::Debug for LinearMode<S, C>
@@ -275,6 +348,9 @@ mod tests {
                 id.unwrap_or_else(|| "test-session".to_string()),
             ))
         });
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(Vec::new()));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         // Setup client expectations
@@ -390,6 +466,9 @@ mod tests {
             .expect_get_or_create_session()
             .withf(|id| id.as_ref().map(std::string::String::as_str) == Some("existing-session"))
             .returning(|id| Ok(Session::new(id.unwrap())));
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(Vec::new()));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_json_response("Continued analysis", 0.8, None);
@@ -692,6 +771,103 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         assert!(response.next_step.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_linear_process_injects_prior_session_context() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("ctx-session")));
+        // Session has a prior thought that should be fed back into the prompt.
+        mock_storage.expect_get_thoughts().returning(|_| {
+            Ok(vec![Thought::new(
+                "t-prev",
+                "ctx-session",
+                "Earlier conclusion: the root cause is a new external API call",
+                "linear",
+                0.9,
+            )])
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_json_response("Follow-up analysis", 0.8, None);
+        // The prompt sent to the API must include the prior thought content.
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages.first().is_some_and(|m| {
+                    m.content
+                        .contains("Previous reasoning steps in this session")
+                        && m.content
+                            .contains("the root cause is a new external API call")
+                })
+            })
+            .returning(move |_, _| {
+                Ok(CompletionResponse::new(
+                    response_json.clone(),
+                    Usage::new(50, 100),
+                ))
+            });
+
+        let mode = LinearMode::new(mock_storage, mock_client);
+        let result = mode
+            .process(
+                "What should I do next?",
+                Some("ctx-session".to_string()),
+                None,
+            )
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_linear_process_new_session_skips_history_lookup() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        // No session_id provided → get_thoughts must NOT be called (no expectation set;
+        // mockall panics on an unexpected call, so this asserts the skip).
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("fresh-session")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_json_response("Fresh analysis", 0.8, None);
+        // The prompt must NOT contain a prior-context block.
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages
+                    .first()
+                    .is_some_and(|m| !m.content.contains("Previous reasoning steps"))
+            })
+            .returning(move |_, _| {
+                Ok(CompletionResponse::new(
+                    response_json.clone(),
+                    Usage::new(50, 100),
+                ))
+            });
+
+        let mode = LinearMode::new(mock_storage, mock_client);
+        let result = mode.process("New problem", None, None).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_truncate_chars() {
+        // Under the limit: unchanged, no ellipsis.
+        assert_eq!(truncate_chars("short", 10), "short");
+        // Exactly at the limit: unchanged.
+        assert_eq!(truncate_chars("12345", 5), "12345");
+        // Over the limit: truncated with ellipsis.
+        assert_eq!(truncate_chars("123456789", 4), "1234…");
+        // Char-safe on multi-byte input (must not panic or split a char).
+        assert_eq!(truncate_chars("héllo wörld", 4), "héll…");
     }
 
     // LinearResponse tests

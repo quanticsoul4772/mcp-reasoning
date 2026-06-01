@@ -33,6 +33,7 @@ Respond with a JSON object in this exact format:
 
 Important:
 - Be thorough but concise
+- If previous reasoning steps in this session are provided, build on them instead of restarting
 - Base your confidence on the strength of your reasoning
 - The next_step should be actionable and specific"#
 }
