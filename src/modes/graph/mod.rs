@@ -26,8 +26,10 @@ use crate::prompts::{
     graph_aggregate_prompt, graph_finalize_prompt, graph_generate_prompt, graph_init_prompt,
     graph_prune_prompt, graph_refine_prompt, graph_score_prompt, graph_state_prompt,
 };
+use crate::storage::{GraphEdgeType, GraphNodeType};
 use crate::traits::{
-    AnthropicClientTrait, CompletionConfig, Message, Session, StorageTrait, Thought,
+    AnthropicClientTrait, CompletionConfig, Message, Session, StorageTrait, StoredGraphEdge,
+    StoredGraphNode, Thought,
 };
 
 pub use types::{
@@ -118,6 +120,15 @@ where
             tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
         }
 
+        self.persist_node(
+            &session.id,
+            &root.id,
+            &root.content,
+            root.score,
+            GraphNodeType::Thought,
+        )
+        .await;
+
         Ok(InitResponse::new(
             thought_id,
             session.id,
@@ -145,7 +156,7 @@ where
         session_id: Option<String>,
     ) -> Result<GenerateResponse, ModeError> {
         let session = self.get_or_create_session(session_id).await?;
-        let resolved_content = self.resolve_content(content, node_id).await?;
+        let resolved_content = self.resolve_content(content, node_id, &session.id).await?;
 
         let prompt = graph_generate_prompt();
         let user_message = format!("{prompt}\n\nParent node:\n{resolved_content}");
@@ -176,6 +187,19 @@ where
             tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
         }
 
+        for child in &children {
+            self.persist_node(
+                &session.id,
+                &child.id,
+                &child.content,
+                child.score,
+                GraphNodeType::Thought,
+            )
+            .await;
+            self.persist_edge(&session.id, &parent_id, &child.id, GraphEdgeType::Continues)
+                .await;
+        }
+
         Ok(GenerateResponse::new(
             thought_id,
             session.id,
@@ -203,7 +227,7 @@ where
         session_id: Option<String>,
     ) -> Result<ScoreResponse, ModeError> {
         let session = self.get_or_create_session(session_id).await?;
-        let resolved_content = self.resolve_content(content, node_id).await?;
+        let resolved_content = self.resolve_content(content, node_id, &session.id).await?;
 
         let prompt = graph_score_prompt();
         let user_message = format!("{prompt}\n\nNode to score:\n{resolved_content}");
@@ -233,6 +257,9 @@ where
         if let Err(e) = self.storage.save_thought(&thought).await {
             tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
         }
+
+        self.persist_score(&session.id, &response_node_id, scores.overall)
+            .await;
 
         Ok(ScoreResponse::new(
             thought_id,
@@ -289,6 +316,24 @@ where
 
         if let Err(e) = self.storage.save_thought(&thought).await {
             tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
+
+        self.persist_node(
+            &session.id,
+            &synthesis.id,
+            &synthesis.content,
+            synthesis.score,
+            GraphNodeType::Aggregation,
+        )
+        .await;
+        for input_id in &input_node_ids {
+            self.persist_edge(
+                &session.id,
+                input_id,
+                &synthesis.id,
+                GraphEdgeType::Aggregates,
+            )
+            .await;
         }
 
         Ok(AggregateResponse::new(
@@ -349,6 +394,22 @@ where
             tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
         }
 
+        self.persist_node(
+            &session.id,
+            &refined_node.id,
+            &refined_node.content,
+            refined_node.score,
+            GraphNodeType::Refinement,
+        )
+        .await;
+        self.persist_edge(
+            &session.id,
+            &original_node_id,
+            &refined_node.id,
+            GraphEdgeType::Refines,
+        )
+        .await;
+
         Ok(RefineResponse::new(
             thought_id,
             session.id,
@@ -405,6 +466,13 @@ where
 
         if let Err(e) = self.storage.save_thought(&thought).await {
             tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
+
+        for candidate in &prune_candidates {
+            let storage_id = Self::namespaced_id(&session.id, &candidate.node_id);
+            if let Err(e) = self.storage.delete_graph_node(&storage_id).await {
+                tracing::warn!(error = %e, node_id = %candidate.node_id, "Graph node deletion failed");
+            }
         }
 
         Ok(PruneResponse::new(
@@ -568,6 +636,7 @@ where
         &self,
         content: Option<&str>,
         node_id: Option<&str>,
+        session_id: &str,
     ) -> Result<String, ModeError> {
         // Check for direct content first
         if let Some(c) = content {
@@ -576,11 +645,12 @@ where
             }
         }
 
-        // Try to look up by node_id
+        // Try to look up by node_id (stored under its session-namespaced key)
         if let Some(nid) = node_id {
+            let storage_id = Self::namespaced_id(session_id, nid);
             let node = self
                 .storage
-                .get_graph_node(nid)
+                .get_graph_node(&storage_id)
                 .await
                 .map_err(|e| ModeError::ApiUnavailable {
                     message: format!("Failed to get graph node: {e}"),
@@ -616,14 +686,19 @@ where
                 message: format!("Failed to get graph edges: {e}"),
             })?;
 
-        // Build a JSON representation of the graph
+        // Build a JSON representation of the graph, stripping the session
+        // namespace prefix so the model sees the original short node IDs.
+        let prefix = format!("{session_id}::");
+        let strip = |id: &str| -> String { id.strip_prefix(&prefix).unwrap_or(id).to_string() };
+
         let nodes_json: Vec<serde_json::Value> = nodes
             .iter()
             .map(|n| {
                 serde_json::json!({
-                    "id": n.id,
+                    "id": strip(&n.id),
                     "content": n.content,
                     "score": n.score,
+                    "node_type": n.node_type.as_str(),
                     "is_terminal": n.is_terminal
                 })
             })
@@ -633,8 +708,8 @@ where
             .iter()
             .map(|e| {
                 serde_json::json!({
-                    "from": e.from_node_id,
-                    "to": e.to_node_id,
+                    "from": strip(&e.from_node_id),
+                    "to": strip(&e.to_node_id),
                     "type": e.edge_type.as_str()
                 })
             })
@@ -646,6 +721,72 @@ where
         });
 
         Ok(graph.to_string())
+    }
+
+    /// Namespace a model-supplied node ID with its session.
+    ///
+    /// The `graph_nodes` primary key is global, but models reuse short IDs
+    /// (`root`, `c1`, ...) across sessions. Prefixing with the session ID keeps
+    /// nodes from different sessions from colliding in storage.
+    fn namespaced_id(session_id: &str, node_id: &str) -> String {
+        format!("{session_id}::{node_id}")
+    }
+
+    /// Persist a graph node. Storage failures are logged, not propagated, so a
+    /// write error never discards a reasoning result already returned to the caller.
+    async fn persist_node(
+        &self,
+        session_id: &str,
+        node_id: &str,
+        content: &str,
+        score: f64,
+        node_type: GraphNodeType,
+    ) {
+        let node = StoredGraphNode::new(
+            Self::namespaced_id(session_id, node_id),
+            session_id,
+            content,
+        )
+        .with_score(score)
+        .with_node_type(node_type);
+
+        if let Err(e) = self.storage.save_graph_node(&node).await {
+            tracing::warn!(error = %e, node_id, "Graph node persistence failed");
+        }
+    }
+
+    /// Persist a directed graph edge between two (namespaced) nodes. Failures are
+    /// logged, not propagated.
+    async fn persist_edge(
+        &self,
+        session_id: &str,
+        from_id: &str,
+        to_id: &str,
+        edge_type: GraphEdgeType,
+    ) {
+        let edge = StoredGraphEdge::new(
+            Self::namespaced_id(session_id, &format!("{from_id}->{to_id}")),
+            session_id,
+            Self::namespaced_id(session_id, from_id),
+            Self::namespaced_id(session_id, to_id),
+        )
+        .with_edge_type(edge_type);
+
+        if let Err(e) = self.storage.save_graph_edge(&edge).await {
+            tracing::warn!(error = %e, from = from_id, to = to_id, "Graph edge persistence failed");
+        }
+    }
+
+    /// Update a node's score in storage. Failures are logged, not propagated.
+    async fn persist_score(&self, session_id: &str, node_id: &str, score: f64) {
+        let storage_id = Self::namespaced_id(session_id, node_id);
+        if let Err(e) = self
+            .storage
+            .update_graph_node_score(&storage_id, score)
+            .await
+        {
+            tracing::warn!(error = %e, node_id, "Graph node score update failed");
+        }
     }
 }
 
@@ -675,6 +816,24 @@ mod tests {
     use super::*;
     use crate::error::StorageError;
     use crate::traits::{CompletionResponse, MockAnthropicClientTrait, MockStorageTrait, Usage};
+
+    /// Register permissive (`times(..)`) expectations for the best-effort graph
+    /// persistence writes so happy-path tests, which focus on API parsing, don't
+    /// panic when an operation also persists nodes/edges/scores.
+    fn expect_graph_writes(mock: &mut MockStorageTrait) {
+        mock.expect_save_graph_node()
+            .times(..)
+            .returning(|_| Ok(()));
+        mock.expect_save_graph_edge()
+            .times(..)
+            .returning(|_| Ok(()));
+        mock.expect_update_graph_node_score()
+            .times(..)
+            .returning(|_, _| Ok(()));
+        mock.expect_delete_graph_node()
+            .times(..)
+            .returning(|_| Ok(()));
+    }
 
     fn mock_init_response() -> String {
         r#"{
@@ -772,6 +931,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_init_response();
         mock_client
@@ -795,6 +955,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_generate_response();
         mock_client
@@ -818,6 +979,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_score_response();
         mock_client
@@ -841,6 +1003,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_aggregate_response();
         mock_client
@@ -862,6 +1025,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_refine_response();
         mock_client
@@ -883,6 +1047,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_prune_response();
         mock_client
@@ -906,6 +1071,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_finalize_response();
         mock_client
@@ -927,6 +1093,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_state_response();
         mock_client
@@ -989,6 +1156,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         // Mock the node lookup
         mock_storage.expect_get_graph_node().returning(|_id| {
@@ -1062,6 +1230,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         // Mock the graph retrieval from storage
         mock_storage
@@ -1108,6 +1277,7 @@ mod tests {
                 message: "Save failed".to_string(),
             })
         });
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_init_response();
         mock_client
@@ -1155,6 +1325,7 @@ mod tests {
                 message: "Save failed".to_string(),
             })
         });
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_generate_response();
         mock_client
@@ -1181,6 +1352,7 @@ mod tests {
                 message: "Save failed".to_string(),
             })
         });
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_score_response();
         mock_client
@@ -1218,6 +1390,7 @@ mod tests {
                 message: "Save failed".to_string(),
             })
         });
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_aggregate_response();
         mock_client
@@ -1255,6 +1428,7 @@ mod tests {
                 message: "Save failed".to_string(),
             })
         });
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_refine_response();
         mock_client
@@ -1292,6 +1466,7 @@ mod tests {
                 message: "Save failed".to_string(),
             })
         });
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_prune_response();
         mock_client
@@ -1329,6 +1504,7 @@ mod tests {
                 message: "Save failed".to_string(),
             })
         });
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_finalize_response();
         mock_client
@@ -1355,6 +1531,7 @@ mod tests {
                 message: "Save failed".to_string(),
             })
         });
+        expect_graph_writes(&mut mock_storage);
 
         let resp = mock_state_response();
         mock_client
@@ -1450,6 +1627,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         mock_storage.expect_get_graph_node().returning(|_id| {
             Ok(Some(StoredGraphNode::new(
@@ -1498,6 +1676,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         // Providing empty content should fall back to node_id lookup
         mock_storage.expect_get_graph_node().returning(|_id| {
@@ -1530,6 +1709,7 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        expect_graph_writes(&mut mock_storage);
 
         // Providing empty content should retrieve from storage
         mock_storage
@@ -1548,5 +1728,249 @@ mod tests {
         let result = mode.state(Some("  "), "test").await;
 
         assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // End-to-end persistence tests (real in-memory storage)
+    //
+    // These verify the graph is actually written to and read back from storage,
+    // with per-session node-ID namespacing, which the mocked tests above cannot.
+    // ========================================================================
+
+    use std::sync::Arc;
+
+    use crate::storage::SqliteStorage;
+
+    /// Build a mock client that returns `resp` for every completion call.
+    fn fixed_client(resp: String) -> MockAnthropicClientTrait {
+        let mut client = MockAnthropicClientTrait::new();
+        client
+            .expect_complete()
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+        client
+    }
+
+    async fn in_memory_storage() -> Arc<SqliteStorage> {
+        Arc::new(
+            SqliteStorage::new_in_memory()
+                .await
+                .expect("create in-memory storage"),
+        )
+    }
+
+    /// Create the session row (foreign keys are enforced, so nodes/edges need it).
+    async fn seed_session(storage: &Arc<SqliteStorage>, session_id: &str) {
+        storage
+            .get_or_create_session(Some(session_id.to_string()))
+            .await
+            .expect("create session");
+    }
+
+    /// Persist a node under its session-namespaced key so edges can reference it.
+    async fn seed_node(storage: &Arc<SqliteStorage>, session_id: &str, node_id: &str) {
+        storage
+            .save_graph_node(&StoredGraphNode::new(
+                format!("{session_id}::{node_id}"),
+                session_id,
+                "seed content",
+            ))
+            .await
+            .expect("seed node");
+    }
+
+    #[tokio::test]
+    async fn test_init_persists_root_node() {
+        let storage = in_memory_storage().await;
+        let mode = GraphMode::new(Arc::clone(&storage), fixed_client(mock_init_response()));
+
+        let resp = mode
+            .init("Topic", Some("sess-init".to_string()))
+            .await
+            .expect("init succeeds");
+        assert_eq!(resp.root.id, "root");
+
+        let nodes = storage
+            .get_graph_nodes("sess-init")
+            .await
+            .expect("read nodes");
+        assert_eq!(nodes.len(), 1);
+        // Stored under its session-namespaced key, not the bare model ID.
+        assert_eq!(nodes[0].id, "sess-init::root");
+        assert_eq!(nodes[0].content, "Main topic");
+        assert!((nodes[0].score.unwrap() - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_generate_persists_children_and_edges() {
+        let storage = in_memory_storage().await;
+        seed_session(&storage, "sess-gen").await;
+        // Parent must exist before the child edge can reference it (FK enforced).
+        seed_node(&storage, "sess-gen", "root").await;
+        let mode = GraphMode::new(Arc::clone(&storage), fixed_client(mock_generate_response()));
+
+        mode.generate(Some("Parent"), None, Some("sess-gen".to_string()))
+            .await
+            .expect("generate succeeds");
+
+        let nodes = storage.get_graph_nodes("sess-gen").await.expect("nodes");
+        assert!(nodes.iter().any(|n| n.id == "sess-gen::c1"));
+
+        let edges = storage.get_graph_edges("sess-gen").await.expect("edges");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].from_node_id, "sess-gen::root");
+        assert_eq!(edges[0].to_node_id, "sess-gen::c1");
+    }
+
+    #[tokio::test]
+    async fn test_score_updates_persisted_node() {
+        let storage = in_memory_storage().await;
+        seed_session(&storage, "sess-score").await;
+        // Seed the node the score response refers to ("c1") under the session.
+        storage
+            .save_graph_node(
+                &StoredGraphNode::new("sess-score::c1", "sess-score", "Node").with_score(0.1),
+            )
+            .await
+            .expect("seed node");
+
+        let mode = GraphMode::new(Arc::clone(&storage), fixed_client(mock_score_response()));
+        mode.score(Some("Node"), None, Some("sess-score".to_string()))
+            .await
+            .expect("score succeeds");
+
+        let node = storage
+            .get_graph_node("sess-score::c1")
+            .await
+            .expect("read node")
+            .expect("node exists");
+        assert!((node.score.unwrap() - 0.65).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_persists_synthesis_and_edges() {
+        let storage = in_memory_storage().await;
+        seed_session(&storage, "sess-agg").await;
+        // Input nodes must exist before aggregation edges can reference them.
+        seed_node(&storage, "sess-agg", "c1").await;
+        seed_node(&storage, "sess-agg", "c2").await;
+        let mode = GraphMode::new(
+            Arc::clone(&storage),
+            fixed_client(mock_aggregate_response()),
+        );
+
+        mode.aggregate("Nodes", Some("sess-agg".to_string()))
+            .await
+            .expect("aggregate succeeds");
+
+        let synthesis = storage
+            .get_graph_node("sess-agg::s1")
+            .await
+            .expect("read synthesis")
+            .expect("synthesis exists");
+        assert_eq!(synthesis.node_type, GraphNodeType::Aggregation);
+
+        // One edge from each input node ("c1", "c2") into the synthesis.
+        let edges = storage.get_graph_edges("sess-agg").await.expect("edges");
+        assert_eq!(edges.len(), 2);
+        assert!(edges.iter().all(|e| e.to_node_id == "sess-agg::s1"));
+    }
+
+    #[tokio::test]
+    async fn test_refine_persists_refined_node() {
+        let storage = in_memory_storage().await;
+        seed_session(&storage, "sess-refine").await;
+        // Original node must exist before the refinement edge can reference it.
+        seed_node(&storage, "sess-refine", "c1").await;
+        let mode = GraphMode::new(Arc::clone(&storage), fixed_client(mock_refine_response()));
+
+        mode.refine("Node", Some("sess-refine".to_string()))
+            .await
+            .expect("refine succeeds");
+
+        let refined = storage
+            .get_graph_node("sess-refine::r1")
+            .await
+            .expect("read refined")
+            .expect("refined exists");
+        assert_eq!(refined.node_type, GraphNodeType::Refinement);
+
+        let edges = storage.get_graph_edges("sess-refine").await.expect("edges");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].from_node_id, "sess-refine::c1");
+        assert_eq!(edges[0].to_node_id, "sess-refine::r1");
+    }
+
+    #[tokio::test]
+    async fn test_prune_deletes_persisted_node() {
+        let storage = in_memory_storage().await;
+        seed_session(&storage, "sess-prune").await;
+        storage
+            .save_graph_node(&StoredGraphNode::new(
+                "sess-prune::bad_node",
+                "sess-prune",
+                "Weak node",
+            ))
+            .await
+            .expect("seed node");
+
+        let mode = GraphMode::new(Arc::clone(&storage), fixed_client(mock_prune_response()));
+        mode.prune("Graph", Some("sess-prune".to_string()))
+            .await
+            .expect("prune succeeds");
+
+        let gone = storage
+            .get_graph_node("sess-prune::bad_node")
+            .await
+            .expect("read node");
+        assert!(gone.is_none(), "pruned node should be deleted from storage");
+    }
+
+    #[tokio::test]
+    async fn test_node_id_lookup_uses_namespaced_key() {
+        let storage = in_memory_storage().await;
+        seed_session(&storage, "sess-lookup").await;
+        // Persist a node, then drive generate by node_id (not content).
+        storage
+            .save_graph_node(&StoredGraphNode::new(
+                "sess-lookup::n1",
+                "sess-lookup",
+                "Stored parent content",
+            ))
+            .await
+            .expect("seed node");
+
+        let mode = GraphMode::new(Arc::clone(&storage), fixed_client(mock_generate_response()));
+        // Bare "n1" must resolve via the session-namespaced key "sess-lookup::n1".
+        let resp = mode
+            .generate(None, Some("n1"), Some("sess-lookup".to_string()))
+            .await
+            .expect("generate by node_id succeeds");
+        assert_eq!(resp.children.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_state_reads_persisted_graph_with_stripped_ids() {
+        let storage = in_memory_storage().await;
+        // init then generate to build a small persisted graph.
+        GraphMode::new(Arc::clone(&storage), fixed_client(mock_init_response()))
+            .init("Topic", Some("sess-state".to_string()))
+            .await
+            .expect("init");
+        GraphMode::new(Arc::clone(&storage), fixed_client(mock_generate_response()))
+            .generate(Some("Parent"), None, Some("sess-state".to_string()))
+            .await
+            .expect("generate");
+
+        // build_graph_state_from_storage strips the namespace prefix for the model.
+        let json = GraphMode::new(Arc::clone(&storage), fixed_client(mock_state_response()))
+            .build_graph_state_from_storage("sess-state")
+            .await
+            .expect("build state");
+        assert!(json.contains("\"id\":\"root\""), "state JSON: {json}");
+        assert!(json.contains("\"id\":\"c1\""), "state JSON: {json}");
+        assert!(
+            !json.contains("sess-state::"),
+            "namespace prefix should be stripped: {json}"
+        );
     }
 }

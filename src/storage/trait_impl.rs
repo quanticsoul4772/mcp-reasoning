@@ -133,6 +133,14 @@ impl StorageTrait for SqliteStorage {
     ) -> Result<Vec<StoredGraphEdge>, StorageError> {
         Self::get_graph_edges(self, session_id).await
     }
+
+    async fn update_graph_node_score(&self, id: &str, score: f64) -> Result<(), StorageError> {
+        Self::update_graph_node_score(self, id, score).await
+    }
+
+    async fn delete_graph_node(&self, id: &str) -> Result<(), StorageError> {
+        Self::delete_graph_node(self, id).await
+    }
 }
 
 /// Blanket implementation for `Arc<SqliteStorage>` to allow sharing storage across threads.
@@ -221,6 +229,14 @@ impl StorageTrait for Arc<SqliteStorage> {
         session_id: &str,
     ) -> Result<Vec<StoredGraphEdge>, StorageError> {
         self.as_ref().get_graph_edges(session_id).await
+    }
+
+    async fn update_graph_node_score(&self, id: &str, score: f64) -> Result<(), StorageError> {
+        self.as_ref().update_graph_node_score(id, score).await
+    }
+
+    async fn delete_graph_node(&self, id: &str) -> Result<(), StorageError> {
+        self.as_ref().delete_graph_node(id).await
     }
 }
 
