@@ -129,6 +129,52 @@ fn mcts_backtrack_consistent() -> String {
     .to_string()
 }
 
+/// A backtrack response whose current quality (0.4) sits below a 0.5 floor yet
+/// declines to backtrack — the false-negative the quality_threshold check flags.
+fn mcts_backtrack_ignores_threshold() -> String {
+    serde_json::json!({
+        "quality_assessment": {
+            "recent_values": [0.8, 0.6, 0.4],
+            "trend": "declining",
+            "decline_magnitude": 0.4
+        },
+        "backtrack_decision": {
+            "should_backtrack": false,
+            "reason": "Model claims the dip is recoverable"
+        },
+        "alternative_actions": [
+            {"action": "continue", "rationale": "Push on"}
+        ],
+        "recommendation": {
+            "action": "continue",
+            "confidence": 0.6,
+            "expected_benefit": "Avoid losing progress"
+        }
+    })
+    .to_string()
+}
+
+/// End-to-end: a backtrack decision that ignores the caller's `quality_threshold`
+/// surfaces an inconsistency warning through the handler's validation.
+#[tokio::test]
+async fn test_mcts_auto_backtrack_flags_ignored_quality_threshold() {
+    let mock_server = MockServer::start().await;
+    mount_sse(&mock_server, &mcts_backtrack_ignores_threshold()).await;
+    let server = create_mocked_server(&mock_server).await;
+
+    let mut req = mcts_req();
+    req.operation = Some("auto_backtrack".to_string());
+    req.quality_threshold = Some(0.5);
+    let resp = server.reasoning_mcts(Parameters(req)).await;
+
+    let validation = resp.validation.expect("validation present");
+    assert!(!validation.consistent);
+    assert!(validation
+        .warnings
+        .iter()
+        .any(|w| w.contains("below the requested quality_threshold")));
+}
+
 /// The explore arm only responds when the outbound prompt carries the
 /// caller-supplied `exploration_constant`. A missing injection would leave no
 /// matching mock, dropping the handler to the error fallback (`frontier == None`)

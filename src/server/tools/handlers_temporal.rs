@@ -442,8 +442,13 @@ fn verify_explore(
 }
 
 /// Verify that the stated quality trend and decline magnitude are consistent
-/// with the recent value samples.
-fn verify_backtrack(qa: &QualityAssessment) -> MctsValidationInfo {
+/// with the recent value samples, and — when the caller supplied a
+/// `quality_threshold` — that the backtrack decision honored it.
+fn verify_backtrack(
+    qa: &QualityAssessment,
+    quality_threshold: Option<f64>,
+    should_backtrack: bool,
+) -> MctsValidationInfo {
     let mut warnings = Vec::new();
     let vals = &qa.recent_values;
 
@@ -472,6 +477,19 @@ fn verify_backtrack(qa: &QualityAssessment) -> MctsValidationInfo {
             warnings.push(format!(
                 "decline_magnitude stated {:.2} but the peak-to-trough range is only {range:.2}",
                 qa.decline_magnitude
+            ));
+        }
+    }
+
+    // When the caller asked to backtrack below a quality floor, flag the
+    // false-negative only: current quality is clearly below the threshold yet
+    // the model declined to backtrack. We test the latest sample (current
+    // state) — not the minimum — so a transient dip that has since recovered
+    // does not cry wolf.
+    if let (Some(t), Some(&last)) = (quality_threshold, vals.last()) {
+        if last + 0.01 < t && !should_backtrack {
+            warnings.push(format!(
+                "Current quality {last:.2} is below the requested quality_threshold {t:.2} but should_backtrack is false"
             ));
         }
     }
@@ -957,7 +975,11 @@ impl super::ReasoningServer {
                 };
                 match backtrack_result {
                     Ok(resp) => {
-                        let validation = verify_backtrack(&resp.quality_assessment);
+                        let validation = verify_backtrack(
+                            &resp.quality_assessment,
+                            req.quality_threshold,
+                            resp.backtrack_decision.should_backtrack,
+                        );
                         let alternatives = resp
                             .alternative_actions
                             .iter()
@@ -1292,7 +1314,7 @@ mod mcts_verify_tests {
             trend: QualityTrend::Declining,
             decline_magnitude: 0.3,
         };
-        let v = verify_backtrack(&qa);
+        let v = verify_backtrack(&qa, None, false);
         assert!(v.consistent, "warnings: {:?}", v.warnings);
     }
 
@@ -1304,7 +1326,7 @@ mod mcts_verify_tests {
             trend: QualityTrend::Improving,
             decline_magnitude: 0.4,
         };
-        let v = verify_backtrack(&qa);
+        let v = verify_backtrack(&qa, None, false);
         assert!(!v.consistent);
         assert!(v.warnings.iter().any(|w| w.contains("Trend stated")));
     }
@@ -1316,9 +1338,49 @@ mod mcts_verify_tests {
             trend: QualityTrend::Declining,
             decline_magnitude: 0.9, // range is only 0.1
         };
-        let v = verify_backtrack(&qa);
+        let v = verify_backtrack(&qa, None, false);
         assert!(!v.consistent);
         assert!(v.warnings.iter().any(|w| w.contains("peak-to-trough")));
+    }
+
+    /// A consistent declining trajectory whose latest sample sits below a
+    /// requested floor. Used to isolate the quality_threshold check.
+    fn declining_below_floor() -> QualityAssessment {
+        QualityAssessment {
+            recent_values: vec![0.8, 0.6, 0.4],
+            trend: QualityTrend::Declining,
+            decline_magnitude: 0.4,
+        }
+    }
+
+    #[test]
+    fn test_backtrack_flags_threshold_breach_without_backtrack() {
+        // Current quality 0.4 is below the floor 0.5, yet should_backtrack=false.
+        let v = verify_backtrack(&declining_below_floor(), Some(0.5), false);
+        assert!(!v.consistent);
+        assert!(v
+            .warnings
+            .iter()
+            .any(|w| w.contains("below the requested quality_threshold")));
+    }
+
+    #[test]
+    fn test_backtrack_threshold_breach_with_backtrack_is_consistent() {
+        // Same breach, but the model honored it by backtracking.
+        let v = verify_backtrack(&declining_below_floor(), Some(0.5), true);
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
+    }
+
+    #[test]
+    fn test_backtrack_above_threshold_no_warning() {
+        // Stable quality comfortably above the floor: declining to backtrack is fine.
+        let qa = QualityAssessment {
+            recent_values: vec![0.8, 0.8, 0.8],
+            trend: QualityTrend::Stable,
+            decline_magnitude: 0.0,
+        };
+        let v = verify_backtrack(&qa, Some(0.5), false);
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
     }
 }
 
