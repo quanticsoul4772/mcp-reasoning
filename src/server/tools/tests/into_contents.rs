@@ -145,6 +145,7 @@ fn test_graph_response_into_contents() {
             max_depth: 3,
             pruned_count: 2,
         }),
+        persistence_warning: None,
         metadata: None,
     };
     let contents = response.into_contents();

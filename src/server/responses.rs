@@ -344,6 +344,10 @@ pub struct GraphResponse {
     pub conclusions: Option<Vec<String>>,
     /// Graph state.
     pub state: Option<GraphState>,
+    /// Set when one or more nodes/edges failed to persist to storage, so the
+    /// caller knows the graph wasn't fully saved (reasoning result is unaffected).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persistence_warning: Option<String>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1074,7 +1078,9 @@ pub struct MctsValidationInfo {
 pub struct MctsResponse {
     /// Session identifier.
     pub session_id: String,
-    /// Best path found.
+    /// Deprecated: legacy alias that actually holds the frontier nodes, kept for
+    /// backward compatibility. Prefer `frontier`, which carries the full UCB1
+    /// decomposition (visits, average value, exploration bonus).
     pub best_path: Option<Vec<MctsNode>>,
     /// Iterations completed.
     pub iterations_completed: Option<u32>,
@@ -1187,7 +1193,10 @@ pub struct CounterfactualValidationInfo {
 pub struct CounterfactualResponse {
     /// Counterfactual outcome.
     pub counterfactual_outcome: String,
-    /// Causal chain.
+    /// Deprecated: legacy flat edge list, kept for backward compatibility. Each
+    /// step's `probability` is the overall analysis confidence repeated, NOT a
+    /// real per-edge probability. Prefer `causal_model`, which carries the typed
+    /// edges (direct/mediated/confounded).
     pub causal_chain: Vec<CausalStep>,
     /// Session identifier.
     pub session_id: Option<String>,
@@ -1943,6 +1952,7 @@ mod tests {
                 max_depth: 3,
                 pruned_count: 2,
             }),
+            persistence_warning: None,
             metadata: None,
         };
         let contents = response.into_contents();
