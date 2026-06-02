@@ -65,6 +65,10 @@ impl StorageTrait for SqliteStorage {
             .collect())
     }
 
+    async fn delete_thought(&self, id: &str) -> Result<(), StorageError> {
+        Self::delete_thought(self, id).await
+    }
+
     async fn save_checkpoint(&self, checkpoint: &StoredCheckpoint) -> Result<(), StorageError> {
         Self::save_checkpoint(self, checkpoint).await
     }
@@ -148,6 +152,10 @@ impl StorageTrait for Arc<SqliteStorage> {
 
     async fn get_thoughts(&self, session_id: &str) -> Result<Vec<Thought>, StorageError> {
         self.as_ref().get_thoughts(session_id).await
+    }
+
+    async fn delete_thought(&self, id: &str) -> Result<(), StorageError> {
+        self.as_ref().delete_thought(id).await
     }
 
     async fn save_checkpoint(&self, checkpoint: &StoredCheckpoint) -> Result<(), StorageError> {

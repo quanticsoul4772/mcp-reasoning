@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::ModeError;
 use crate::modes::generate_checkpoint_id;
-use crate::traits::{AnthropicClientTrait, StorageTrait, StoredCheckpoint};
+use crate::traits::{AnthropicClientTrait, StorageTrait, StoredCheckpoint, Thought};
 
 /// Context captured in a checkpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -139,17 +139,20 @@ impl ListResponse {
 pub struct RestoredState {
     /// Context from the checkpoint.
     pub context: CheckpointContext,
-    /// Thoughts at checkpoint time.
+    /// Number of thoughts at checkpoint time (the session size after restore).
     pub thought_count: usize,
+    /// Number of post-checkpoint thoughts discarded by the rollback.
+    pub discarded_count: usize,
 }
 
 impl RestoredState {
     /// Create a new restored state.
     #[must_use]
-    pub fn new(context: CheckpointContext, thought_count: usize) -> Self {
+    pub fn new(context: CheckpointContext, thought_count: usize, discarded_count: usize) -> Self {
         Self {
             context,
             thought_count,
+            discarded_count,
         }
     }
 }
@@ -252,10 +255,23 @@ where
                 field: "session_id".to_string(),
             })?;
 
+        // Capture the session's actual state at this point: the thought count is
+        // both the list display and the rollback boundary for restore.
+        let thoughts = self.storage.get_thoughts(&session.id).await.map_err(|e| {
+            ModeError::ApiUnavailable {
+                message: format!("Failed to get thoughts: {e}"),
+            }
+        })?;
+        let thought_count = thoughts.len();
+
+        // Enrich an empty caller context with a snapshot derived from the session.
+        let context = Self::enrich_context(context, &thoughts);
+
         // Serialize state
         let state = serde_json::json!({
             "context": context,
             "resumption_hint": resumption_hint,
+            "thought_count": thought_count,
         });
         let state_str = serde_json::to_string(&state).map_err(|e| ModeError::InvalidValue {
             field: "context".to_string(),
@@ -381,17 +397,35 @@ where
         // Extract context
         let context = Self::parse_context(&state)?;
 
-        // Get thought count
-        let thought_count = self
+        // Number of thoughts that existed when the checkpoint was created.
+        let checkpoint_count = state
+            .get("thought_count")
+            .and_then(serde_json::Value::as_u64)
+            .map_or(0, |n| n as usize);
+
+        // Roll back: discard thoughts created after the checkpoint so the session
+        // returns to that point (matching the documented contract). Thoughts are
+        // ordered oldest-first, so everything past `checkpoint_count` is newer.
+        let thoughts = self
             .storage
             .get_thoughts(&checkpoint.session_id)
             .await
             .map_err(|e| ModeError::ApiUnavailable {
                 message: format!("Failed to get thoughts: {e}"),
-            })?
-            .len();
+            })?;
 
-        let restored_state = RestoredState::new(context, thought_count);
+        let mut discarded_count = 0;
+        for thought in thoughts.iter().skip(checkpoint_count) {
+            self.storage
+                .delete_thought(&thought.id)
+                .await
+                .map_err(|e| ModeError::ApiUnavailable {
+                    message: format!("Failed to discard thought during restore: {e}"),
+                })?;
+            discarded_count += 1;
+        }
+
+        let restored_state = RestoredState::new(context, checkpoint_count, discarded_count);
 
         let mut response =
             RestoreResponse::new(checkpoint_id, &checkpoint.session_id, restored_state);
@@ -401,6 +435,33 @@ where
         }
 
         Ok(response)
+    }
+
+    /// Enrich an empty caller-supplied context with a snapshot derived from the
+    /// session's recent thoughts, so a checkpoint captures real state even when the
+    /// caller passes nothing. A non-empty context is returned unchanged.
+    fn enrich_context(context: CheckpointContext, thoughts: &[Thought]) -> CheckpointContext {
+        let is_empty = context.key_findings.is_empty()
+            && context.open_questions.is_empty()
+            && (context.current_focus.is_empty() || context.current_focus == "current exploration");
+        if !is_empty || thoughts.is_empty() {
+            return context;
+        }
+
+        let start = thoughts.len().saturating_sub(5);
+        let key_findings: Vec<String> = thoughts[start..]
+            .iter()
+            .map(|t| {
+                let summary: String = t.content.chars().take(160).collect();
+                format!("[{}] {summary}", t.mode)
+            })
+            .collect();
+        let current_focus = thoughts
+            .last()
+            .map(|t| t.content.chars().take(160).collect::<String>())
+            .unwrap_or(context.current_focus);
+
+        CheckpointContext::new(key_findings, current_focus, Vec::new())
     }
 
     /// Parse context from state JSON.
@@ -530,15 +591,16 @@ mod tests {
     #[test]
     fn test_restored_state_new() {
         let context = CheckpointContext::new(vec![], "Focus", vec![]);
-        let state = RestoredState::new(context, 10);
+        let state = RestoredState::new(context, 10, 3);
         assert_eq!(state.thought_count, 10);
+        assert_eq!(state.discarded_count, 3);
     }
 
     // RestoreResponse tests
     #[test]
     fn test_restore_response_new() {
         let context = CheckpointContext::new(vec![], "Focus", vec![]);
-        let state = RestoredState::new(context, 5);
+        let state = RestoredState::new(context, 5, 0);
         let response = RestoreResponse::new("cp-1", "sess-1", state);
         assert_eq!(response.checkpoint_id, "cp-1");
         assert!(response.new_direction.is_none());
@@ -547,7 +609,7 @@ mod tests {
     #[test]
     fn test_restore_response_with_new_direction() {
         let context = CheckpointContext::new(vec![], "Focus", vec![]);
-        let state = RestoredState::new(context, 5);
+        let state = RestoredState::new(context, 5, 2);
         let response =
             RestoreResponse::new("cp-1", "sess-1", state).with_new_direction("Explore alternative");
         assert_eq!(
@@ -565,6 +627,9 @@ mod tests {
         mock_storage
             .expect_get_session()
             .returning(|id| Ok(Some(Session::new(id))));
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(Vec::new()));
         mock_storage.expect_save_checkpoint().returning(|_| Ok(()));
 
         let mode = CheckpointMode::new(mock_storage, mock_client);
@@ -599,6 +664,9 @@ mod tests {
         mock_storage
             .expect_get_session()
             .returning(|id| Ok(Some(Session::new(id))));
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(Vec::new()));
         mock_storage.expect_save_checkpoint().returning(|_| Ok(()));
 
         let mode = CheckpointMode::new(mock_storage, mock_client);
@@ -615,6 +683,55 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_create_captures_session_state() {
+        use std::sync::{Arc, Mutex};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_session()
+            .returning(|id| Ok(Some(Session::new(id))));
+        mock_storage.expect_get_thoughts().returning(|_| {
+            Ok(vec![
+                Thought::new("t1", "sess-1", "First reasoning step", "linear", 0.7),
+                Thought::new("t2", "sess-1", "Second reasoning step", "tree", 0.8),
+            ])
+        });
+        let saved: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let saved_clone = saved.clone();
+        mock_storage.expect_save_checkpoint().returning(move |cp| {
+            *saved_clone.lock().unwrap() = Some(cp.state.clone());
+            Ok(())
+        });
+
+        let mode = CheckpointMode::new(mock_storage, mock_client);
+        // Empty context, as the handler passes → enriched from the session.
+        let context = CheckpointContext::new(vec![], "current exploration", vec![]);
+        mode.create("sess-1", "cp", None, context, "Resume")
+            .await
+            .unwrap();
+
+        let state = saved.lock().unwrap().clone().expect("checkpoint saved");
+        let v: serde_json::Value = serde_json::from_str(&state).unwrap();
+        // thought_count is captured (fixes list always-0).
+        assert_eq!(
+            v.get("thought_count").and_then(serde_json::Value::as_u64),
+            Some(2)
+        );
+        // The empty context is enriched with a snapshot of recent thoughts.
+        let findings = v
+            .pointer("/context/key_findings")
+            .and_then(serde_json::Value::as_array)
+            .unwrap();
+        assert_eq!(findings.len(), 2);
+        assert!(findings[1]
+            .as_str()
+            .unwrap()
+            .contains("Second reasoning step"));
     }
 
     #[tokio::test]
@@ -738,6 +855,51 @@ mod tests {
         assert_eq!(response.session_id, "sess-1");
         assert_eq!(response.restored_state.context.current_focus, "Topic A");
         assert!(response.new_direction.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_restore_rolls_back_post_checkpoint_thoughts() {
+        use std::sync::{Arc, Mutex};
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+
+        // Checkpoint captured when the session had 2 thoughts.
+        mock_storage.expect_get_checkpoint().returning(|id| {
+            Ok(Some(StoredCheckpoint::new(
+                id,
+                "sess-1",
+                "cp",
+                r#"{"context": {"key_findings": [], "current_focus": "f", "open_questions": []},
+                    "thought_count": 2}"#,
+            )))
+        });
+        // The session now has 4 thoughts — t3 and t4 came after the checkpoint.
+        mock_storage.expect_get_thoughts().returning(|_| {
+            Ok(vec![
+                Thought::new("t1", "sess-1", "a", "linear", 0.5),
+                Thought::new("t2", "sess-1", "b", "linear", 0.5),
+                Thought::new("t3", "sess-1", "c", "linear", 0.5),
+                Thought::new("t4", "sess-1", "d", "linear", 0.5),
+            ])
+        });
+        let deleted: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let deleted_clone = deleted.clone();
+        mock_storage.expect_delete_thought().returning(move |id| {
+            deleted_clone.lock().unwrap().push(id.to_string());
+            Ok(())
+        });
+
+        let mode = CheckpointMode::new(mock_storage, mock_client);
+        let response = mode.restore("cp-1", None).await.unwrap();
+
+        // Session returns to its 2-thought state; the 2 newer thoughts are discarded.
+        assert_eq!(response.restored_state.thought_count, 2);
+        assert_eq!(response.restored_state.discarded_count, 2);
+        assert_eq!(
+            *deleted.lock().unwrap(),
+            vec!["t3".to_string(), "t4".to_string()]
+        );
     }
 
     #[tokio::test]

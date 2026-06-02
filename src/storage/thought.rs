@@ -12,8 +12,19 @@ use super::types::StoredThought;
 const INSERT_THOUGHT: &str = "INSERT INTO thoughts (id, session_id, parent_id, mode, content, confidence, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 const SELECT_THOUGHT: &str = "SELECT id, session_id, parent_id, mode, content, confidence, metadata, created_at FROM thoughts WHERE id = ?";
 const SELECT_THOUGHTS_BY_SESSION: &str = "SELECT id, session_id, parent_id, mode, content, confidence, metadata, created_at FROM thoughts WHERE session_id = ? ORDER BY created_at ASC";
+const DELETE_THOUGHT: &str = "DELETE FROM thoughts WHERE id = ?";
 
 impl SqliteStorage {
+    /// Delete a stored thought by ID. No-op if it does not exist.
+    pub async fn delete_thought(&self, id: &str) -> Result<(), StorageError> {
+        sqlx::query(DELETE_THOUGHT)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("DELETE thoughts", format!("{e}")))?;
+        Ok(())
+    }
+
     /// Save a stored thought to the database.
     pub async fn save_stored_thought(&self, thought: &StoredThought) -> Result<(), StorageError> {
         let created_at_str = thought.created_at.to_rfc3339();
@@ -147,6 +158,29 @@ mod tests {
         assert_eq!(fetched.id, "t-1");
         assert_eq!(fetched.content, "Test content");
         assert!((fetched.confidence - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_delete_thought() {
+        let storage = test_storage().await;
+        storage
+            .create_session_with_id("sess-123")
+            .await
+            .expect("create session");
+
+        let thought = StoredThought::new("t-del", "sess-123", "linear", "to delete", 0.5);
+        storage.save_stored_thought(&thought).await.expect("save");
+
+        storage.delete_thought("t-del").await.expect("delete");
+        assert!(storage
+            .get_stored_thought("t-del")
+            .await
+            .expect("fetch")
+            .is_none());
+
+        // Deleting a missing id is a no-op (not an error).
+        storage.delete_thought("nonexistent").await.expect("no-op");
     }
 
     #[tokio::test]

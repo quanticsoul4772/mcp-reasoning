@@ -121,6 +121,13 @@ pub trait StorageTrait: Send + Sync {
     /// Returns [`StorageError`] if the database operation fails.
     async fn get_thoughts(&self, session_id: &str) -> Result<Vec<Thought>, StorageError>;
 
+    /// Delete a thought by ID (used when rolling a session back to a checkpoint).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn delete_thought(&self, id: &str) -> Result<(), StorageError>;
+
     /// Save a checkpoint to the database.
     ///
     /// # Errors
