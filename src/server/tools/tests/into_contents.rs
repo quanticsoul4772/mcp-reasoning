@@ -55,6 +55,8 @@ fn test_divergent_response_into_contents() {
             viewpoint: "optimistic".to_string(),
             content: "positive outlook".to_string(),
             novelty_score: 0.8,
+            key_insight: None,
+            blind_spots: None,
         }],
         challenged_assumptions: Some(vec!["assumption1".to_string()]),
         synthesis: Some("unified insight".to_string()),

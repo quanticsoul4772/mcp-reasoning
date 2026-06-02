@@ -116,6 +116,12 @@ pub struct Perspective {
     pub content: String,
     /// Novelty score.
     pub novelty_score: f64,
+    /// The single most important insight from this viewpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_insight: Option<String>,
+    /// What this perspective might miss.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blind_spots: Option<Vec<String>>,
 }
 
 /// Response from divergent reasoning.
@@ -1191,6 +1197,8 @@ mod tests {
                 viewpoint: "Technical".to_string(),
                 content: "Technical view".to_string(),
                 novelty_score: 0.7,
+                key_insight: None,
+                blind_spots: None,
             }],
             challenged_assumptions: Some(vec!["Assumption 1".to_string()]),
             synthesis: Some("Unified view".to_string()),
@@ -1593,6 +1601,8 @@ mod tests {
             viewpoint: "Tech".to_string(),
             content: "View".to_string(),
             novelty_score: 0.5,
+            key_insight: None,
+            blind_spots: None,
         };
         let json = serde_json::to_string(&p).unwrap();
         assert!(json.contains("Tech"));

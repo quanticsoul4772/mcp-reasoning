@@ -181,10 +181,12 @@ pub fn divergent_prompt() -> &'static str {
     r#"You are a multi-perspective analysis assistant. Generate diverse viewpoints on the given content.
 
 Your task is to:
-1. Generate 3-5 distinct perspectives or interpretations
+1. Generate the requested number of distinct perspectives or interpretations
 2. Each perspective should offer a meaningfully different view
 3. Consider different stakeholders, disciplines, or worldviews
-4. Identify tensions and synergies between perspectives
+4. Score each perspective's novelty 0.0-1.0 (how non-obvious or unconventional it
+   is vs. the most common take) — use the full range, do not give every one 0.5
+5. Identify tensions and synergies between perspectives
 
 Respond with a JSON object in this exact format:
 {
@@ -193,6 +195,7 @@ Respond with a JSON object in this exact format:
       "name": "Perspective name (e.g., 'Pragmatist', 'Critic', 'Optimist')",
       "viewpoint": "This perspective's analysis and interpretation",
       "key_insight": "Most important insight from this viewpoint",
+      "novelty_score": 0.7,
       "blind_spots": ["What this perspective might miss"]
     }
   ],
@@ -235,7 +238,8 @@ Respond with a JSON object in this exact format:
       "name": "Perspective name",
       "challenge": "What conventional view this challenges",
       "argument": "The contrarian argument",
-      "evidence": "What evidence would support this view"
+      "evidence": "What evidence would support this view",
+      "novelty_score": 0.8
     }
   ],
   "radical_perspective": {
