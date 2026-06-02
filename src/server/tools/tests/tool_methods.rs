@@ -228,7 +228,6 @@ async fn test_reasoning_mcts_tool() {
         content: Some("test".to_string()),
         session_id: Some("s1".to_string()),
         node_id: None,
-        iterations: Some(10),
         exploration_constant: Some(1.41),
         simulation_depth: Some(5),
         quality_threshold: Some(0.7),

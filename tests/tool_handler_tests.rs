@@ -1249,7 +1249,6 @@ mod server_tests {
             content: Some("Search state".to_string()),
             session_id: None,
             node_id: None,
-            iterations: Some(10),
             simulation_depth: Some(5),
             exploration_constant: Some(1.41),
             quality_threshold: None,
@@ -1259,14 +1258,13 @@ mod server_tests {
         };
         let json = serde_json::to_string(&explore_req).unwrap();
         assert!(json.contains("explore"));
-        assert!(json.contains("iterations"));
+        assert!(json.contains("exploration_constant"));
 
         let backtrack_req = MctsRequest {
             operation: Some("auto_backtrack".to_string()),
             content: None,
             session_id: Some("s1".to_string()),
             node_id: None,
-            iterations: None,
             simulation_depth: None,
             exploration_constant: None,
             quality_threshold: Some(0.5),

@@ -72,9 +72,12 @@ fn test_timeline_request_deserialize() {
 
 #[test]
 fn test_mcts_request_deserialize() {
-    let json = r#"{"operation": "explore", "iterations": 50}"#;
+    // `iterations` was removed from the schema; a request still carrying it must
+    // deserialize fine (serde ignores the now-unknown field) rather than error.
+    let json = r#"{"operation": "explore", "iterations": 50, "exploration_constant": 1.5}"#;
     let req: MctsRequest = serde_json::from_str(json).expect("deserialize");
-    assert_eq!(req.iterations, Some(50));
+    assert_eq!(req.operation, Some("explore".to_string()));
+    assert_eq!(req.exploration_constant, Some(1.5));
 }
 
 #[test]

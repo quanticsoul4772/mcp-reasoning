@@ -345,6 +345,52 @@ fn enum_to_string<T: serde::Serialize>(value: &T) -> String {
         .unwrap_or_default()
 }
 
+/// Prepend a "search parameters" preamble built from `lines` to `content`, so
+/// caller-supplied MCTS tuning knobs reach the model. Returns `content`
+/// unchanged when no parameters were set.
+fn with_mcts_params(content: &str, lines: &[String]) -> String {
+    if lines.is_empty() {
+        return content.to_string();
+    }
+    format!(
+        "Search parameters (honor these):\n{}\n\n{}",
+        lines.join("\n"),
+        content
+    )
+}
+
+/// Build the explore-arm parameter lines from the set request fields.
+fn explore_param_lines(
+    exploration_constant: Option<f64>,
+    simulation_depth: Option<u32>,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(c) = exploration_constant {
+        lines.push(format!(
+            "- Use exploration constant C = {c} in UCB1: ucb1 = average_value + C * sqrt(ln(parent_visits) / node_visits)."
+        ));
+    }
+    if let Some(d) = simulation_depth {
+        lines.push(format!("- Simulate rollouts to depth {d}."));
+    }
+    lines
+}
+
+/// Build the auto_backtrack-arm parameter lines from the set request fields.
+fn backtrack_param_lines(
+    quality_threshold: Option<f64>,
+    lookback_depth: Option<u32>,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(t) = quality_threshold {
+        lines.push(format!("- Backtrack when recent quality drops below {t}."));
+    }
+    if let Some(k) = lookback_depth {
+        lines.push(format!("- Assess quality over the last {k} values."));
+    }
+    lines
+}
+
 /// Verify the UCB1 decomposition of each frontier node and that the selected
 /// node is the argmax of `ucb1_score`. Returns the validation and the
 /// recomputed best node id.
@@ -768,9 +814,13 @@ impl super::ReasoningServer {
 
         let (response, success) = match operation {
             "explore" => {
+                let explore_content = with_mcts_params(
+                    content,
+                    &explore_param_lines(req.exploration_constant, req.simulation_depth),
+                );
                 let explore_result = match tokio::time::timeout(
                     timeout_duration,
-                    mode.explore_streaming(content, req.session_id, Some(&progress)),
+                    mode.explore_streaming(&explore_content, req.session_id, Some(&progress)),
                 )
                 .await
                 {
@@ -878,10 +928,14 @@ impl super::ReasoningServer {
                 }
             }
             "auto_backtrack" => {
+                let backtrack_content = with_mcts_params(
+                    content,
+                    &backtrack_param_lines(req.quality_threshold, req.lookback_depth),
+                );
                 let backtrack_result = match tokio::time::timeout(
                     timeout_duration,
                     mode.auto_backtrack_streaming(
-                        content,
+                        &backtrack_content,
                         Some(input_session_id.clone()),
                         Some(&progress),
                     ),
@@ -1265,6 +1319,45 @@ mod mcts_verify_tests {
         let v = verify_backtrack(&qa);
         assert!(!v.consistent);
         assert!(v.warnings.iter().any(|w| w.contains("peak-to-trough")));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod mcts_param_tests {
+    use super::{backtrack_param_lines, explore_param_lines, with_mcts_params};
+
+    #[test]
+    fn test_no_params_leaves_content_unchanged() {
+        assert!(explore_param_lines(None, None).is_empty());
+        assert!(backtrack_param_lines(None, None).is_empty());
+        assert_eq!(with_mcts_params("base", &[]), "base");
+    }
+
+    #[test]
+    fn test_explore_params_reach_preamble() {
+        let lines = explore_param_lines(Some(2.0), Some(5));
+        let prompt = with_mcts_params("base", &lines);
+        assert!(prompt.contains("exploration constant C = 2"));
+        assert!(prompt.contains("depth 5"));
+        assert!(prompt.ends_with("base"));
+        assert!(prompt.starts_with("Search parameters"));
+    }
+
+    #[test]
+    fn test_backtrack_params_reach_preamble() {
+        let lines = backtrack_param_lines(Some(0.3), Some(4));
+        let prompt = with_mcts_params("base", &lines);
+        assert!(prompt.contains("below 0.3"));
+        assert!(prompt.contains("last 4 values"));
+        assert!(prompt.ends_with("base"));
+    }
+
+    #[test]
+    fn test_partial_params_emit_only_set_lines() {
+        let lines = explore_param_lines(Some(1.5), None);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("exploration constant C = 1.5"));
     }
 }
 

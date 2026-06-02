@@ -6,7 +6,7 @@
 //! assert the verification fires (and catches injected errors) end-to-end.
 
 use rmcp::handler::server::wrapper::Parameters;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::{anthropic_sse_response, create_mocked_server};
@@ -48,7 +48,6 @@ fn mcts_req() -> MctsRequest {
         content: Some("Explore strategies".to_string()),
         session_id: Some("s-stream-mcts".to_string()),
         node_id: None,
-        iterations: None,
         exploration_constant: None,
         simulation_depth: None,
         quality_threshold: None,
@@ -101,6 +100,88 @@ async fn test_mcts_explore_streaming_flags_non_argmax_selection() {
         .warnings
         .iter()
         .any(|w| w.contains("highest-UCB1")));
+}
+
+/// A consistent backtrack response: declining trend over recent values with a
+/// decline magnitude that matches the peak-to-trough range.
+fn mcts_backtrack_consistent() -> String {
+    serde_json::json!({
+        "quality_assessment": {
+            "recent_values": [0.7, 0.65, 0.5, 0.4],
+            "trend": "declining",
+            "decline_magnitude": 0.3
+        },
+        "backtrack_decision": {
+            "should_backtrack": true,
+            "reason": "Sustained quality decline",
+            "backtrack_to": "node_3",
+            "depth_reduction": 2
+        },
+        "alternative_actions": [
+            {"action": "prune", "rationale": "Remove low-value branches"}
+        ],
+        "recommendation": {
+            "action": "backtrack",
+            "confidence": 0.8,
+            "expected_benefit": "Recover from local minimum"
+        }
+    })
+    .to_string()
+}
+
+/// The explore arm only responds when the outbound prompt carries the
+/// caller-supplied `exploration_constant`. A missing injection would leave no
+/// matching mock, dropping the handler to the error fallback (`frontier == None`)
+/// and failing the `expect` — so a passing test proves the param reached the model.
+#[tokio::test]
+async fn test_mcts_explore_streaming_injects_exploration_constant() {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .and(body_string_contains("exploration constant C = 2"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(anthropic_sse_response(&mcts_explore_consistent())),
+        )
+        .mount(&mock_server)
+        .await;
+    let server = create_mocked_server(&mock_server).await;
+
+    let mut req = mcts_req();
+    req.exploration_constant = Some(2.0);
+    let resp = server.reasoning_mcts(Parameters(req)).await;
+
+    // Success arm reached => the param-bearing prompt matched the mock.
+    let frontier = resp.frontier.expect("frontier surfaced (param injected)");
+    assert_eq!(frontier.len(), 2);
+}
+
+/// Same end-to-end proof for the auto_backtrack arm and `quality_threshold`.
+#[tokio::test]
+async fn test_mcts_auto_backtrack_streaming_injects_quality_threshold() {
+    let mock_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .and(body_string_contains("below 0.3"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(anthropic_sse_response(&mcts_backtrack_consistent())),
+        )
+        .mount(&mock_server)
+        .await;
+    let server = create_mocked_server(&mock_server).await;
+
+    let mut req = mcts_req();
+    req.operation = Some("auto_backtrack".to_string());
+    req.quality_threshold = Some(0.3);
+    let resp = server.reasoning_mcts(Parameters(req)).await;
+
+    let suggestion = resp
+        .backtrack_suggestion
+        .expect("backtrack suggestion surfaced (param injected)");
+    assert!(suggestion.should_backtrack);
 }
 
 #[tokio::test]

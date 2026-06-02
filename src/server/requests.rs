@@ -331,8 +331,6 @@ pub struct MctsRequest {
     pub session_id: Option<String>,
     /// Node ID.
     pub node_id: Option<String>,
-    /// Iterations (1-100).
-    pub iterations: Option<u32>,
     /// Exploration constant.
     pub exploration_constant: Option<f64>,
     /// Simulation depth (1-20).
