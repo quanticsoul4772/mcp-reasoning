@@ -177,6 +177,15 @@ pub mod doctest_helpers {
             Ok(())
         }
 
+        async fn update_branch(
+            &self,
+            _id: &str,
+            _content: &str,
+            _score: f64,
+        ) -> Result<(), StorageError> {
+            Ok(())
+        }
+
         async fn save_graph_node(
             &self,
             _node: &crate::traits::StoredGraphNode,

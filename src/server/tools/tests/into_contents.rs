@@ -30,6 +30,7 @@ fn test_tree_response_into_contents() {
         branch_id: Some("b1".to_string()),
         branches: Some(vec![Branch {
             id: "b1".to_string(),
+            title: "Branch 1".to_string(),
             content: "branch content".to_string(),
             score: 0.9,
             status: "active".to_string(),

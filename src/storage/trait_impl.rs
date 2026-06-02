@@ -100,6 +100,10 @@ impl StorageTrait for SqliteStorage {
         Self::update_branch_status(self, id, status).await
     }
 
+    async fn update_branch(&self, id: &str, content: &str, score: f64) -> Result<(), StorageError> {
+        Self::update_branch(self, id, content, score).await
+    }
+
     async fn save_graph_node(&self, node: &StoredGraphNode) -> Result<(), StorageError> {
         Self::save_graph_node(self, node).await
     }
@@ -179,6 +183,10 @@ impl StorageTrait for Arc<SqliteStorage> {
         status: StoredBranchStatus,
     ) -> Result<(), StorageError> {
         self.as_ref().update_branch_status(id, status).await
+    }
+
+    async fn update_branch(&self, id: &str, content: &str, score: f64) -> Result<(), StorageError> {
+        self.as_ref().update_branch(id, content, score).await
     }
 
     async fn save_graph_node(&self, node: &StoredGraphNode) -> Result<(), StorageError> {
