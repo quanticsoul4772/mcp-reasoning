@@ -262,11 +262,13 @@ impl ReasoningServer {
 
     #[tool(
         name = "reasoning_mcts",
-        description = "Monte Carlo Tree Search for open-ended optimization problems with a large search space — algorithm design, configuration tuning, or any problem where you need to explore many possible paths and converge on the best one. \
-                       explore=expand one promising node using UCB1 (balances trying new paths vs deepening promising ones). auto_backtrack=automatically retrace and try a different path when current trajectory quality degrades. \
-                       Use instead of reasoning_tree when the space is too large to enumerate — MCTS samples intelligently rather than exhaustively. \
-                       Use instead of reasoning_graph when paths don't cross-pollinate (each is an independent trajectory). \
-                       Returns the current tree state, best path found so far, and scores after each operation."
+        description = "Monte Carlo Tree Search for choosing among many candidate paths when each can be evaluated and you want to converge on the best one — e.g. picking between several implementation, debugging, or refactoring strategies, algorithm/config tuning, or any large search space you'd otherwise guess at. UCB1 balances trying untried options against deepening promising ones. \
+                       explore=score the current candidate frontier, select the highest-UCB1 option to pursue next, and return the scored alternatives with rationale. auto_backtrack=detect when the current trajectory's quality is degrading and recommend retracing to a better branch (tune with quality_threshold/lookback_depth). \
+                       Most valuable when each candidate can be judged with a real signal (tests passing, a benchmark, a quality estimate) so selection is grounded rather than arbitrary — put those outcomes in the content. \
+                       Use instead of reasoning_tree when the space is too large to enumerate (MCTS samples intelligently rather than exhaustively). \
+                       Use instead of reasoning_divergent when you need to converge on ONE best path, not gather contrasting perspectives. \
+                       Use instead of reasoning_graph when candidate paths are independent and don't cross-pollinate. \
+                       Returns the scored frontier, the selected next step with rationale, expanded options, and a consistency check. Each call is one evaluated search step: call repeatedly — feeding the latest results back in the content — to deepen the search."
     )]
     async fn reasoning_mcts(&self, req: Parameters<MctsRequest>) -> MctsResponse {
         self.handle_mcts(req.0).await
