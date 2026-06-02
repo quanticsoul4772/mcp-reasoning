@@ -206,11 +206,18 @@ fn verify_causal_model(
     analysis: &CausalAnalysis,
 ) -> CounterfactualValidationInfo {
     let mut warnings = Vec::new();
-    // Names are matched case/whitespace-insensitively: models routinely vary
-    // capitalization between the question variables and the DAG node labels
-    // ("Average order value" vs "Average Order Value"), which is not a real
-    // structural inconsistency.
-    let norm = |s: &str| s.trim().to_lowercase();
+    // Names are matched ignoring case AND separators, because models routinely
+    // label DAG nodes in snake_case while writing the question variables in prose
+    // ("Average_Order_Value" vs "Average order value") — a formatting difference,
+    // not a structural one. Genuinely different names (e.g. "Widget" vs
+    // "Recommendation widget presence") still differ and are still flagged.
+    let norm = |s: &str| {
+        s.replace(['_', '-'], " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    };
     let nodes: HashSet<String> = model.nodes.iter().map(|n| norm(n)).collect();
 
     for e in &model.edges {
@@ -1301,17 +1308,36 @@ mod counterfactual_verify_tests {
     }
 
     #[test]
-    fn test_case_only_name_differences_are_not_flagged() {
-        // The question's cause/effect differ from the DAG node labels only in
-        // capitalization/whitespace — not a real structural inconsistency.
+    fn test_separator_and_case_name_differences_are_not_flagged() {
+        // The real failure mode: the DAG nodes are snake_case while the question
+        // variables are written in prose. That's formatting, not a structural
+        // inconsistency, so it must not be flagged.
         let model = CausalModel {
-            nodes: vec!["Average Order Value".to_string(), "Widget".to_string()],
-            edges: vec![edge("Widget", "Average Order Value", EdgeType::Direct)],
+            nodes: vec!["Average_Order_Value".to_string(), "Widget".to_string()],
+            edges: vec![edge("Widget", "Average_Order_Value", EdgeType::Direct)],
             confounders: vec![],
         };
-        let q = question("widget", "average order value");
+        let q = question("widget", "Average order value");
         let v = verify_causal_model(&model, &q, &analysis(0.5, 0.7));
         assert!(v.consistent, "warnings: {:?}", v.warnings);
+    }
+
+    #[test]
+    fn test_genuinely_different_name_is_still_flagged() {
+        // Normalization must not paper over a real naming mismatch: the question
+        // calls the cause one thing and the model names the node another.
+        let model = CausalModel {
+            nodes: vec!["Widget".to_string(), "Average_Order_Value".to_string()],
+            edges: vec![edge("Widget", "Average_Order_Value", EdgeType::Direct)],
+            confounders: vec![],
+        };
+        let q = question("Recommendation widget presence", "Average order value");
+        let v = verify_causal_model(&model, &q, &analysis(0.5, 0.7));
+        assert!(!v.consistent);
+        assert!(v
+            .warnings
+            .iter()
+            .any(|w| w.contains("Recommendation widget presence")));
     }
 
     #[test]
