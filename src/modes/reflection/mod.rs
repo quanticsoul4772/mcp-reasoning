@@ -24,6 +24,18 @@ use crate::traits::{
 
 use parsing::{parse_analysis, parse_improvements, parse_session_assessment, parse_string_array};
 
+/// Maximum number of refinement passes the process loop will perform.
+const MAX_ITERATIONS: u32 = 5;
+
+/// Parsed result of a single reflection pass, before persistence/iteration.
+struct ReflectionPass {
+    analysis: ReasoningAnalysis,
+    improvements: Vec<Improvement>,
+    refined_reasoning: String,
+    quality_score: f64,
+    confidence_improvement: f64,
+}
+
 /// Reflection reasoning mode.
 ///
 /// Provides meta-cognitive evaluation and iterative improvement of reasoning.
@@ -63,63 +75,36 @@ where
         &self,
         content: &str,
         session_id: Option<String>,
+        max_iterations: Option<u32>,
+        quality_threshold: Option<f64>,
     ) -> Result<ProcessResponse, ModeError> {
         validate_content(content)?;
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
-        let prompt = get_prompt_for_mode(ReasoningMode::Reflection, Some(&Operation::Process));
+        let prior_context = if has_prior_session {
+            self.load_prior_context(&session.id).await
+        } else {
+            String::new()
+        };
+        let max_iter = max_iterations.unwrap_or(1).clamp(1, MAX_ITERATIONS);
 
-        let user_message = format!("{prompt}\n\nAnalyze and improve this reasoning:\n{content}");
-        let messages = vec![Message::user(user_message)];
-        let config = CompletionConfig::new()
-            .with_max_tokens(16384)
-            .with_temperature(0.7)
-            .with_deep_thinking();
-
-        let response = self.client.complete(messages, config).await?;
-        let json = extract_json(&response.content)?;
-
-        // Parse analysis
-        let analysis = parse_analysis(&json)?;
-
-        // Parse improvements
-        let improvements = parse_improvements(&json)?;
-
-        // Parse refined reasoning
-        let refined_reasoning = json
-            .get("refined_reasoning")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        if refined_reasoning.is_empty() {
-            return Err(ModeError::MissingField {
-                field: "refined_reasoning".to_string(),
-            });
+        // Iteratively refine: each pass reflects on the previous pass's refined
+        // reasoning, stopping when the quality threshold is met or the iteration
+        // budget is exhausted.
+        let mut current = content.to_string();
+        let mut iterations = 0u32;
+        loop {
+            iterations += 1;
+            let pass = self.reflect_pass_blocking(&current, &prior_context).await?;
+            if iterations >= max_iter || quality_threshold.is_some_and(|t| pass.quality_score >= t)
+            {
+                return Ok(self
+                    .finalize_process(&session.id, content, pass, iterations)
+                    .await);
+            }
+            current = pass.refined_reasoning.clone();
         }
-
-        // Parse confidence improvement
-        let confidence_improvement = json
-            .get("confidence_improvement")
-            .and_then(serde_json::Value::as_f64)
-            .unwrap_or(0.0)
-            .clamp(0.0, 1.0);
-
-        // Generate thought ID and save
-        let thought_id = generate_thought_id();
-        let thought = Thought::new(&thought_id, &session.id, content, "reflection", 0.8);
-        if let Err(e) = self.storage.save_thought(&thought).await {
-            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
-        }
-
-        Ok(ProcessResponse::new(
-            thought_id,
-            session.id,
-            analysis,
-            improvements,
-            refined_reasoning,
-            confidence_improvement,
-        ))
     }
 
     /// Evaluate an entire session.
@@ -275,6 +260,8 @@ where
         &self,
         content: &str,
         session_id: Option<String>,
+        max_iterations: Option<u32>,
+        quality_threshold: Option<f64>,
         progress: Option<&ProgressReporter>,
     ) -> Result<ProcessResponse, ModeError> {
         validate_content(content)?;
@@ -283,84 +270,34 @@ where
             p.report_milestone(ProgressMilestone::RequestPrepared);
         }
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
-        let prompt = get_prompt_for_mode(ReasoningMode::Reflection, Some(&Operation::Process));
+        let prior_context = if has_prior_session {
+            self.load_prior_context(&session.id).await
+        } else {
+            String::new()
+        };
+        let max_iter = max_iterations.unwrap_or(1).clamp(1, MAX_ITERATIONS);
 
-        let user_message = format!("{prompt}\n\nAnalyze and improve this reasoning:\n{content}");
-        let messages = vec![Message::user(user_message)];
-        let config = CompletionConfig::new()
-            .with_max_tokens(16384)
-            .with_temperature(0.7)
-            .with_deep_thinking();
-
-        if let Some(p) = progress {
-            p.report_milestone(ProgressMilestone::ApiCallStarted);
+        let mut current = content.to_string();
+        let mut iterations = 0u32;
+        loop {
+            iterations += 1;
+            let pass = self
+                .reflect_pass_streaming(&current, &prior_context, progress)
+                .await?;
+            if iterations >= max_iter || quality_threshold.is_some_and(|t| pass.quality_score >= t)
+            {
+                let response = self
+                    .finalize_process(&session.id, content, pass, iterations)
+                    .await;
+                if let Some(p) = progress {
+                    p.report_milestone(ProgressMilestone::Complete);
+                }
+                return Ok(response);
+            }
+            current = pass.refined_reasoning.clone();
         }
-
-        let mut rx = self.client.complete_streaming(messages, config).await?;
-
-        if let Some(p) = progress {
-            p.report_milestone(ProgressMilestone::StreamingStarted);
-        }
-
-        let mut accumulator = StreamAccumulator::new();
-        while let Some(event_result) = rx.recv().await {
-            let event = event_result?;
-            accumulator.process(event);
-        }
-
-        if let Some(p) = progress {
-            p.report_milestone(ProgressMilestone::ProcessingResponse);
-        }
-
-        let response_text = accumulator.text();
-        let json = extract_json(&response_text)?;
-
-        // Parse analysis
-        let analysis = parse_analysis(&json)?;
-
-        // Parse improvements
-        let improvements = parse_improvements(&json)?;
-
-        // Parse refined reasoning
-        let refined_reasoning = json
-            .get("refined_reasoning")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        if refined_reasoning.is_empty() {
-            return Err(ModeError::MissingField {
-                field: "refined_reasoning".to_string(),
-            });
-        }
-
-        // Parse confidence improvement
-        let confidence_improvement = json
-            .get("confidence_improvement")
-            .and_then(serde_json::Value::as_f64)
-            .unwrap_or(0.0)
-            .clamp(0.0, 1.0);
-
-        // Generate thought ID and save
-        let thought_id = generate_thought_id();
-        let thought = Thought::new(&thought_id, &session.id, content, "reflection", 0.8);
-        if let Err(e) = self.storage.save_thought(&thought).await {
-            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
-        }
-
-        if let Some(p) = progress {
-            p.report_milestone(ProgressMilestone::Complete);
-        }
-
-        Ok(ProcessResponse::new(
-            thought_id,
-            session.id,
-            analysis,
-            improvements,
-            refined_reasoning,
-            confidence_improvement,
-        ))
     }
 
     /// Evaluate an entire session using streaming.
@@ -541,6 +478,162 @@ where
                 message: format!("Failed to get or create session: {e}"),
             })
     }
+
+    /// Parse a single reflection pass from an LLM JSON response.
+    fn parse_pass(json: &serde_json::Value) -> Result<ReflectionPass, ModeError> {
+        let analysis = parse_analysis(json)?;
+        let improvements = parse_improvements(json)?;
+
+        let refined_reasoning = json
+            .get("refined_reasoning")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if refined_reasoning.is_empty() {
+            return Err(ModeError::MissingField {
+                field: "refined_reasoning".to_string(),
+            });
+        }
+
+        let quality_score = json
+            .get("quality_score")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.5)
+            .clamp(0.0, 1.0);
+        let confidence_improvement = json
+            .get("confidence_improvement")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+
+        Ok(ReflectionPass {
+            analysis,
+            improvements,
+            refined_reasoning,
+            quality_score,
+            confidence_improvement,
+        })
+    }
+
+    /// Run one blocking reflection pass over `content`.
+    async fn reflect_pass_blocking(
+        &self,
+        content: &str,
+        prior_context: &str,
+    ) -> Result<ReflectionPass, ModeError> {
+        let prompt = get_prompt_for_mode(ReasoningMode::Reflection, Some(&Operation::Process));
+        let user_message =
+            format!("{prompt}\n\n{prior_context}Analyze and improve this reasoning:\n{content}");
+        let messages = vec![Message::user(user_message)];
+        let config = CompletionConfig::new()
+            .with_max_tokens(16384)
+            .with_temperature(0.7)
+            .with_deep_thinking();
+
+        let response = self.client.complete(messages, config).await?;
+        let json = extract_json(&response.content)?;
+        Self::parse_pass(&json)
+    }
+
+    /// Run one streaming reflection pass over `content`, reporting progress.
+    async fn reflect_pass_streaming(
+        &self,
+        content: &str,
+        prior_context: &str,
+        progress: Option<&ProgressReporter>,
+    ) -> Result<ReflectionPass, ModeError> {
+        let prompt = get_prompt_for_mode(ReasoningMode::Reflection, Some(&Operation::Process));
+        let user_message =
+            format!("{prompt}\n\n{prior_context}Analyze and improve this reasoning:\n{content}");
+        let messages = vec![Message::user(user_message)];
+        let config = CompletionConfig::new()
+            .with_max_tokens(16384)
+            .with_temperature(0.7)
+            .with_deep_thinking();
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ApiCallStarted);
+        }
+        let mut rx = self.client.complete_streaming(messages, config).await?;
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::StreamingStarted);
+        }
+
+        let mut accumulator = StreamAccumulator::new();
+        while let Some(event_result) = rx.recv().await {
+            let event = event_result?;
+            accumulator.process(event);
+        }
+
+        if let Some(p) = progress {
+            p.report_milestone(ProgressMilestone::ProcessingResponse);
+        }
+        let response_text = accumulator.text();
+        let json = extract_json(&response_text)?;
+        Self::parse_pass(&json)
+    }
+
+    /// Persist the reflection thought (using the assessed quality as confidence)
+    /// and build the final [`ProcessResponse`].
+    async fn finalize_process(
+        &self,
+        session_id: &str,
+        original_content: &str,
+        pass: ReflectionPass,
+        iterations: u32,
+    ) -> ProcessResponse {
+        let thought_id = generate_thought_id();
+        let thought = Thought::new(
+            &thought_id,
+            session_id,
+            original_content,
+            "reflection",
+            pass.quality_score,
+        );
+        if let Err(e) = self.storage.save_thought(&thought).await {
+            tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
+        }
+
+        ProcessResponse::new(
+            thought_id,
+            session_id,
+            pass.analysis,
+            pass.improvements,
+            pass.refined_reasoning,
+            pass.quality_score,
+            pass.confidence_improvement,
+            iterations,
+        )
+    }
+
+    /// Build a short context block from recent prior thoughts in the session.
+    /// Best-effort: returns an empty string when there is no history.
+    async fn load_prior_context(&self, session_id: &str) -> String {
+        const MAX_THOUGHTS: usize = 3;
+        const MAX_CHARS: usize = 400;
+
+        let thoughts = match self.storage.get_thoughts(session_id).await {
+            Ok(thoughts) if !thoughts.is_empty() => thoughts,
+            Ok(_) => return String::new(),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load prior thoughts — proceeding without session context"
+                );
+                return String::new();
+            }
+        };
+
+        let start = thoughts.len().saturating_sub(MAX_THOUGHTS);
+        let lines: Vec<String> = thoughts[start..]
+            .iter()
+            .map(|t| {
+                let content: String = t.content.chars().take(MAX_CHARS).collect();
+                format!("- [{}] {content}", t.mode)
+            })
+            .collect();
+        format!("Earlier in this session:\n{}\n\n", lines.join("\n"))
+    }
 }
 
 impl<S, C> std::fmt::Debug for ReflectionMode<S, C>
@@ -596,6 +689,67 @@ mod tests {
         .to_string()
     }
 
+    #[tokio::test]
+    async fn test_process_iterates_for_requested_passes() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("s")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        // max_iterations = 2, no threshold → exactly two reflection passes.
+        let response_json = mock_process_response();
+        mock_client
+            .expect_complete()
+            .times(2)
+            .returning(move |_, _| {
+                Ok(CompletionResponse::new(
+                    response_json.clone(),
+                    Usage::new(50, 100),
+                ))
+            });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode
+            .process("reasoning", None, Some(2), None)
+            .await
+            .unwrap();
+        assert_eq!(result.iterations_used, 2);
+    }
+
+    #[tokio::test]
+    async fn test_process_stops_at_quality_threshold() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("s")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        // quality_score 0.9 ≥ threshold 0.8 → stop after the first pass despite a
+        // budget of 5 (exactly one API call).
+        mock_client.expect_complete().times(1).returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"analysis": {"strengths": ["Clear"], "weaknesses": ["Gaps"]},
+                    "improvements": [{"issue": "i", "suggestion": "s", "priority": "high"}],
+                    "refined_reasoning": "Refined", "quality_score": 0.9,
+                    "confidence_improvement": 0.1}"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = ReflectionMode::new(mock_storage, mock_client);
+        let result = mode
+            .process("reasoning", None, Some(5), Some(0.8))
+            .await
+            .unwrap();
+        assert_eq!(result.iterations_used, 1);
+        assert!((result.quality_score - 0.9).abs() < f64::EPSILON);
+    }
+
     fn mock_evaluate_response() -> String {
         r#"{
             "session_assessment": {
@@ -632,7 +786,9 @@ mod tests {
         });
 
         let mode = ReflectionMode::new(mock_storage, mock_client);
-        let result = mode.process("Test reasoning content", None).await;
+        let result = mode
+            .process("Test reasoning content", None, None, None)
+            .await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -650,7 +806,7 @@ mod tests {
         let mock_client = MockAnthropicClientTrait::new();
 
         let mode = ReflectionMode::new(mock_storage, mock_client);
-        let result = mode.process("", None).await;
+        let result = mode.process("", None, None, None).await;
 
         assert!(result.is_err());
         assert!(matches!(
@@ -676,7 +832,7 @@ mod tests {
         });
 
         let mode = ReflectionMode::new(mock_storage, mock_client);
-        let result = mode.process("Content", None).await;
+        let result = mode.process("Content", None, None, None).await;
 
         assert!(result.is_err());
         assert!(matches!(
@@ -706,7 +862,7 @@ mod tests {
         });
 
         let mode = ReflectionMode::new(mock_storage, mock_client);
-        let result = mode.process("Content", None).await;
+        let result = mode.process("Content", None, None, None).await;
 
         assert!(result.is_err());
         assert!(matches!(
@@ -731,7 +887,7 @@ mod tests {
         });
 
         let mode = ReflectionMode::new(mock_storage, mock_client);
-        let result = mode.process("Content", None).await;
+        let result = mode.process("Content", None, None, None).await;
 
         assert!(result.is_err());
         assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
@@ -932,7 +1088,9 @@ mod tests {
             });
 
         let mode = ReflectionMode::new(mock_storage, mock_client);
-        let result = mode.process_streaming("Test content", None, None).await;
+        let result = mode
+            .process_streaming("Test content", None, None, None, None)
+            .await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -1024,7 +1182,9 @@ mod tests {
         });
 
         let mode = ReflectionMode::new(mock_storage, mock_client);
-        let result = mode.process_streaming("Test content", None, None).await;
+        let result = mode
+            .process_streaming("Test content", None, None, None, None)
+            .await;
 
         assert!(result.is_err());
     }
@@ -1053,7 +1213,7 @@ mod tests {
         });
 
         let mode = ReflectionMode::new(mock_storage, mock_client);
-        let result = mode.process("Test content", None).await;
+        let result = mode.process("Test content", None, None, None).await;
 
         assert!(result.is_ok());
     }
@@ -1150,7 +1310,9 @@ mod tests {
             });
 
         let mode = ReflectionMode::new(mock_storage, mock_client);
-        let result = mode.process_streaming("Test content", None, None).await;
+        let result = mode
+            .process_streaming("Test content", None, None, None, None)
+            .await;
 
         assert!(result.is_ok());
     }

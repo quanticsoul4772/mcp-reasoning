@@ -284,13 +284,17 @@ Respond with a JSON object in this exact format:
     }
   ],
   "refined_reasoning": "An improved version of the original reasoning",
+  "quality_score": 0.7,
   "confidence_improvement": 0.1
 }
 
 Important:
 - Be constructive, not just critical
 - Prioritize improvements by impact
-- The refined reasoning should be demonstrably better"#
+- The refined reasoning should be demonstrably better
+- quality_score (0.0-1.0): the CURRENT quality of the reasoning you analyzed, before
+  your refinement — be honest, low scores are expected for flawed reasoning
+- confidence_improvement (0.0-1.0): how much applying your refinement would raise it"#
 }
 
 /// Prompt for reflection mode (evaluate operation).

@@ -242,6 +242,11 @@ async fn test_into_contents_implementations() {
         recommendations: Some(vec!["Improve".to_string()]),
         refined_content: Some("Refined".to_string()),
         coherence_score: Some(0.85),
+        completeness_score: None,
+        depth_score: None,
+        confidence_improvement: None,
+        key_insights: None,
+        meta_observations: None,
         metadata: None,
     };
     let _ = reflection_resp.into_contents();

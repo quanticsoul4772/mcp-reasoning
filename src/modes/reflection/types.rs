@@ -107,20 +107,27 @@ pub struct ProcessResponse {
     pub improvements: Vec<Improvement>,
     /// Refined version of the reasoning.
     pub refined_reasoning: String,
-    /// Expected confidence improvement (0.0-1.0).
+    /// Absolute quality (0.0-1.0) of the reasoning as analyzed (before refinement).
+    pub quality_score: f64,
+    /// Expected confidence improvement (0.0-1.0) from applying the refinement.
     pub confidence_improvement: f64,
+    /// Number of refinement passes performed.
+    pub iterations_used: u32,
 }
 
 impl ProcessResponse {
     /// Create a new process response.
     #[must_use]
+    #[allow(clippy::too_many_arguments)] // plain constructor for an 8-field response
     pub fn new(
         thought_id: impl Into<String>,
         session_id: impl Into<String>,
         analysis: ReasoningAnalysis,
         improvements: Vec<Improvement>,
         refined_reasoning: impl Into<String>,
+        quality_score: f64,
         confidence_improvement: f64,
+        iterations_used: u32,
     ) -> Self {
         Self {
             thought_id: thought_id.into(),
@@ -128,7 +135,9 @@ impl ProcessResponse {
             analysis,
             improvements,
             refined_reasoning: refined_reasoning.into(),
+            quality_score,
             confidence_improvement,
+            iterations_used,
         }
     }
 }
@@ -304,10 +313,12 @@ mod tests {
     #[test]
     fn test_process_response_new() {
         let analysis = ReasoningAnalysis::new(vec![], vec![]);
-        let response = ProcessResponse::new("t-1", "s-1", analysis, vec![], "refined", 0.1);
+        let response = ProcessResponse::new("t-1", "s-1", analysis, vec![], "refined", 0.7, 0.1, 1);
         assert_eq!(response.thought_id, "t-1");
         assert_eq!(response.session_id, "s-1");
         assert_eq!(response.refined_reasoning, "refined");
+        assert!((response.quality_score - 0.7).abs() < f64::EPSILON);
+        assert_eq!(response.iterations_used, 1);
     }
 
     #[test]

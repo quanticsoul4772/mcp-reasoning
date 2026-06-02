@@ -362,7 +362,9 @@ async fn test_reflection_mode_process() {
     let state = create_test_state(&server).await;
     let mode = ReflectionMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
-    let result = mode.process("Some reasoning to improve", None).await;
+    let result = mode
+        .process("Some reasoning to improve", None, None, None)
+        .await;
     assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();
