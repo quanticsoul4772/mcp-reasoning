@@ -1086,6 +1086,21 @@ pub struct MctsValidationInfo {
     pub warnings: Vec<String>,
 }
 
+/// Advisory stop signal for an explore step: whether the search has converged
+/// enough to commit, so the caller knows when to stop iterating. Derived from
+/// the frontier UCB1 scores and best-path value; never blocks, only advises.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MctsConvergence {
+    /// True when one candidate clearly dominates or the best value is near-optimal.
+    pub converged: bool,
+    /// Human-readable explanation of the convergence verdict.
+    pub reason: String,
+    /// UCB1 gap between the top frontier node and the runner-up (0.0 if <2 nodes).
+    pub top_gap: f64,
+    /// Best-path value reported by this step, echoed for the stop decision.
+    pub best_value: f64,
+}
+
 /// Response from MCTS.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MctsResponse {
@@ -1134,6 +1149,10 @@ pub struct MctsResponse {
     /// Result of verifying the UCB1 math / selection / quality trend.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validation: Option<MctsValidationInfo>,
+    /// Advisory stop signal: whether the search has converged enough to commit
+    /// (explore).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub convergence: Option<MctsConvergence>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -2110,6 +2129,7 @@ mod tests {
             alternatives: None,
             recommendation: None,
             validation: None,
+            convergence: None,
             metadata: None,
         };
         let contents = response.into_contents();

@@ -362,6 +362,7 @@ async fn test_into_contents_implementations() {
         alternatives: None,
         recommendation: None,
         validation: None,
+        convergence: None,
         metadata: None,
     };
     let _ = mcts_resp.into_contents();
