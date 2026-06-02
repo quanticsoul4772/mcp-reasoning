@@ -233,6 +233,20 @@ pub trait StorageTrait: Send + Sync {
     /// Returns [`StorageError`] if the database operation fails.
     async fn get_graph_edges(&self, session_id: &str)
         -> Result<Vec<StoredGraphEdge>, StorageError>;
+
+    /// Update the score of an existing graph node.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn update_graph_node_score(&self, id: &str, score: f64) -> Result<(), StorageError>;
+
+    /// Delete a graph node by ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database operation fails.
+    async fn delete_graph_node(&self, id: &str) -> Result<(), StorageError>;
 }
 
 /// Time provider trait for deterministic testing.

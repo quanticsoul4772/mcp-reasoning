@@ -224,6 +224,18 @@ pub mod doctest_helpers {
         ) -> Result<Vec<crate::traits::StoredGraphEdge>, StorageError> {
             Ok(vec![])
         }
+
+        async fn update_graph_node_score(
+            &self,
+            _id: &str,
+            _score: f64,
+        ) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn delete_graph_node(&self, _id: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
     }
 
     /// A simple mock Anthropic client for doctests.

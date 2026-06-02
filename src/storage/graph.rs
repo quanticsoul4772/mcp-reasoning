@@ -9,7 +9,7 @@ use super::core::SqliteStorage;
 use super::types::{GraphEdgeType, GraphNodeType, StoredGraphEdge, StoredGraphNode};
 
 // SQL query constants for graph nodes
-const INSERT_GRAPH_NODE: &str = "INSERT INTO graph_nodes (id, session_id, content, node_type, score, is_terminal, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+const INSERT_GRAPH_NODE: &str = "INSERT OR REPLACE INTO graph_nodes (id, session_id, content, node_type, score, is_terminal, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 const SELECT_GRAPH_NODE: &str = "SELECT id, session_id, content, node_type, score, is_terminal, metadata, created_at FROM graph_nodes WHERE id = ?";
 const SELECT_GRAPH_NODES_BY_SESSION: &str = "SELECT id, session_id, content, node_type, score, is_terminal, metadata, created_at FROM graph_nodes WHERE session_id = ? ORDER BY created_at ASC";
 const UPDATE_GRAPH_NODE_SCORE: &str = "UPDATE graph_nodes SET score = ? WHERE id = ?";
@@ -17,7 +17,7 @@ const UPDATE_GRAPH_NODE_TERMINAL: &str = "UPDATE graph_nodes SET is_terminal = 1
 const DELETE_GRAPH_NODE: &str = "DELETE FROM graph_nodes WHERE id = ?";
 
 // SQL query constants for graph edges
-const INSERT_GRAPH_EDGE: &str = "INSERT INTO graph_edges (id, session_id, from_node_id, to_node_id, edge_type, created_at) VALUES (?, ?, ?, ?, ?, ?)";
+const INSERT_GRAPH_EDGE: &str = "INSERT OR REPLACE INTO graph_edges (id, session_id, from_node_id, to_node_id, edge_type, created_at) VALUES (?, ?, ?, ?, ?, ?)";
 const SELECT_GRAPH_EDGE: &str = "SELECT id, session_id, from_node_id, to_node_id, edge_type, created_at FROM graph_edges WHERE id = ?";
 const SELECT_GRAPH_EDGES_BY_SESSION: &str = "SELECT id, session_id, from_node_id, to_node_id, edge_type, created_at FROM graph_edges WHERE session_id = ? ORDER BY created_at ASC";
 const SELECT_EDGES_FROM_NODE: &str = "SELECT id, session_id, from_node_id, to_node_id, edge_type, created_at FROM graph_edges WHERE from_node_id = ? ORDER BY created_at ASC";
