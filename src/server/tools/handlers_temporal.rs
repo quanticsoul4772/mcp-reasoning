@@ -1,18 +1,127 @@
 use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::{
-    FrontierNode, MctsMode, QualityAssessment, QualityTrend, SelectedNode, TimelineMode,
+    CausalAnalysis, CausalEdge, CausalModel, CausalQuestion, FrontierNode, MctsMode,
+    QualityAssessment, QualityTrend, SelectedNode, TimelineMode,
 };
 use crate::server::requests::{CounterfactualRequest, MctsRequest, TimelineRequest};
 use crate::server::responses::{
-    BacktrackSuggestion, BranchComparison, CausalStep, CounterfactualResponse, MctsAlternative,
-    MctsBackpropagation, MctsExpandedNode, MctsFrontierNode, MctsNode, MctsRecommendation,
-    MctsResponse, MctsSelectedNode, MctsValidationInfo, TimelineBranch, TimelineResponse,
+    AssociationInfo, BacktrackSuggestion, BranchComparison, CausalEdgeInfo, CausalModelInfo,
+    CausalStep, CounterfactualResponse, CounterfactualValidationInfo, InterventionInfo,
+    MctsAlternative, MctsBackpropagation, MctsExpandedNode, MctsFrontierNode, MctsNode,
+    MctsRecommendation, MctsResponse, MctsSelectedNode, MctsValidationInfo, TimelineBranch,
+    TimelineResponse,
 };
+
+/// Three-color DFS helper for cycle detection: white (absent), gray (1, on
+/// stack), black (2, done). Returns true when a back-edge (cycle) is found.
+fn cycle_visit<'a>(
+    node: &'a str,
+    adj: &HashMap<&'a str, Vec<&'a str>>,
+    color: &mut HashMap<&'a str, u8>,
+) -> bool {
+    color.insert(node, 1);
+    if let Some(neighbors) = adj.get(node) {
+        for &m in neighbors {
+            match color.get(m).copied().unwrap_or(0) {
+                1 => return true,
+                0 if cycle_visit(m, adj, color) => return true,
+                _ => {}
+            }
+        }
+    }
+    color.insert(node, 2);
+    false
+}
+
+/// Detect a directed cycle in the causal edges (a causal model must be a DAG).
+fn causal_model_has_cycle(edges: &[CausalEdge]) -> bool {
+    let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut all: HashSet<&str> = HashSet::new();
+    for e in edges {
+        adj.entry(e.from.as_str()).or_default().push(e.to.as_str());
+        all.insert(e.from.as_str());
+        all.insert(e.to.as_str());
+    }
+
+    let mut color: HashMap<&str, u8> = HashMap::new();
+    for &n in &all {
+        if color.get(n).copied().unwrap_or(0) == 0 && cycle_visit(n, &adj, &mut color) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Validate the causal model for structural consistency (declared nodes, the
+/// cause/effect present, confounders connecting both, acyclicity) and value ranges.
+fn verify_causal_model(
+    model: &CausalModel,
+    question: &CausalQuestion,
+    analysis: &CausalAnalysis,
+) -> CounterfactualValidationInfo {
+    let mut warnings = Vec::new();
+    let nodes: HashSet<&str> = model.nodes.iter().map(String::as_str).collect();
+
+    for e in &model.edges {
+        if !nodes.contains(e.from.as_str()) {
+            warnings.push(format!("Edge source '{}' is not a declared node", e.from));
+        }
+        if !nodes.contains(e.to.as_str()) {
+            warnings.push(format!("Edge target '{}' is not a declared node", e.to));
+        }
+    }
+    for c in &model.confounders {
+        if !nodes.contains(c.as_str()) {
+            warnings.push(format!("Confounder '{c}' is not a declared node"));
+        }
+    }
+
+    let cause = &question.variables.cause;
+    let effect = &question.variables.effect;
+    if !nodes.contains(cause.as_str()) {
+        warnings.push(format!("Cause '{cause}' is absent from the causal model"));
+    }
+    if !nodes.contains(effect.as_str()) {
+        warnings.push(format!("Effect '{effect}' is absent from the causal model"));
+    }
+
+    // A confounder, by definition, influences both the cause and the effect.
+    for c in &model.confounders {
+        let to_cause = model.edges.iter().any(|e| &e.from == c && &e.to == cause);
+        let to_effect = model.edges.iter().any(|e| &e.from == c && &e.to == effect);
+        if !(to_cause && to_effect) {
+            warnings.push(format!(
+                "Confounder '{c}' should have edges to both the cause and the effect"
+            ));
+        }
+    }
+
+    if causal_model_has_cycle(&model.edges) {
+        warnings.push("Causal model contains a cycle; a causal DAG must be acyclic".to_string());
+    }
+
+    let corr = analysis.association_level.observed_correlation;
+    if !(-1.0..=1.0).contains(&corr) {
+        warnings.push(format!("observed_correlation {corr:.3} is outside [-1, 1]"));
+    }
+    let conf = analysis.counterfactual_level.confidence;
+    if !(0.0..=1.0).contains(&conf) {
+        warnings.push(format!(
+            "counterfactual confidence {conf:.3} is outside [0, 1]"
+        ));
+    }
+
+    CounterfactualValidationInfo {
+        consistent: warnings.is_empty(),
+        warnings,
+    }
+}
 
 use super::{DEEP_THINKING, MAXIMUM_THINKING};
 
@@ -663,7 +772,13 @@ impl super::ReasoningServer {
 
         let response = match result {
             Ok(resp) => {
-                // Build causal chain from edges
+                let validation = verify_causal_model(
+                    &resp.causal_model,
+                    &resp.causal_question,
+                    &resp.analysis,
+                );
+                // Legacy causal_chain (kept for compatibility); the typed edges
+                // live in `causal_model` below.
                 let causal_chain: Vec<CausalStep> = resp
                     .causal_model
                     .edges
@@ -676,17 +791,50 @@ impl super::ReasoningServer {
                         probability: resp.analysis.counterfactual_level.confidence,
                     })
                     .collect();
+                let causal_model = CausalModelInfo {
+                    nodes: resp.causal_model.nodes.clone(),
+                    edges: resp
+                        .causal_model
+                        .edges
+                        .iter()
+                        .map(|e| CausalEdgeInfo {
+                            from: e.from.clone(),
+                            to: e.to.clone(),
+                            edge_type: enum_to_string(&e.edge_type),
+                        })
+                        .collect(),
+                    confounders: resp.causal_model.confounders.clone(),
+                };
+                let association = AssociationInfo {
+                    observed_correlation: resp.analysis.association_level.observed_correlation,
+                    interpretation: resp.analysis.association_level.interpretation.clone(),
+                };
+                let intervention = InterventionInfo {
+                    causal_effect: resp.analysis.intervention_level.causal_effect,
+                    mechanism: resp.analysis.intervention_level.mechanism.clone(),
+                };
 
                 CounterfactualResponse {
-                    counterfactual_outcome: resp.analysis.counterfactual_level.outcome,
+                    counterfactual_outcome: resp.analysis.counterfactual_level.outcome.clone(),
                     causal_chain,
                     session_id: Some(resp.session_id),
                     original_scenario: req.scenario,
                     intervention_applied: req.intervention,
                     analysis_depth: depth.to_string(),
-                    key_differences: resp.conclusions.caveats,
+                    key_differences: resp.conclusions.caveats.clone(),
                     confidence: resp.analysis.counterfactual_level.confidence,
-                    assumptions: resp.causal_model.confounders,
+                    assumptions: resp.causal_model.confounders.clone(),
+                    ladder_rung: Some(enum_to_string(&resp.causal_question.ladder_rung)),
+                    association: Some(association),
+                    intervention: Some(intervention),
+                    counterfactual_scenario: Some(
+                        resp.analysis.counterfactual_level.scenario.clone(),
+                    ),
+                    causal_model: Some(causal_model),
+                    causal_claim: Some(resp.conclusions.causal_claim.clone()),
+                    causal_strength: Some(enum_to_string(&resp.conclusions.strength)),
+                    actionable_insight: Some(resp.conclusions.actionable_insight.clone()),
+                    validation: Some(validation),
                     metadata: None,
                 }
             }
@@ -704,6 +852,15 @@ impl super::ReasoningServer {
                 key_differences: vec![],
                 confidence: 0.0,
                 assumptions: vec![],
+                ladder_rung: None,
+                association: None,
+                intervention: None,
+                counterfactual_scenario: None,
+                causal_model: None,
+                causal_claim: None,
+                causal_strength: None,
+                actionable_insight: None,
+                validation: None,
                 metadata: None,
             },
         };
@@ -818,5 +975,161 @@ mod mcts_verify_tests {
         let v = verify_backtrack(&qa);
         assert!(!v.consistent);
         assert!(v.warnings.iter().any(|w| w.contains("peak-to-trough")));
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp
+)]
+mod counterfactual_verify_tests {
+    use super::{causal_model_has_cycle, verify_causal_model};
+    use crate::modes::{
+        AssociationLevel, CausalAnalysis, CausalEdge, CausalModel, CausalQuestion, CausalVariables,
+        CounterfactualLevel, EdgeType, InterventionLevel, LadderRung,
+    };
+
+    fn edge(from: &str, to: &str, t: EdgeType) -> CausalEdge {
+        CausalEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+            edge_type: t,
+        }
+    }
+
+    fn question(cause: &str, effect: &str) -> CausalQuestion {
+        CausalQuestion {
+            statement: "q".to_string(),
+            ladder_rung: LadderRung::Counterfactual,
+            variables: CausalVariables {
+                cause: cause.to_string(),
+                effect: effect.to_string(),
+                intervention: "do".to_string(),
+            },
+        }
+    }
+
+    fn analysis(corr: f64, conf: f64) -> CausalAnalysis {
+        CausalAnalysis {
+            association_level: AssociationLevel {
+                observed_correlation: corr,
+                interpretation: "i".to_string(),
+            },
+            intervention_level: InterventionLevel {
+                causal_effect: 0.3,
+                mechanism: "m".to_string(),
+            },
+            counterfactual_level: CounterfactualLevel {
+                scenario: "s".to_string(),
+                outcome: "o".to_string(),
+                confidence: conf,
+            },
+        }
+    }
+
+    #[test]
+    fn test_consistent_model() {
+        let model = CausalModel {
+            nodes: vec!["X".to_string(), "Y".to_string(), "Z".to_string()],
+            edges: vec![
+                edge("X", "Y", EdgeType::Direct),
+                edge("Z", "X", EdgeType::Confounded),
+                edge("Z", "Y", EdgeType::Confounded),
+            ],
+            confounders: vec!["Z".to_string()],
+        };
+        let v = verify_causal_model(&model, &question("X", "Y"), &analysis(0.6, 0.7));
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
+    }
+
+    #[test]
+    fn test_flags_undeclared_edge_node() {
+        let model = CausalModel {
+            nodes: vec!["X".to_string(), "Y".to_string()],
+            edges: vec![edge("X", "GHOST", EdgeType::Direct)],
+            confounders: vec![],
+        };
+        let v = verify_causal_model(&model, &question("X", "Y"), &analysis(0.5, 0.7));
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("not a declared node")));
+    }
+
+    #[test]
+    fn test_flags_missing_cause() {
+        let model = CausalModel {
+            nodes: vec!["Y".to_string()],
+            edges: vec![],
+            confounders: vec![],
+        };
+        let v = verify_causal_model(&model, &question("X", "Y"), &analysis(0.5, 0.7));
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("Cause 'X' is absent")));
+    }
+
+    #[test]
+    fn test_flags_confounder_not_connecting_both() {
+        let model = CausalModel {
+            nodes: vec!["X".to_string(), "Y".to_string(), "Z".to_string()],
+            // Z points only to X, not to Y → not a true confounder.
+            edges: vec![
+                edge("X", "Y", EdgeType::Direct),
+                edge("Z", "X", EdgeType::Direct),
+            ],
+            confounders: vec!["Z".to_string()],
+        };
+        let v = verify_causal_model(&model, &question("X", "Y"), &analysis(0.5, 0.7));
+        assert!(!v.consistent);
+        assert!(v
+            .warnings
+            .iter()
+            .any(|w| w.contains("both the cause and the effect")));
+    }
+
+    #[test]
+    fn test_flags_out_of_range_correlation() {
+        let model = CausalModel {
+            nodes: vec!["X".to_string(), "Y".to_string()],
+            edges: vec![edge("X", "Y", EdgeType::Direct)],
+            confounders: vec![],
+        };
+        let v = verify_causal_model(&model, &question("X", "Y"), &analysis(1.8, 0.7));
+        assert!(!v.consistent);
+        assert!(v
+            .warnings
+            .iter()
+            .any(|w| w.contains("observed_correlation")));
+    }
+
+    #[test]
+    fn test_cycle_detection() {
+        let acyclic = vec![
+            edge("A", "B", EdgeType::Direct),
+            edge("B", "C", EdgeType::Direct),
+        ];
+        assert!(!causal_model_has_cycle(&acyclic));
+        let cyclic = vec![
+            edge("A", "B", EdgeType::Direct),
+            edge("B", "C", EdgeType::Direct),
+            edge("C", "A", EdgeType::Direct),
+        ];
+        assert!(causal_model_has_cycle(&cyclic));
+    }
+
+    #[test]
+    fn test_verify_flags_cycle() {
+        let model = CausalModel {
+            nodes: vec!["X".to_string(), "Y".to_string()],
+            edges: vec![
+                edge("X", "Y", EdgeType::Direct),
+                edge("Y", "X", EdgeType::Direct),
+            ],
+            confounders: vec![],
+        };
+        let v = verify_causal_model(&model, &question("X", "Y"), &analysis(0.5, 0.7));
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("acyclic")));
     }
 }
