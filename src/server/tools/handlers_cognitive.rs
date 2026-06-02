@@ -406,8 +406,8 @@ impl super::ReasoningServer {
             "create" => {
                 let name = req.name.as_deref().unwrap_or("checkpoint");
                 let description = req.description.as_deref();
-                // Create a basic context - in a full implementation, this would be
-                // extracted from the session's current state
+                // Pass an empty context; CheckpointMode::create enriches it with a
+                // snapshot derived from the session's current thoughts.
                 let context = CheckpointContext::new(
                     vec![],
                     req.new_direction
@@ -496,6 +496,7 @@ impl super::ReasoningServer {
                                     "open_questions": resp.restored_state.context.open_questions
                                 },
                                 "thought_count": resp.restored_state.thought_count,
+                                "discarded_count": resp.restored_state.discarded_count,
                                 "new_direction": resp.new_direction
                             })),
                             metadata: None,

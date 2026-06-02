@@ -127,6 +127,10 @@ pub mod doctest_helpers {
             Ok(vec![])
         }
 
+        async fn delete_thought(&self, _id: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+
         async fn save_checkpoint(
             &self,
             _checkpoint: &crate::traits::StoredCheckpoint,
