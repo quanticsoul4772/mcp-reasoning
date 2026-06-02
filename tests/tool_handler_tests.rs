@@ -318,7 +318,7 @@ async fn test_auto_mode_selection() {
     let state = create_test_state(&server).await;
     let mode = AutoMode::new(Arc::clone(&state.storage), Arc::clone(&state.client));
 
-    let result = mode.select("Analyze this simple problem", None).await;
+    let result = mode.select("Analyze this simple problem", None, &[]).await;
     assert!(result.is_ok(), "Expected success, got: {result:?}");
 
     let response = result.unwrap();

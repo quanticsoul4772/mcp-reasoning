@@ -184,7 +184,8 @@ pub struct AutoRequest {
     /// Session ID.
     pub session_id: Option<String>,
     /// When true, select the mode and immediately execute it.
-    /// Supported modes: linear, divergent. Other modes return selection only with a next_call hint.
+    /// Supported modes: linear, divergent, reflection. Other modes return selection
+    /// only with a next_call hint (they need parameters auto cannot infer).
     #[serde(default)]
     pub execute: Option<bool>,
 }

@@ -47,7 +47,7 @@ impl super::ReasoningServer {
 
         let auto_result = match tokio::time::timeout(
             timeout_duration,
-            auto_mode.select(&req.content, req.session_id.clone()),
+            auto_mode.select(&req.content, req.session_id.clone(), &[]),
         )
         .await
         {
