@@ -370,6 +370,7 @@ async fn test_mcts_explore_returns_valid_response() {
         quality_threshold: None,
         auto_execute: None,
         lookback_depth: None,
+        thinking: None,
         progress_token: None,
     };
 
@@ -402,6 +403,7 @@ async fn test_mcts_auto_backtrack_returns_valid_response() {
         quality_threshold: None,
         auto_execute: None,
         lookback_depth: None,
+        thinking: None,
         progress_token: None,
     };
 

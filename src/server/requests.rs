@@ -341,6 +341,10 @@ pub struct MctsRequest {
     pub auto_execute: Option<bool>,
     /// Lookback depth (1-10).
     pub lookback_depth: Option<u32>,
+    /// Thinking depth: "standard" (4096) | "deep" (8192) | "maximum" (16384).
+    /// Lower budgets trade reasoning depth for latency. Omit for maximum.
+    #[schemars(example = &"standard", example = &"maximum")]
+    pub thinking: Option<String>,
     /// Progress token for streaming notifications (auto-generated if not provided).
     pub progress_token: Option<String>,
 }

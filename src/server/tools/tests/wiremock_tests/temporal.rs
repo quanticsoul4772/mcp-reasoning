@@ -140,6 +140,7 @@ async fn test_mcts_all_operations() {
         simulation_depth: Some(5),
         quality_threshold: Some(0.7),
         lookback_depth: Some(3),
+        thinking: None,
         auto_execute: Some(false),
         progress_token: None,
     };
@@ -172,6 +173,7 @@ async fn test_mcts_all_operations() {
         simulation_depth: None,
         quality_threshold: Some(0.7),
         lookback_depth: Some(3),
+        thinking: None,
         auto_execute: Some(true),
         progress_token: None,
     };
@@ -188,6 +190,7 @@ async fn test_mcts_all_operations() {
         simulation_depth: None,
         quality_threshold: None,
         lookback_depth: None,
+        thinking: None,
         auto_execute: None,
         progress_token: None,
     };

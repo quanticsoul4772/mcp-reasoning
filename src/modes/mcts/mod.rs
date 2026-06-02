@@ -236,6 +236,7 @@ where
         &self,
         content: &str,
         session_id: Option<String>,
+        thinking_budget: u32,
         progress: Option<&ProgressReporter>,
     ) -> Result<ExploreResponse, ModeError> {
         validate_content(content)?;
@@ -262,7 +263,7 @@ where
         let config = CompletionConfig::new()
             .with_max_tokens(32768)
             .with_temperature(0.5)
-            .with_maximum_thinking();
+            .with_thinking_budget(thinking_budget);
 
         if let Some(p) = progress {
             p.report_milestone(ProgressMilestone::ApiCallStarted);
@@ -342,6 +343,7 @@ where
         &self,
         content: &str,
         session_id: Option<String>,
+        thinking_budget: u32,
         progress: Option<&ProgressReporter>,
     ) -> Result<BacktrackResponse, ModeError> {
         validate_content(content)?;
@@ -368,7 +370,7 @@ where
         let config = CompletionConfig::new()
             .with_max_tokens(32768)
             .with_temperature(0.3)
-            .with_maximum_thinking();
+            .with_thinking_budget(thinking_budget);
 
         if let Some(p) = progress {
             p.report_milestone(ProgressMilestone::ApiCallStarted);
@@ -824,7 +826,7 @@ mod tests {
 
         let mode = MctsMode::new(mock_storage, mock_client);
         let result = mode
-            .explore_streaming("Test search state", None, None)
+            .explore_streaming("Test search state", None, 16384, None)
             .await;
 
         assert!(result.is_ok());
@@ -886,7 +888,9 @@ mod tests {
             });
 
         let mode = MctsMode::new(mock_storage, mock_client);
-        let result = mode.auto_backtrack_streaming("node_5", None, None).await;
+        let result = mode
+            .auto_backtrack_streaming("node_5", None, 16384, None)
+            .await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -968,7 +972,9 @@ mod tests {
         });
 
         let mode = MctsMode::new(mock_storage, mock_client);
-        let result = mode.explore_streaming("Test content", None, None).await;
+        let result = mode
+            .explore_streaming("Test content", None, 16384, None)
+            .await;
 
         assert!(result.is_err());
     }
@@ -1028,7 +1034,7 @@ mod tests {
 
         let mode = MctsMode::new(mock_storage, mock_client);
         let result = mode
-            .auto_backtrack_streaming("node_5", None, Some(&progress_reporter))
+            .auto_backtrack_streaming("node_5", None, 16384, Some(&progress_reporter))
             .await;
 
         assert!(result.is_ok());

@@ -210,6 +210,7 @@ async fn test_mcts_auto_backtrack_operation() {
         simulation_depth: None,
         quality_threshold: Some(0.7),
         lookback_depth: Some(3),
+        thinking: None,
         auto_execute: Some(false),
         progress_token: None,
     };
@@ -229,6 +230,7 @@ async fn test_mcts_unknown_operation() {
         simulation_depth: None,
         quality_threshold: None,
         lookback_depth: None,
+        thinking: None,
         auto_execute: None,
         progress_token: None,
     };

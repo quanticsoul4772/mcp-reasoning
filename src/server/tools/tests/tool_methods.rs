@@ -232,6 +232,7 @@ async fn test_reasoning_mcts_tool() {
         simulation_depth: Some(5),
         quality_threshold: Some(0.7),
         lookback_depth: Some(3),
+        thinking: None,
         auto_execute: Some(false),
         progress_token: None,
     };

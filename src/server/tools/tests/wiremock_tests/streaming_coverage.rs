@@ -71,6 +71,7 @@ fn mcts_req() -> MctsRequest {
         quality_threshold: None,
         auto_execute: None,
         lookback_depth: None,
+        thinking: None,
         progress_token: None,
     }
 }
@@ -112,6 +113,19 @@ fn mcts_explore_dominant() -> String {
         "search_status": {"total_nodes": 6, "total_simulations": 30, "best_path_value": 0.7}
     })
     .to_string()
+}
+
+#[tokio::test]
+async fn test_mcts_explore_streaming_fast_mode_succeeds() {
+    let mock_server = MockServer::start().await;
+    mount_sse(&mock_server, &mcts_explore_consistent()).await;
+    let server = create_mocked_server(&mock_server).await;
+
+    // A "standard" thinking budget still drives the success arm end-to-end.
+    let mut req = mcts_req();
+    req.thinking = Some("standard".to_string());
+    let resp = server.reasoning_mcts(Parameters(req)).await;
+    assert_eq!(resp.frontier.expect("frontier surfaced").len(), 2);
 }
 
 #[tokio::test]
