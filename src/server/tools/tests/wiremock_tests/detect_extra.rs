@@ -286,6 +286,7 @@ async fn test_into_contents_implementations() {
         aggregated_insight: None,
         conclusions: None,
         state: None,
+        validation: None,
         persistence_warning: None,
         metadata: None,
     };

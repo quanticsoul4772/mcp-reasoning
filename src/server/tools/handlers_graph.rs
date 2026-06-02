@@ -8,7 +8,7 @@ use crate::server::metadata_builders;
 use crate::server::requests::{DetectRequest, GraphRequest};
 use crate::server::responses::{
     ArgumentStructureInfo, DetectResponse, DetectValidationInfo, Detection, GraphNode,
-    GraphResponse, GraphState,
+    GraphResponse, GraphState, GraphValidationInfo,
 };
 
 use super::{DEEP_THINKING, STANDARD_THINKING};
@@ -83,6 +83,48 @@ fn build_detect_validation(
     }
 }
 
+/// Verify that every generated node's quality score sits in the [0, 1] range
+/// the graph prompts specify. Nodes without a score are skipped.
+fn verify_graph_generate(nodes: &[GraphNode]) -> GraphValidationInfo {
+    let mut warnings = Vec::new();
+    for n in nodes {
+        if let Some(s) = n.score {
+            if !(0.0..=1.0).contains(&s) {
+                warnings.push(format!(
+                    "Node '{}' score {s:.3} is outside the [0, 1] range",
+                    n.id
+                ));
+            }
+        }
+    }
+    GraphValidationInfo {
+        consistent: warnings.is_empty(),
+        warnings,
+    }
+}
+
+/// Verify the reported graph state counts reconcile: neither the pruned nor the
+/// active count may exceed the total.
+fn verify_graph_state(state: &GraphState) -> GraphValidationInfo {
+    let mut warnings = Vec::new();
+    if state.pruned_count > state.total_nodes {
+        warnings.push(format!(
+            "pruned_count {} exceeds total_nodes {}",
+            state.pruned_count, state.total_nodes
+        ));
+    }
+    if state.active_nodes > state.total_nodes {
+        warnings.push(format!(
+            "active_nodes {} exceeds total_nodes {}",
+            state.active_nodes, state.total_nodes
+        ));
+    }
+    GraphValidationInfo {
+        consistent: warnings.is_empty(),
+        warnings,
+    }
+}
+
 impl super::ReasoningServer {
     pub(super) async fn handle_graph(&self, req: GraphRequest) -> GraphResponse {
         let timer = Timer::start();
@@ -116,6 +158,7 @@ impl super::ReasoningServer {
                             aggregated_insight: None,
                             conclusions: None,
                             state: None,
+                            validation: None,
                             persistence_warning: None,
                             metadata: None,
                         })
@@ -135,24 +178,26 @@ impl super::ReasoningServer {
                                     r.persistence_failures
                                 )
                             });
+                            let nodes: Vec<GraphNode> = r
+                                .children
+                                .into_iter()
+                                .map(|n| GraphNode {
+                                    id: n.id,
+                                    content: n.content,
+                                    score: Some(n.score),
+                                    depth: None,
+                                    parent_id: None,
+                                })
+                                .collect();
+                            let validation = Some(verify_graph_generate(&nodes));
                             GraphResponse {
                                 session_id: sid,
                                 node_id: None,
-                                nodes: Some(
-                                    r.children
-                                        .into_iter()
-                                        .map(|n| GraphNode {
-                                            id: n.id,
-                                            content: n.content,
-                                            score: Some(n.score),
-                                            depth: None,
-                                            parent_id: None,
-                                        })
-                                        .collect(),
-                                ),
+                                nodes: Some(nodes),
                                 aggregated_insight: None,
                                 conclusions: None,
                                 state: None,
+                                validation,
                                 persistence_warning,
                                 metadata: None,
                             }
@@ -170,6 +215,7 @@ impl super::ReasoningServer {
                             aggregated_insight: None,
                             conclusions: None,
                             state: None,
+                            validation: None,
                             persistence_warning: None,
                             metadata: None,
                         })
@@ -185,6 +231,7 @@ impl super::ReasoningServer {
                             aggregated_insight: Some(r.synthesis.content),
                             conclusions: None,
                             state: None,
+                            validation: None,
                             persistence_warning: None,
                             metadata: None,
                         })
@@ -200,6 +247,7 @@ impl super::ReasoningServer {
                             aggregated_insight: None,
                             conclusions: None,
                             state: None,
+                            validation: None,
                             persistence_warning: None,
                             metadata: None,
                         })
@@ -220,6 +268,7 @@ impl super::ReasoningServer {
                                 max_depth: 0,
                                 pruned_count: r.prune_candidates.len() as u32,
                             }),
+                            validation: None,
                             persistence_warning: None,
                             metadata: None,
                         })
@@ -237,6 +286,7 @@ impl super::ReasoningServer {
                                 r.conclusions.into_iter().map(|c| c.conclusion).collect(),
                             ),
                             state: None,
+                            validation: None,
                             persistence_warning: None,
                             metadata: None,
                         })
@@ -245,20 +295,32 @@ impl super::ReasoningServer {
                     let sid = session_id.clone();
                     mode.state(req.content.as_deref(), &session_id)
                         .await
-                        .map(move |r| GraphResponse {
-                            session_id: sid,
-                            node_id: None,
-                            nodes: None,
-                            aggregated_insight: None,
-                            conclusions: None,
-                            state: Some(GraphState {
+                        .map(move |r| {
+                            // saturating_sub guards the count subtraction: a
+                            // structure reporting pruned_count > total_nodes
+                            // would otherwise underflow-panic in debug. The
+                            // inconsistency is surfaced by verify_graph_state.
+                            let state = GraphState {
                                 total_nodes: r.structure.total_nodes,
-                                active_nodes: r.structure.total_nodes - r.structure.pruned_count,
+                                active_nodes: r
+                                    .structure
+                                    .total_nodes
+                                    .saturating_sub(r.structure.pruned_count),
                                 max_depth: r.structure.depth,
                                 pruned_count: r.structure.pruned_count,
-                            }),
-                            persistence_warning: None,
-                            metadata: None,
+                            };
+                            let validation = Some(verify_graph_state(&state));
+                            GraphResponse {
+                                session_id: sid,
+                                node_id: None,
+                                nodes: None,
+                                aggregated_insight: None,
+                                conclusions: None,
+                                state: Some(state),
+                                validation,
+                                persistence_warning: None,
+                                metadata: None,
+                            }
                         })
                 }
                 _ => Err(ModeError::InvalidOperation {
@@ -300,6 +362,7 @@ impl super::ReasoningServer {
             )),
             conclusions: None,
             state: None,
+            validation: None,
             persistence_warning: None,
             metadata: None,
         });
@@ -704,5 +767,85 @@ mod detect_helper_tests {
             .warnings
             .iter()
             .any(|w| w.contains("could not be located")));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod graph_verify_tests {
+    use super::{verify_graph_generate, verify_graph_state};
+    use crate::server::responses::{GraphNode, GraphState};
+
+    fn node(id: &str, score: Option<f64>) -> GraphNode {
+        GraphNode {
+            id: id.to_string(),
+            content: "c".to_string(),
+            score,
+            depth: None,
+            parent_id: None,
+        }
+    }
+
+    #[test]
+    fn test_generate_scores_in_range_are_consistent() {
+        let nodes = vec![node("a", Some(0.0)), node("b", Some(0.8)), node("c", None)];
+        let v = verify_graph_generate(&nodes);
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
+    }
+
+    #[test]
+    fn test_generate_flags_out_of_range_score() {
+        let nodes = vec![node("a", Some(0.8)), node("b", Some(1.4))];
+        let v = verify_graph_generate(&nodes);
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("outside the [0, 1]")));
+    }
+
+    #[test]
+    fn test_generate_flags_negative_score() {
+        let v = verify_graph_generate(&[node("a", Some(-0.1))]);
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("'a'")));
+    }
+
+    #[test]
+    fn test_state_counts_reconcile() {
+        let state = GraphState {
+            total_nodes: 10,
+            active_nodes: 8,
+            max_depth: 3,
+            pruned_count: 2,
+        };
+        let v = verify_graph_state(&state);
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
+    }
+
+    #[test]
+    fn test_state_flags_pruned_exceeding_total() {
+        let state = GraphState {
+            total_nodes: 3,
+            active_nodes: 0,
+            max_depth: 1,
+            pruned_count: 5,
+        };
+        let v = verify_graph_state(&state);
+        assert!(!v.consistent);
+        assert!(v
+            .warnings
+            .iter()
+            .any(|w| w.contains("pruned_count 5 exceeds total_nodes 3")));
+    }
+
+    #[test]
+    fn test_state_flags_active_exceeding_total() {
+        let state = GraphState {
+            total_nodes: 4,
+            active_nodes: 9,
+            max_depth: 2,
+            pruned_count: 0,
+        };
+        let v = verify_graph_state(&state);
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("active_nodes 9")));
     }
 }
