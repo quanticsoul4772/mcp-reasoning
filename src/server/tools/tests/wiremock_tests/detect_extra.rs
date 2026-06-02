@@ -294,6 +294,11 @@ async fn test_into_contents_implementations() {
         detections: vec![],
         summary: Some("Summary".to_string()),
         overall_quality: Some(0.8),
+        debiased_version: None,
+        argument_structure: None,
+        unchallenged_assumptions: None,
+        conclusion_altering_biases: None,
+        validation: None,
         metadata: None,
     };
     let _ = detect_resp.into_contents();

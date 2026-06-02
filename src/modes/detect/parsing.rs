@@ -84,6 +84,14 @@ pub fn parse_biases(json: &serde_json::Value) -> Result<Vec<DetectedBias>, ModeE
 
             let confidence = parse_confidence(b)?;
 
+            // Optional per-bias signal: would removing this change the conclusion?
+            // Default to "unknown" rather than failing on older/edge responses.
+            let changes_conclusion = b
+                .get("changes_conclusion")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown")
+                .to_string();
+
             let impact = b
                 .get("impact")
                 .and_then(serde_json::Value::as_str)
@@ -105,6 +113,7 @@ pub fn parse_biases(json: &serde_json::Value) -> Result<Vec<DetectedBias>, ModeE
                 evidence,
                 severity,
                 confidence,
+                changes_conclusion,
                 impact,
                 debiasing,
             })
@@ -137,6 +146,14 @@ pub fn parse_bias_assessment(json: &serde_json::Value) -> Result<BiasAssessment,
         })?
         .to_string();
 
+    // Optional: the model lists which biases are conclusion-altering. Absent on
+    // older/edge responses, so default to empty rather than failing the parse.
+    let conclusion_altering_biases = assessment
+        .get("conclusion_altering_biases")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+
     let reasoning_quality = assessment
         .get("reasoning_quality")
         .and_then(serde_json::Value::as_f64)
@@ -154,6 +171,7 @@ pub fn parse_bias_assessment(json: &serde_json::Value) -> Result<BiasAssessment,
     Ok(BiasAssessment {
         bias_count,
         most_severe,
+        conclusion_altering_biases,
         reasoning_quality,
     })
 }

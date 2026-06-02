@@ -22,6 +22,9 @@ pub struct DetectedBias {
     /// Per-bias confidence that this bias is present (0.0-1.0),
     /// independent of severity.
     pub confidence: f64,
+    /// Whether removing this bias would change the conclusion
+    /// ("yes"/"no"/"maybe"). The most actionable per-bias signal.
+    pub changes_conclusion: String,
     /// Impact on reasoning.
     pub impact: String,
     /// Strategy to counteract.
@@ -59,6 +62,10 @@ pub struct BiasAssessment {
     pub bias_count: u32,
     /// The most severe bias found.
     pub most_severe: String,
+    /// The biases that, if removed, would change the conclusion — these are
+    /// the ones that actually matter. Empty when none are conclusion-altering.
+    #[serde(default)]
+    pub conclusion_altering_biases: String,
     /// Overall reasoning quality (0.0-1.0).
     pub reasoning_quality: f64,
 }
@@ -194,6 +201,18 @@ pub enum ArgumentValidity {
     Invalid,
     /// Argument has some valid and some invalid parts.
     PartiallyValid,
+}
+
+impl ArgumentValidity {
+    /// Returns the snake_case string representation.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Valid => "valid",
+            Self::Invalid => "invalid",
+            Self::PartiallyValid => "partially_valid",
+        }
+    }
 }
 
 /// Overall assessment of fallacies in content.
@@ -396,6 +415,7 @@ mod tests {
             evidence: "E".to_string(),
             severity: BiasSeverity::High,
             confidence: 0.9,
+            changes_conclusion: "yes".to_string(),
             impact: "I".to_string(),
             debiasing: "D".to_string(),
         };
