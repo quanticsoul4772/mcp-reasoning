@@ -1132,3 +1132,62 @@ async fn test_evidence_assess_surfaces_breakdown_and_pivot() {
     assert!((cred.expertise - 0.9).abs() < 1e-9);
     assert!(pieces[0].quality.is_some());
 }
+
+// ---------------------------------------------------------------------------
+// False-negative coverage: the validation must catch INJECTED errors end-to-end,
+// not just fire on already-correct data.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_decision_weighted_corrects_injected_bad_arithmetic() {
+    let mock_server = MockServer::start().await;
+
+    // Single criterion at weight 1.0, so each total should equal its score.
+    // The model lies: it inflates A's total and ranks A first, but B scores
+    // higher, so verification must recompute and flip the ranking to B.
+    let json = serde_json::json!({
+        "options": ["Option A", "Option B"],
+        "criteria": [{"name": "value", "weight": 1.0, "description": "Overall value"}],
+        "scores": {
+            "Option A": {"value": 0.2},
+            "Option B": {"value": 0.9}
+        },
+        "weighted_totals": {"Option A": 0.95, "Option B": 0.9},
+        "ranking": [
+            {"option": "Option A", "score": 0.95, "rank": 1},
+            {"option": "Option B", "score": 0.9, "rank": 2}
+        ],
+        "sensitivity_notes": "n/a"
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(anthropic_response(&json.to_string())),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let server = create_mocked_server(&mock_server).await;
+    let req = DecisionRequest {
+        decision_type: Some("weighted".to_string()),
+        question: Some("Which option?".to_string()),
+        options: Some(vec!["Option A".to_string(), "Option B".to_string()]),
+        topic: None,
+        context: None,
+        session_id: None,
+    };
+
+    let resp = server.reasoning_decision(Parameters(req)).await;
+    let validation = resp.validation.expect("validation present");
+    assert!(
+        !validation.consistent,
+        "the injected bad totals must be caught"
+    );
+    assert!(validation.ranking_corrected);
+    // The corrected ranking puts B first, and the recommendation follows it.
+    assert_eq!(resp.recommendation, "Option B");
+    let rankings = resp.rankings.expect("rankings");
+    assert_eq!(rankings[0].option, "Option B");
+    assert!((rankings[0].score - 0.9).abs() < 1e-9);
+}

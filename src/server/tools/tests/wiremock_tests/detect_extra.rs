@@ -286,6 +286,7 @@ async fn test_into_contents_implementations() {
         aggregated_insight: None,
         conclusions: None,
         state: None,
+        persistence_warning: None,
         metadata: None,
     };
     let _ = graph_resp.into_contents();

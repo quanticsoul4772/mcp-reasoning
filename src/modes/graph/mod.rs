@@ -187,17 +187,29 @@ where
             tracing::warn!(error = %e, "Storage write failed — reasoning result preserved, thought not persisted");
         }
 
+        // Track how many of the child/edge writes failed so the caller can be
+        // told when the graph wasn't fully saved (e.g. generating from a parent
+        // node that was never persisted drops the edge under FK enforcement).
+        let mut persistence_failures: u32 = 0;
         for child in &children {
-            self.persist_node(
-                &session.id,
-                &child.id,
-                &child.content,
-                child.score,
-                GraphNodeType::Thought,
-            )
-            .await;
-            self.persist_edge(&session.id, &parent_id, &child.id, GraphEdgeType::Continues)
-                .await;
+            if !self
+                .persist_node(
+                    &session.id,
+                    &child.id,
+                    &child.content,
+                    child.score,
+                    GraphNodeType::Thought,
+                )
+                .await
+            {
+                persistence_failures += 1;
+            }
+            if !self
+                .persist_edge(&session.id, &parent_id, &child.id, GraphEdgeType::Continues)
+                .await
+            {
+                persistence_failures += 1;
+            }
         }
 
         Ok(GenerateResponse::new(
@@ -206,7 +218,8 @@ where
             parent_id,
             children,
             generation_notes,
-        ))
+        )
+        .with_persistence_failures(persistence_failures))
     }
 
     /// Score and evaluate a node.
@@ -733,7 +746,8 @@ where
     }
 
     /// Persist a graph node. Storage failures are logged, not propagated, so a
-    /// write error never discards a reasoning result already returned to the caller.
+    /// write error never discards a reasoning result already returned to the
+    /// caller. Returns `true` on success.
     async fn persist_node(
         &self,
         session_id: &str,
@@ -741,7 +755,7 @@ where
         content: &str,
         score: f64,
         node_type: GraphNodeType,
-    ) {
+    ) -> bool {
         let node = StoredGraphNode::new(
             Self::namespaced_id(session_id, node_id),
             session_id,
@@ -752,18 +766,20 @@ where
 
         if let Err(e) = self.storage.save_graph_node(&node).await {
             tracing::warn!(error = %e, node_id, "Graph node persistence failed");
+            return false;
         }
+        true
     }
 
     /// Persist a directed graph edge between two (namespaced) nodes. Failures are
-    /// logged, not propagated.
+    /// logged, not propagated. Returns `true` on success.
     async fn persist_edge(
         &self,
         session_id: &str,
         from_id: &str,
         to_id: &str,
         edge_type: GraphEdgeType,
-    ) {
+    ) -> bool {
         let edge = StoredGraphEdge::new(
             Self::namespaced_id(session_id, &format!("{from_id}->{to_id}")),
             session_id,
@@ -774,11 +790,14 @@ where
 
         if let Err(e) = self.storage.save_graph_edge(&edge).await {
             tracing::warn!(error = %e, from = from_id, to = to_id, "Graph edge persistence failed");
+            return false;
         }
+        true
     }
 
     /// Update a node's score in storage. Failures are logged, not propagated.
-    async fn persist_score(&self, session_id: &str, node_id: &str, score: f64) {
+    /// Returns `true` on success.
+    async fn persist_score(&self, session_id: &str, node_id: &str, score: f64) -> bool {
         let storage_id = Self::namespaced_id(session_id, node_id);
         if let Err(e) = self
             .storage
@@ -786,7 +805,9 @@ where
             .await
         {
             tracing::warn!(error = %e, node_id, "Graph node score update failed");
+            return false;
         }
+        true
     }
 }
 
@@ -1808,9 +1829,12 @@ mod tests {
         seed_node(&storage, "sess-gen", "root").await;
         let mode = GraphMode::new(Arc::clone(&storage), fixed_client(mock_generate_response()));
 
-        mode.generate(Some("Parent"), None, Some("sess-gen".to_string()))
+        let resp = mode
+            .generate(Some("Parent"), None, Some("sess-gen".to_string()))
             .await
             .expect("generate succeeds");
+        // Parent exists, so everything persisted.
+        assert_eq!(resp.persistence_failures, 0);
 
         let nodes = storage.get_graph_nodes("sess-gen").await.expect("nodes");
         assert!(nodes.iter().any(|n| n.id == "sess-gen::c1"));
@@ -1819,6 +1843,28 @@ mod tests {
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].from_node_id, "sess-gen::root");
         assert_eq!(edges[0].to_node_id, "sess-gen::c1");
+    }
+
+    #[tokio::test]
+    async fn test_generate_reports_persistence_failure_for_missing_parent() {
+        let storage = in_memory_storage().await;
+        seed_session(&storage, "sess-orphan").await;
+        // Deliberately do NOT seed the parent "root" node, so the child→parent
+        // edge violates the foreign key and is dropped.
+        let mode = GraphMode::new(Arc::clone(&storage), fixed_client(mock_generate_response()));
+
+        let resp = mode
+            .generate(Some("Parent"), None, Some("sess-orphan".to_string()))
+            .await
+            .expect("generate still returns the reasoning result");
+
+        // The child node persists, but the edge to the missing parent fails.
+        assert_eq!(resp.persistence_failures, 1);
+        let edges = storage.get_graph_edges("sess-orphan").await.expect("edges");
+        assert!(
+            edges.is_empty(),
+            "edge to a missing parent must not persist"
+        );
     }
 
     #[tokio::test]

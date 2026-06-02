@@ -116,6 +116,7 @@ impl super::ReasoningServer {
                             aggregated_insight: None,
                             conclusions: None,
                             state: None,
+                            persistence_warning: None,
                             metadata: None,
                         })
                 }
@@ -124,25 +125,37 @@ impl super::ReasoningServer {
                     let node_id = req.node_id.as_deref();
                     mode.generate(req.content.as_deref(), node_id, Some(session_id.clone()))
                         .await
-                        .map(move |r| GraphResponse {
-                            session_id: sid,
-                            node_id: None,
-                            nodes: Some(
-                                r.children
-                                    .into_iter()
-                                    .map(|n| GraphNode {
-                                        id: n.id,
-                                        content: n.content,
-                                        score: Some(n.score),
-                                        depth: None,
-                                        parent_id: None,
-                                    })
-                                    .collect(),
-                            ),
-                            aggregated_insight: None,
-                            conclusions: None,
-                            state: None,
-                            metadata: None,
+                        .map(move |r| {
+                            let persistence_warning = (r.persistence_failures > 0).then(|| {
+                                format!(
+                                    "{} graph write(s) did not persist — typically an edge whose \
+                                     parent node was never saved. The generated nodes are returned, \
+                                     but the stored graph is incomplete. Run init first (or generate \
+                                     from a node that exists) so edges can reference a persisted parent.",
+                                    r.persistence_failures
+                                )
+                            });
+                            GraphResponse {
+                                session_id: sid,
+                                node_id: None,
+                                nodes: Some(
+                                    r.children
+                                        .into_iter()
+                                        .map(|n| GraphNode {
+                                            id: n.id,
+                                            content: n.content,
+                                            score: Some(n.score),
+                                            depth: None,
+                                            parent_id: None,
+                                        })
+                                        .collect(),
+                                ),
+                                aggregated_insight: None,
+                                conclusions: None,
+                                state: None,
+                                persistence_warning,
+                                metadata: None,
+                            }
                         })
                 }
                 "score" => {
@@ -157,6 +170,7 @@ impl super::ReasoningServer {
                             aggregated_insight: None,
                             conclusions: None,
                             state: None,
+                            persistence_warning: None,
                             metadata: None,
                         })
                 }
@@ -171,6 +185,7 @@ impl super::ReasoningServer {
                             aggregated_insight: Some(r.synthesis.content),
                             conclusions: None,
                             state: None,
+                            persistence_warning: None,
                             metadata: None,
                         })
                 }
@@ -185,6 +200,7 @@ impl super::ReasoningServer {
                             aggregated_insight: None,
                             conclusions: None,
                             state: None,
+                            persistence_warning: None,
                             metadata: None,
                         })
                 }
@@ -204,6 +220,7 @@ impl super::ReasoningServer {
                                 max_depth: 0,
                                 pruned_count: r.prune_candidates.len() as u32,
                             }),
+                            persistence_warning: None,
                             metadata: None,
                         })
                 }
@@ -220,6 +237,7 @@ impl super::ReasoningServer {
                                 r.conclusions.into_iter().map(|c| c.conclusion).collect(),
                             ),
                             state: None,
+                            persistence_warning: None,
                             metadata: None,
                         })
                 }
@@ -239,6 +257,7 @@ impl super::ReasoningServer {
                                 max_depth: r.structure.depth,
                                 pruned_count: r.structure.pruned_count,
                             }),
+                            persistence_warning: None,
                             metadata: None,
                         })
                 }
@@ -281,6 +300,7 @@ impl super::ReasoningServer {
             )),
             conclusions: None,
             state: None,
+            persistence_warning: None,
             metadata: None,
         });
 

@@ -208,6 +208,10 @@ pub struct GenerateResponse {
     pub children: Vec<ChildNode>,
     /// Notes about generation.
     pub generation_notes: String,
+    /// Number of child-node / edge writes that failed to persist to storage.
+    /// Zero in the normal case; non-zero means the graph wasn't fully saved.
+    #[serde(default)]
+    pub persistence_failures: u32,
 }
 
 impl GenerateResponse {
@@ -226,7 +230,15 @@ impl GenerateResponse {
             parent_id: parent_id.into(),
             children,
             generation_notes: generation_notes.into(),
+            persistence_failures: 0,
         }
+    }
+
+    /// Record how many storage writes failed during generation.
+    #[must_use]
+    pub fn with_persistence_failures(mut self, failures: u32) -> Self {
+        self.persistence_failures = failures;
+        self
     }
 }
 
