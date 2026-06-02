@@ -1305,6 +1305,8 @@ mod tests {
                 timestamp: 1234567890,
                 problem_type: None,
                 quality_rating: None,
+                validation_consistent: None,
+                converged: None,
             });
         }
 

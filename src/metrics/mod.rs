@@ -56,6 +56,15 @@ pub struct MetricEvent {
     /// Quality rating of the result (0.0-1.0), set by caller or inferred from outcome.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quality_rating: Option<f64>,
+    /// Outcome of the mode's verification/consistency check, when it ran one:
+    /// `Some(true)` = consistent, `Some(false)` = an inconsistency was flagged,
+    /// `None` = the mode ran no verification on this invocation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation_consistent: Option<bool>,
+    /// For search modes (mcts explore): the convergence verdict for this step,
+    /// `None` when not applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub converged: Option<bool>,
 }
 
 impl MetricEvent {
@@ -72,6 +81,8 @@ impl MetricEvent {
                 .map_or(0, |d| d.as_secs()),
             problem_type: None,
             quality_rating: None,
+            validation_consistent: None,
+            converged: None,
         }
     }
 
@@ -95,6 +106,21 @@ impl MetricEvent {
         self.quality_rating = Some(rating.clamp(0.0, 1.0));
         self
     }
+
+    /// Attach the verification outcome (`Some(consistent)`), or leave it absent
+    /// when the mode ran no verification.
+    #[must_use]
+    pub fn with_validation(mut self, consistent: Option<bool>) -> Self {
+        self.validation_consistent = consistent;
+        self
+    }
+
+    /// Attach the convergence verdict for a search step, or leave it absent.
+    #[must_use]
+    pub fn with_convergence(mut self, converged: Option<bool>) -> Self {
+        self.converged = converged;
+        self
+    }
 }
 
 /// Summary statistics for a mode.
@@ -114,6 +140,14 @@ pub struct ModeSummary {
     pub max_latency_ms: u64,
     /// Success rate (0.0-1.0).
     pub success_rate: f64,
+    /// Invocations that ran a verification/consistency check.
+    pub verifications: u64,
+    /// Of those, how many were flagged inconsistent (a verification warning fired).
+    pub verification_failures: u64,
+    /// Invocations that produced a convergence verdict (search modes).
+    pub convergence_checks: u64,
+    /// Of those, how many reported converged = true.
+    pub converged: u64,
 }
 
 /// Overall metrics summary.
@@ -358,6 +392,23 @@ impl MetricsCollector {
                     0.0
                 };
 
+                // Verification and convergence firing rates — the transparency
+                // signals that were previously discarded after each response.
+                let verifications = mode_events
+                    .iter()
+                    .filter(|e| e.validation_consistent.is_some())
+                    .count() as u64;
+                let verification_failures = mode_events
+                    .iter()
+                    .filter(|e| e.validation_consistent == Some(false))
+                    .count() as u64;
+                let convergence_checks =
+                    mode_events.iter().filter(|e| e.converged.is_some()).count() as u64;
+                let converged = mode_events
+                    .iter()
+                    .filter(|e| e.converged == Some(true))
+                    .count() as u64;
+
                 (
                     mode,
                     ModeSummary {
@@ -368,6 +419,10 @@ impl MetricsCollector {
                         min_latency_ms: min_latency,
                         max_latency_ms: max_latency,
                         success_rate,
+                        verifications,
+                        verification_failures,
+                        convergence_checks,
+                        converged,
                     },
                 )
             })
@@ -948,6 +1003,45 @@ mod tests {
         assert_eq!(linear_summary.min_latency_ms, 100);
         assert_eq!(linear_summary.max_latency_ms, 300);
         assert!((linear_summary.success_rate - 0.666_666_666_666_666_6).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_summary_aggregates_verification_and_convergence() {
+        let collector = MetricsCollector::new();
+        // Two mcts events that ran verification: one consistent, one not; one of
+        // them converged, the other did not.
+        collector.record(
+            MetricEvent::new("mcts", 100, true)
+                .with_validation(Some(true))
+                .with_convergence(Some(true)),
+        );
+        collector.record(
+            MetricEvent::new("mcts", 120, true)
+                .with_validation(Some(false))
+                .with_convergence(Some(false)),
+        );
+        // A mode invocation with no verification at all leaves the counters be.
+        collector.record(MetricEvent::new("mcts", 90, true));
+
+        let summary = collector.summary();
+        let m = summary.by_mode.get("mcts").expect("mcts summary");
+        assert_eq!(m.total_invocations, 3);
+        assert_eq!(m.verifications, 2);
+        assert_eq!(m.verification_failures, 1);
+        assert_eq!(m.convergence_checks, 2);
+        assert_eq!(m.converged, 1);
+    }
+
+    #[test]
+    fn test_metric_event_validation_absent_by_default() {
+        let event = MetricEvent::new("linear", 100, true);
+        assert!(event.validation_consistent.is_none());
+        assert!(event.converged.is_none());
+        // Absent fields are skipped in serialization (no noise for modes that
+        // don't verify).
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(!json.contains("validation_consistent"));
+        assert!(!json.contains("converged"));
     }
 
     #[test]

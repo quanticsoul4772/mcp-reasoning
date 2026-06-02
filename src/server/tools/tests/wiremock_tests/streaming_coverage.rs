@@ -96,6 +96,20 @@ async fn test_mcts_explore_streaming_success_surfaces_breakdown() {
     let convergence = resp.convergence.expect("convergence surfaced");
     assert!(!convergence.converged);
     assert!(convergence.reason.contains("keep exploring"));
+
+    // The verification + convergence outcomes are recorded into metrics for
+    // transparency, not just returned in the response.
+    let mcts_metrics = server
+        .state
+        .metrics
+        .summary()
+        .by_mode
+        .remove("mcts")
+        .expect("mcts metrics recorded");
+    assert_eq!(mcts_metrics.verifications, 1);
+    assert_eq!(mcts_metrics.verification_failures, 0);
+    assert_eq!(mcts_metrics.convergence_checks, 1);
+    assert_eq!(mcts_metrics.converged, 0);
 }
 
 /// Explore body where the top node dominates the runner-up by 0.45 UCB1.
