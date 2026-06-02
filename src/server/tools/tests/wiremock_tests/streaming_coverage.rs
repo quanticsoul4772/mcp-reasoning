@@ -30,6 +30,24 @@ fn mcts_explore_consistent() -> String {
     .to_string()
 }
 
+/// Consistent UCB1 and an argmax selection of `b`, but backpropagation never
+/// updated the selected node `b` — only `root`. Isolates the coherence check.
+fn mcts_explore_backprop_incoherent() -> String {
+    serde_json::json!({
+        "frontier_evaluation": [
+            {"node_id": "a", "visits": 8, "average_value": 0.6, "exploration_bonus": 0.2, "ucb1_score": 0.8},
+            {"node_id": "b", "visits": 2, "average_value": 0.4, "exploration_bonus": 0.55, "ucb1_score": 0.95}
+        ],
+        "selected_node": {"node_id": "b", "selection_reason": "Highest UCB1 (0.95)"},
+        "expansion": {"new_nodes": [
+            {"id": "b1", "content": "Refine option b", "simulated_value": 0.7}
+        ]},
+        "backpropagation": {"updated_nodes": ["root"], "value_changes": {}},
+        "search_status": {"total_nodes": 6, "total_simulations": 30, "best_path_value": 0.7}
+    })
+    .to_string()
+}
+
 async fn mount_sse(mock_server: &MockServer, body_text: &str) {
     Mock::given(method("POST"))
         .and(path("/messages"))
@@ -73,6 +91,21 @@ async fn test_mcts_explore_streaming_success_surfaces_breakdown() {
     assert_eq!(expanded[0].content, "Refine option b");
     let validation = resp.validation.expect("validation present");
     assert!(validation.consistent, "warnings: {:?}", validation.warnings);
+}
+
+#[tokio::test]
+async fn test_mcts_explore_streaming_flags_incoherent_backprop() {
+    let mock_server = MockServer::start().await;
+    mount_sse(&mock_server, &mcts_explore_backprop_incoherent()).await;
+    let server = create_mocked_server(&mock_server).await;
+
+    let resp = server.reasoning_mcts(Parameters(mcts_req())).await;
+    let validation = resp.validation.expect("validation present");
+    assert!(!validation.consistent);
+    assert!(validation
+        .warnings
+        .iter()
+        .any(|w| w.contains("does not include the selected node")));
 }
 
 #[tokio::test]
