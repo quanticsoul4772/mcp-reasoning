@@ -861,7 +861,7 @@ async fn test_detect_biases_flags_ungrounded_quote() {
     assert!(validation
         .warnings
         .iter()
-        .any(|w| w.contains("not found verbatim")));
+        .any(|w| w.contains("could not be located")));
 }
 
 #[tokio::test]
