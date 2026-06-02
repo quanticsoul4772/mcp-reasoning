@@ -543,18 +543,30 @@ fn verify_backtrack(
     if vals.len() >= 2 {
         let first = vals[0];
         let last = vals[vals.len() - 1];
-        let expected_trend = if last + 0.02 < first {
-            QualityTrend::Declining
-        } else if last > first + 0.02 {
-            QualityTrend::Improving
-        } else {
-            QualityTrend::Stable
+        let prev = vals[vals.len() - 2];
+        // Direction between two samples, with a 0.02 dead-band.
+        let direction = |from: f64, to: f64| {
+            if to + 0.02 < from {
+                QualityTrend::Declining
+            } else if to > from + 0.02 {
+                QualityTrend::Improving
+            } else {
+                QualityTrend::Stable
+            }
         };
-        if qa.trend != expected_trend {
+        let overall = direction(first, last);
+        let recent = direction(prev, last);
+        // Accept the stated trend if it matches the overall endpoints OR the
+        // latest step. A dip-and-recover series (e.g. 0.70→0.45→0.68) nets out
+        // flat but is fairly called "improving" by its recent momentum, so
+        // judging on endpoints alone cries wolf. Only flag when the label
+        // contradicts both the overall move and the most recent step.
+        if qa.trend != overall && qa.trend != recent {
             warnings.push(format!(
-                "Trend stated '{}' but recent values go {first:.2} → {last:.2} (implies '{}')",
+                "Trend stated '{}' but recent values go {first:.2} → {last:.2} (overall '{}', latest step '{}')",
                 enum_to_string(&qa.trend),
-                enum_to_string(&expected_trend)
+                enum_to_string(&overall),
+                enum_to_string(&recent)
             ));
         }
 
@@ -1529,7 +1541,8 @@ mod mcts_verify_tests {
 
     #[test]
     fn test_backtrack_flags_trend_mismatch() {
-        // Values clearly decline but trend claims improving.
+        // Values decline monotonically (overall AND latest step) but trend
+        // claims improving — contradicts both, so it is still flagged.
         let qa = QualityAssessment {
             recent_values: vec![0.8, 0.6, 0.4],
             trend: QualityTrend::Improving,
@@ -1538,6 +1551,20 @@ mod mcts_verify_tests {
         let v = verify_backtrack(&qa, None, false);
         assert!(!v.consistent);
         assert!(v.warnings.iter().any(|w| w.contains("Trend stated")));
+    }
+
+    #[test]
+    fn test_backtrack_accepts_recovery_labeled_improving() {
+        // Real-output regression (audit case ab2): a dip-and-recover series
+        // nets out flat on endpoints (0.70 → 0.68) but the recent step is
+        // rising, so "improving" is defensible and must NOT be flagged.
+        let qa = QualityAssessment {
+            recent_values: vec![0.70, 0.50, 0.45, 0.62, 0.68],
+            trend: QualityTrend::Improving,
+            decline_magnitude: 0.25,
+        };
+        let v = verify_backtrack(&qa, None, false);
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
     }
 
     #[test]
