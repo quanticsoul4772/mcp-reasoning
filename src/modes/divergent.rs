@@ -30,6 +30,9 @@ pub struct Perspective {
     pub content: String,
     /// Novelty score (0.0-1.0).
     pub novelty_score: f64,
+    /// The single most important insight from this viewpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_insight: Option<String>,
     /// What this perspective might miss.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blind_spots: Option<Vec<String>>,
@@ -47,8 +50,16 @@ impl Perspective {
             viewpoint: viewpoint.into(),
             content: content.into(),
             novelty_score,
+            key_insight: None,
             blind_spots: None,
         }
+    }
+
+    /// Add the key insight for this perspective.
+    #[must_use]
+    pub fn with_key_insight(mut self, key_insight: impl Into<String>) -> Self {
+        self.key_insight = Some(key_insight.into());
+        self
     }
 
     /// Add blind spots.
@@ -176,8 +187,15 @@ where
     ) -> Result<DivergentResponse, ModeError> {
         validate_content(content)?;
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
         let num_perspectives = num_perspectives.unwrap_or(3).clamp(2, 5);
+
+        let prior_context = if has_prior_session {
+            self.load_prior_context(&session.id).await
+        } else {
+            String::new()
+        };
 
         // Select prompt based on force_rebellion
         let operation = if force_rebellion {
@@ -189,10 +207,10 @@ where
 
         let user_message = if challenge_assumptions {
             format!(
-                "{prompt}\n\nIMPORTANT: Also identify and challenge hidden assumptions.\n\nGenerate {num_perspectives} perspectives for:\n{content}"
+                "{prompt}\n\n{prior_context}IMPORTANT: Also identify and challenge hidden assumptions.\n\nGenerate {num_perspectives} perspectives for:\n{content}"
             )
         } else {
-            format!("{prompt}\n\nGenerate {num_perspectives} perspectives for:\n{content}")
+            format!("{prompt}\n\n{prior_context}Generate {num_perspectives} perspectives for:\n{content}")
         };
 
         let messages = vec![Message::user(user_message)];
@@ -284,8 +302,15 @@ where
             p.report_milestone(ProgressMilestone::RequestPrepared);
         }
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
         let num_perspectives = num_perspectives.unwrap_or(3).clamp(2, 5);
+
+        let prior_context = if has_prior_session {
+            self.load_prior_context(&session.id).await
+        } else {
+            String::new()
+        };
 
         // Select prompt based on force_rebellion
         let operation = if force_rebellion {
@@ -297,10 +322,10 @@ where
 
         let user_message = if challenge_assumptions {
             format!(
-                "{prompt}\n\nIMPORTANT: Also identify and challenge hidden assumptions.\n\nGenerate {num_perspectives} perspectives for:\n{content}"
+                "{prompt}\n\n{prior_context}IMPORTANT: Also identify and challenge hidden assumptions.\n\nGenerate {num_perspectives} perspectives for:\n{content}"
             )
         } else {
-            format!("{prompt}\n\nGenerate {num_perspectives} perspectives for:\n{content}")
+            format!("{prompt}\n\n{prior_context}Generate {num_perspectives} perspectives for:\n{content}")
         };
 
         let messages = vec![Message::user(user_message)];
@@ -443,6 +468,11 @@ where
                 .unwrap_or(0.5)
                 .clamp(0.0, 1.0);
 
+            let key_insight = p
+                .get("key_insight")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+
             let blind_spots = p.get("blind_spots").and_then(|v| {
                 v.as_array().map(|arr| {
                     arr.iter()
@@ -452,6 +482,9 @@ where
             });
 
             let mut perspective = Perspective::new(viewpoint, content, novelty_score);
+            if let Some(insight) = key_insight {
+                perspective = perspective.with_key_insight(insight);
+            }
             if let Some(spots) = blind_spots {
                 perspective = perspective.with_blind_spots(spots);
             }
@@ -494,6 +527,36 @@ where
             .map_err(|e| ModeError::ApiUnavailable {
                 message: format!("Failed to get or create session: {e}"),
             })
+    }
+
+    /// Build a short context block from recent prior thoughts in the session, so a
+    /// fresh fan-out is aware of what was already explored. Best-effort: returns an
+    /// empty string when there is no history or the lookup fails.
+    async fn load_prior_context(&self, session_id: &str) -> String {
+        const MAX_THOUGHTS: usize = 3;
+        const MAX_CHARS: usize = 400;
+
+        let thoughts = match self.storage.get_thoughts(session_id).await {
+            Ok(thoughts) if !thoughts.is_empty() => thoughts,
+            Ok(_) => return String::new(),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load prior thoughts — proceeding without session context"
+                );
+                return String::new();
+            }
+        };
+
+        let start = thoughts.len().saturating_sub(MAX_THOUGHTS);
+        let lines: Vec<String> = thoughts[start..]
+            .iter()
+            .map(|t| {
+                let content: String = t.content.chars().take(MAX_CHARS).collect();
+                format!("- [{}] {content}", t.mode)
+            })
+            .collect();
+        format!("Earlier in this session:\n{}\n\n", lines.join("\n"))
     }
 }
 
@@ -647,6 +710,9 @@ mod tests {
                 id.unwrap_or_else(|| "test-session".to_string()),
             ))
         });
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(Vec::new()));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_perspectives_response(3);
@@ -675,6 +741,85 @@ mod tests {
         assert!(response.tensions.is_some());
         assert!(response.synergies.is_some());
         assert!(response.synthesis.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_divergent_parses_novelty_and_key_insight() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("s")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        // Distinct per-perspective novelty + a key_insight must flow through.
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"perspectives": [
+                    {"name": "Optimist", "viewpoint": "great", "key_insight": "it scales", "novelty_score": 0.9},
+                    {"name": "Critic", "viewpoint": "risky", "novelty_score": 0.3}
+                ]}"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mode = DivergentMode::new(mock_storage, mock_client);
+        // None session → no prior-context lookup.
+        let response = mode
+            .process("topic", None, Some(2), false, false)
+            .await
+            .unwrap();
+        assert_eq!(response.perspectives.len(), 2);
+        assert!((response.perspectives[0].novelty_score - 0.9).abs() < f64::EPSILON);
+        assert_eq!(
+            response.perspectives[0].key_insight.as_deref(),
+            Some("it scales")
+        );
+        assert!((response.perspectives[1].novelty_score - 0.3).abs() < f64::EPSILON);
+        assert!(response.perspectives[1].key_insight.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_divergent_injects_prior_session_context() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("ctx")));
+        mock_storage.expect_get_thoughts().returning(|_| {
+            Ok(vec![Thought::new(
+                "t-prev",
+                "ctx",
+                "Earlier exploration about pricing",
+                "divergent",
+                0.7,
+            )])
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        // The prompt must include the prior thought when a session is supplied.
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages.first().is_some_and(|m| {
+                    m.content.contains("Earlier in this session")
+                        && m.content.contains("Earlier exploration about pricing")
+                })
+            })
+            .returning(|_, _| {
+                Ok(CompletionResponse::new(
+                    r#"{"perspectives": [{"name": "A", "viewpoint": "v", "novelty_score": 0.5}]}"#,
+                    Usage::new(50, 100),
+                ))
+            });
+
+        let mode = DivergentMode::new(mock_storage, mock_client);
+        let result = mode
+            .process("topic", Some("ctx".to_string()), Some(2), false, false)
+            .await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -908,6 +1053,9 @@ mod tests {
                 id.unwrap_or_else(|| "test-session".to_string()),
             ))
         });
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(Vec::new()));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_perspectives_response(3);
@@ -980,6 +1128,9 @@ mod tests {
         mock_storage
             .expect_get_or_create_session()
             .returning(|_| Ok(Session::new("test-session")));
+        mock_storage
+            .expect_get_thoughts()
+            .returning(|_| Ok(Vec::new()));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
         let response_json = mock_perspectives_response(3);

@@ -223,6 +223,8 @@ async fn test_into_contents_implementations() {
             viewpoint: "View".to_string(),
             content: "Content".to_string(),
             novelty_score: 0.8,
+            key_insight: None,
+            blind_spots: None,
         }],
         challenged_assumptions: Some(vec!["Assumption".to_string()]),
         synthesis: Some("Synthesis".to_string()),

@@ -129,6 +129,8 @@ impl super::ReasoningServer {
                             viewpoint: p.viewpoint,
                             content: p.content,
                             novelty_score: p.novelty_score,
+                            key_insight: p.key_insight,
+                            blind_spots: p.blind_spots,
                         })
                         .collect(),
                     challenged_assumptions: resp.challenged_assumptions,
