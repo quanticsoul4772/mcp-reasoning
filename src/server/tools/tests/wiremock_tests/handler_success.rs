@@ -57,6 +57,16 @@ async fn test_decision_weighted_success_path() {
     let resp = server.reasoning_decision(Parameters(req)).await;
     assert!(!resp.recommendation.is_empty());
     assert!(resp.rankings.is_some());
+    // The scoring breakdown (criteria, weights, totals) is surfaced and verified.
+    let weighted = resp
+        .breakdown
+        .expect("weighted breakdown present")
+        .weighted
+        .expect("weighted detail present");
+    assert_eq!(weighted.criteria.len(), 2);
+    assert!(weighted.weighted_totals.contains_key("Option A"));
+    let validation = resp.validation.expect("validation present");
+    assert!(validation.consistent, "arithmetic should reconcile");
 }
 
 #[tokio::test]
@@ -102,6 +112,15 @@ async fn test_decision_pairwise_success_path() {
     let resp = server.reasoning_decision(Parameters(req)).await;
     assert!(!resp.recommendation.is_empty());
     assert!(resp.rankings.is_some());
+    // The comparisons and consistency check reach the caller.
+    let pairwise = resp
+        .breakdown
+        .expect("pairwise breakdown present")
+        .pairwise
+        .expect("pairwise detail present");
+    assert_eq!(pairwise.comparisons.len(), 1);
+    assert_eq!(pairwise.comparisons[0].preferred, "option_a");
+    assert!(resp.validation.is_some());
 }
 
 #[tokio::test]
@@ -151,6 +170,16 @@ async fn test_decision_topsis_success_path() {
     let resp = server.reasoning_decision(Parameters(req)).await;
     assert!(!resp.recommendation.is_empty());
     assert!(resp.rankings.is_some());
+    // TOPSIS now surfaces closeness/distances and a non-null rationale.
+    let topsis = resp
+        .breakdown
+        .expect("topsis breakdown present")
+        .topsis
+        .expect("topsis detail present");
+    assert!(topsis.closeness.contains_key("Option B"));
+    assert!(topsis.distances.contains_key("Option A"));
+    assert!(resp.rationale.is_some(), "TOPSIS should have a rationale");
+    assert!(resp.validation.is_some());
 }
 
 #[tokio::test]

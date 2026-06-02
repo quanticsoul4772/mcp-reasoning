@@ -10,6 +10,36 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // ============================================================================
+// Validation
+// ============================================================================
+
+/// Result of verifying the arithmetic the model produced for a decision.
+///
+/// The model is asked to compute weighted totals, TOPSIS closeness, pairwise
+/// win counts, and the resulting rankings. Those numbers are recomputed from
+/// the underlying scores; this captures any discrepancies and whether the
+/// ranking had to be re-derived from the verified values.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DecisionValidation {
+    /// True when the model's numbers reconcile with the recomputed values.
+    pub consistent: bool,
+    /// Human-readable descriptions of every discrepancy found.
+    pub warnings: Vec<String>,
+    /// True when the ranking was re-ordered to match the verified arithmetic.
+    pub ranking_corrected: bool,
+}
+
+impl Default for DecisionValidation {
+    fn default() -> Self {
+        Self {
+            consistent: true,
+            warnings: Vec::new(),
+            ranking_corrected: false,
+        }
+    }
+}
+
+// ============================================================================
 // Response Types - Weighted
 // ============================================================================
 
@@ -54,6 +84,9 @@ pub struct WeightedResponse {
     pub ranking: Vec<RankedOption>,
     /// Notes on sensitivity to weight changes.
     pub sensitivity_notes: String,
+    /// Result of verifying the weighted arithmetic.
+    #[serde(default)]
+    pub validation: DecisionValidation,
 }
 
 impl WeightedResponse {
@@ -80,7 +113,15 @@ impl WeightedResponse {
             weighted_totals,
             ranking,
             sensitivity_notes: sensitivity_notes.into(),
+            validation: DecisionValidation::default(),
         }
+    }
+
+    /// Attach an arithmetic-verification result.
+    #[must_use]
+    pub fn with_validation(mut self, validation: DecisionValidation) -> Self {
+        self.validation = validation;
+        self
     }
 }
 
@@ -153,6 +194,9 @@ pub struct PairwiseResponse {
     pub ranking: Vec<PairwiseRank>,
     /// Check for preference transitivity.
     pub consistency_check: String,
+    /// Result of verifying win counts and ranking against the comparisons.
+    #[serde(default)]
+    pub validation: DecisionValidation,
 }
 
 impl PairwiseResponse {
@@ -175,7 +219,15 @@ impl PairwiseResponse {
             pairwise_matrix,
             ranking,
             consistency_check: consistency_check.into(),
+            validation: DecisionValidation::default(),
         }
+    }
+
+    /// Attach an arithmetic-verification result.
+    #[must_use]
+    pub fn with_validation(mut self, validation: DecisionValidation) -> Self {
+        self.validation = validation;
+        self
     }
 }
 
@@ -246,6 +298,12 @@ pub struct TopsisResponse {
     pub relative_closeness: HashMap<String, f64>,
     /// Final ranking.
     pub ranking: Vec<TopsisRank>,
+    /// Result of verifying closeness and ranking arithmetic.
+    #[serde(default)]
+    pub validation: DecisionValidation,
+    /// Human-readable explanation of the result (closeness spread, near-ties).
+    #[serde(default)]
+    pub rationale: String,
 }
 
 impl TopsisResponse {
@@ -274,7 +332,23 @@ impl TopsisResponse {
             distances,
             relative_closeness,
             ranking,
+            validation: DecisionValidation::default(),
+            rationale: String::new(),
         }
+    }
+
+    /// Attach an arithmetic-verification result.
+    #[must_use]
+    pub fn with_validation(mut self, validation: DecisionValidation) -> Self {
+        self.validation = validation;
+        self
+    }
+
+    /// Attach a human-readable rationale.
+    #[must_use]
+    pub fn with_rationale(mut self, rationale: impl Into<String>) -> Self {
+        self.rationale = rationale.into();
+        self
     }
 }
 

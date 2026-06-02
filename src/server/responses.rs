@@ -2,6 +2,8 @@
 //!
 //! This module contains all response types with JsonSchema support.
 
+use std::collections::HashMap;
+
 use crate::metadata::ResponseMetadata;
 use rmcp::model::{Content, IntoContents};
 use schemars::JsonSchema;
@@ -409,6 +411,108 @@ pub struct StakeholderMap {
     pub minimal_effort: Vec<String>,
 }
 
+/// A criterion with its weight (weighted analysis breakdown).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CriterionInfo {
+    /// Criterion name.
+    pub name: String,
+    /// Weight (0.0-1.0).
+    pub weight: f64,
+    /// What this criterion measures.
+    pub description: String,
+}
+
+/// A criterion with its benefit/cost type (TOPSIS breakdown).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TopsisCriterionInfo {
+    /// Criterion name.
+    pub name: String,
+    /// "benefit" (higher is better) or "cost" (lower is better).
+    pub criterion_type: String,
+    /// Weight (0.0-1.0).
+    pub weight: f64,
+}
+
+/// Distances to the ideal and anti-ideal solutions (TOPSIS breakdown).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DistanceInfo {
+    /// Distance to the ideal solution.
+    pub to_ideal: f64,
+    /// Distance to the anti-ideal solution.
+    pub to_anti_ideal: f64,
+}
+
+/// A single head-to-head comparison (pairwise breakdown).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ComparisonInfo {
+    /// First option.
+    pub option_a: String,
+    /// Second option.
+    pub option_b: String,
+    /// Which was preferred: "option_a", "option_b", or "tie".
+    pub preferred: String,
+    /// Preference strength: "strong", "moderate", or "slight".
+    pub strength: String,
+    /// Why this option was preferred.
+    pub reasoning: String,
+}
+
+/// Full scoring breakdown for a weighted analysis.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct WeightedBreakdown {
+    /// Evaluation criteria with weights.
+    pub criteria: Vec<CriterionInfo>,
+    /// Per-option, per-criterion scores.
+    pub scores: HashMap<String, HashMap<String, f64>>,
+    /// Verified weighted total per option.
+    pub weighted_totals: HashMap<String, f64>,
+}
+
+/// Full scoring breakdown for a TOPSIS analysis.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TopsisBreakdown {
+    /// Criteria with benefit/cost types and weights.
+    pub criteria: Vec<TopsisCriterionInfo>,
+    /// Verified relative closeness (0-1) per option.
+    pub closeness: HashMap<String, f64>,
+    /// Distances to ideal/anti-ideal per option.
+    pub distances: HashMap<String, DistanceInfo>,
+}
+
+/// Full breakdown for a pairwise analysis.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PairwiseBreakdown {
+    /// Each head-to-head comparison.
+    pub comparisons: Vec<ComparisonInfo>,
+    /// The model's transitivity/consistency note.
+    pub consistency_check: String,
+}
+
+/// Operation-specific scoring breakdown, so the recommendation is auditable.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DecisionBreakdown {
+    /// Present for weighted analysis.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weighted: Option<WeightedBreakdown>,
+    /// Present for TOPSIS analysis.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topsis: Option<TopsisBreakdown>,
+    /// Present for pairwise analysis.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pairwise: Option<PairwiseBreakdown>,
+}
+
+/// Result of verifying the arithmetic behind the decision.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DecisionValidationInfo {
+    /// True when the model's numbers reconcile with the recomputed values.
+    pub consistent: bool,
+    /// Descriptions of every discrepancy found.
+    pub warnings: Vec<String>,
+    /// True when the ranking was re-ordered to match the verified arithmetic.
+    pub ranking_corrected: bool,
+}
+
 /// Response from decision analysis.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DecisionResponse {
@@ -424,6 +528,12 @@ pub struct DecisionResponse {
     pub alignments: Option<Vec<String>>,
     /// Decision rationale.
     pub rationale: Option<String>,
+    /// Operation-specific scoring breakdown (criteria, weights, scores).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub breakdown: Option<DecisionBreakdown>,
+    /// Arithmetic-verification result.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<DecisionValidationInfo>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1353,6 +1463,8 @@ mod tests {
             conflicts: None,
             alignments: None,
             rationale: Some("Best fit".to_string()),
+            breakdown: None,
+            validation: None,
             metadata: None,
         };
         let contents = response.into_contents();

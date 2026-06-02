@@ -29,13 +29,16 @@
 
 mod parsing;
 mod types;
+mod verify;
 
 pub use types::{
     Alignment, BalancedRecommendation, Conflict, ConflictSeverity, Criterion, CriterionType,
-    InfluenceLevel, PairwiseComparison, PairwiseRank, PairwiseResponse, PerspectivesResponse,
-    PreferenceResult, PreferenceStrength, RankedOption, Stakeholder, TopsisCreterion,
-    TopsisDistances, TopsisRank, TopsisResponse, WeightedResponse,
+    DecisionValidation, InfluenceLevel, PairwiseComparison, PairwiseRank, PairwiseResponse,
+    PerspectivesResponse, PreferenceResult, PreferenceStrength, RankedOption, Stakeholder,
+    TopsisCreterion, TopsisDistances, TopsisRank, TopsisResponse, WeightedResponse,
 };
+
+use std::fmt::Write as _;
 
 use crate::error::ModeError;
 use crate::modes::{extract_json, generate_thought_id, validate_content};
@@ -92,10 +95,19 @@ where
     ) -> Result<WeightedResponse, ModeError> {
         validate_content(content)?;
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
 
         let prompt = decision_weighted_prompt();
-        let user_message = format!("{prompt}\n\nDecision scenario:\n{content}");
+        let user_message = self
+            .build_user_message(
+                prompt,
+                content,
+                &session.id,
+                has_prior_session,
+                "Decision scenario",
+            )
+            .await;
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -109,9 +121,13 @@ where
         let options = parsing::get_string_array(&json, "options")?;
         let criteria = parsing::parse_criteria(&json)?;
         let scores = parsing::parse_scores(&json)?;
-        let weighted_totals = parsing::parse_weighted_totals(&json)?;
-        let ranking = parsing::parse_weighted_ranking(&json)?;
+        let mut weighted_totals = parsing::parse_weighted_totals(&json)?;
+        let mut ranking = parsing::parse_weighted_ranking(&json)?;
         let sensitivity_notes = parsing::get_str(&json, "sensitivity_notes")?;
+
+        // Recompute the arithmetic and correct the ranking if the model slipped.
+        let validation =
+            verify::verify_weighted(&criteria, &scores, &mut weighted_totals, &mut ranking);
 
         let thought_id = generate_thought_id();
         let best_option = ranking.first().map_or("none", |r| r.option.as_str());
@@ -140,7 +156,8 @@ where
             weighted_totals,
             ranking,
             sensitivity_notes,
-        ))
+        )
+        .with_validation(validation))
     }
 
     /// Perform pairwise comparison analysis.
@@ -160,10 +177,19 @@ where
     ) -> Result<PairwiseResponse, ModeError> {
         validate_content(content)?;
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
 
         let prompt = decision_pairwise_prompt();
-        let user_message = format!("{prompt}\n\nOptions to compare:\n{content}");
+        let user_message = self
+            .build_user_message(
+                prompt,
+                content,
+                &session.id,
+                has_prior_session,
+                "Options to compare",
+            )
+            .await;
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -176,8 +202,11 @@ where
 
         let comparisons = parsing::parse_comparisons(&json)?;
         let pairwise_matrix = parsing::parse_pairwise_matrix(&json)?;
-        let ranking = parsing::parse_pairwise_ranking(&json)?;
+        let mut ranking = parsing::parse_pairwise_ranking(&json)?;
         let consistency_check = parsing::get_str(&json, "consistency_check")?;
+
+        // Recount wins from the comparisons and re-derive the ranking.
+        let validation = verify::verify_pairwise(&comparisons, &mut ranking);
 
         let thought_id = generate_thought_id();
         let thought = Thought::new(
@@ -199,7 +228,8 @@ where
             pairwise_matrix,
             ranking,
             consistency_check,
-        ))
+        )
+        .with_validation(validation))
     }
 
     /// Apply TOPSIS decision method.
@@ -219,10 +249,19 @@ where
     ) -> Result<TopsisResponse, ModeError> {
         validate_content(content)?;
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
 
         let prompt = decision_topsis_prompt();
-        let user_message = format!("{prompt}\n\nDecision scenario:\n{content}");
+        let user_message = self
+            .build_user_message(
+                prompt,
+                content,
+                &session.id,
+                has_prior_session,
+                "Decision scenario",
+            )
+            .await;
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -238,8 +277,13 @@ where
         let ideal_solution = parsing::parse_f64_array(&json, "ideal_solution")?;
         let anti_ideal_solution = parsing::parse_f64_array(&json, "anti_ideal_solution")?;
         let distances = parsing::parse_distances(&json)?;
-        let relative_closeness = parsing::parse_relative_closeness(&json)?;
-        let ranking = parsing::parse_topsis_ranking(&json)?;
+        let mut relative_closeness = parsing::parse_relative_closeness(&json)?;
+        let mut ranking = parsing::parse_topsis_ranking(&json)?;
+
+        // Recompute closeness from distances and re-derive the ranking.
+        let validation =
+            verify::verify_topsis(&criteria, &distances, &mut relative_closeness, &mut ranking);
+        let rationale = verify::topsis_rationale(&ranking);
 
         let thought_id = generate_thought_id();
         let best_closeness = ranking.first().map_or(0.0, |r| r.closeness);
@@ -265,7 +309,9 @@ where
             distances,
             relative_closeness,
             ranking,
-        ))
+        )
+        .with_validation(validation)
+        .with_rationale(rationale))
     }
 
     /// Analyze from multiple stakeholder perspectives.
@@ -285,10 +331,19 @@ where
     ) -> Result<PerspectivesResponse, ModeError> {
         validate_content(content)?;
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
 
         let prompt = decision_perspectives_prompt();
-        let user_message = format!("{prompt}\n\nDecision scenario:\n{content}");
+        let user_message = self
+            .build_user_message(
+                prompt,
+                content,
+                &session.id,
+                has_prior_session,
+                "Decision scenario",
+            )
+            .await;
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -346,6 +401,82 @@ where
                 message: format!("Failed to get or create session: {e}"),
             })
     }
+
+    /// Load recent prior thoughts for a session, formatted as a context block.
+    ///
+    /// Lets a follow-up decision build on earlier reasoning in the same session
+    /// (e.g. "now reconsider with cost weighted higher"). Loading context is an
+    /// enhancement, not a precondition: a lookup failure proceeds without
+    /// history (logged) rather than failing the operation.
+    async fn load_prior_context(&self, session_id: &str) -> String {
+        let thoughts = match self.storage.get_thoughts(session_id).await {
+            Ok(thoughts) => thoughts,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load prior thoughts — proceeding without session context"
+                );
+                return String::new();
+            }
+        };
+
+        if thoughts.is_empty() {
+            return String::new();
+        }
+
+        let start = thoughts.len().saturating_sub(MAX_CONTEXT_THOUGHTS);
+        let mut block = String::from("Previous reasoning in this session (oldest to newest):\n");
+        for (idx, thought) in thoughts[start..].iter().enumerate() {
+            let content = truncate_chars(&thought.content, MAX_CONTEXT_THOUGHT_CHARS);
+            let _ = writeln!(
+                block,
+                "{}. [{}, confidence {:.2}] {content}",
+                idx + 1,
+                thought.mode,
+                thought.confidence,
+            );
+        }
+        block
+    }
+
+    /// Build the user message for an operation, prepending session history when
+    /// an existing session was referenced and has prior reasoning.
+    async fn build_user_message(
+        &self,
+        prompt: &str,
+        content: &str,
+        session_id: &str,
+        has_prior_session: bool,
+        content_label: &str,
+    ) -> String {
+        let prior_context = if has_prior_session {
+            self.load_prior_context(session_id).await
+        } else {
+            String::new()
+        };
+
+        if prior_context.is_empty() {
+            format!("{prompt}\n\n{content_label}:\n{content}")
+        } else {
+            format!("{prompt}\n\n{prior_context}\n{content_label}:\n{content}")
+        }
+    }
+}
+
+/// Maximum number of prior thoughts to include as session context.
+const MAX_CONTEXT_THOUGHTS: usize = 5;
+/// Maximum characters per prior thought when building the context block.
+const MAX_CONTEXT_THOUGHT_CHARS: usize = 600;
+
+/// Truncate a string to at most `max` characters (char-safe), appending an
+/// ellipsis when truncated.
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max).collect();
+        format!("{truncated}…")
+    }
 }
 
 impl<S, C> std::fmt::Debug for DecisionMode<S, C>
@@ -379,7 +510,7 @@ mod tests {
         r#"{
             "options": ["Option A", "Option B"],
             "criteria": [
-                {"name": "Cost", "weight": 0.4, "description": "Total cost"}
+                {"name": "Cost", "weight": 1.0, "description": "Total cost"}
             ],
             "scores": {
                 "Option A": {"Cost": 0.8},
@@ -387,7 +518,8 @@ mod tests {
             },
             "weighted_totals": {"Option A": 0.8, "Option B": 0.6},
             "ranking": [
-                {"option": "Option A", "score": 0.8, "rank": 1}
+                {"option": "Option A", "score": 0.8, "rank": 1},
+                {"option": "Option B", "score": 0.6, "rank": 2}
             ],
             "sensitivity_notes": "Robust to small weight changes"
         }"#
@@ -465,6 +597,8 @@ mod tests {
             .expect_get_or_create_session()
             .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "test".to_string()))));
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        // A referenced session triggers a prior-thoughts lookup for context.
+        mock_storage.expect_get_thoughts().returning(|_| Ok(vec![]));
 
         let resp = mock_weighted_response();
         mock_client
@@ -479,7 +613,11 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         assert_eq!(response.options.len(), 2);
-        assert_eq!(response.ranking.len(), 1);
+        // Both options are ranked; verification confirms the model's arithmetic.
+        assert_eq!(response.ranking.len(), 2);
+        assert_eq!(response.ranking[0].option, "Option A");
+        assert!(response.validation.consistent);
+        assert!(!response.validation.ranking_corrected);
     }
 
     #[tokio::test]
@@ -952,7 +1090,11 @@ mod tests {
 
         assert!(result.is_ok());
         let response = result.unwrap();
-        assert!(response.ranking.is_empty());
+        // The model returned an empty ranking; verification reconstructs it from
+        // the per-option scores and flags the correction.
+        assert_eq!(response.ranking.len(), 1);
+        assert_eq!(response.ranking[0].option, "Option A");
+        assert!(response.validation.ranking_corrected);
     }
 
     #[tokio::test]
@@ -1219,5 +1361,83 @@ mod tests {
             InfluenceLevel::Medium
         );
         assert_eq!(response.conflicts[0].severity, ConflictSeverity::High);
+    }
+
+    #[tokio::test]
+    async fn test_weighted_injects_prior_session_context() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("ctx-session")));
+        // A long prior thought exercises the truncation path too.
+        mock_storage.expect_get_thoughts().returning(|_| {
+            Ok(vec![Thought::new(
+                "t-prev",
+                "ctx-session",
+                "Earlier decision: cost was weighted most heavily and Option B led",
+                "decision_weighted",
+                0.85,
+            )])
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let resp = mock_weighted_response();
+        // The prompt sent to the API must carry the prior decision forward.
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages.first().is_some_and(|m| {
+                    m.content.contains("Previous reasoning in this session")
+                        && m.content.contains("cost was weighted most heavily")
+                })
+            })
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode
+            .weighted(
+                "Reconsider the database choice",
+                Some("ctx-session".to_string()),
+            )
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_weighted_new_session_skips_history_lookup() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        // No session_id → get_thoughts must NOT be called (no expectation set;
+        // mockall panics on an unexpected call, so this asserts the skip).
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("fresh")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let resp = mock_weighted_response();
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages
+                    .first()
+                    .is_some_and(|m| !m.content.contains("Previous reasoning in this session"))
+            })
+            .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
+
+        let mode = DecisionMode::new(mock_storage, mock_client);
+        let result = mode.weighted("Fresh decision", None).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_truncate_chars() {
+        assert_eq!(truncate_chars("short", 10), "short");
+        assert_eq!(truncate_chars("12345", 5), "12345");
+        assert_eq!(truncate_chars("123456789", 4), "1234…");
     }
 }

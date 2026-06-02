@@ -2,13 +2,32 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::metrics::{MetricEvent, Timer};
-use crate::modes::{DecisionMode, EvidenceMode};
+use crate::modes::{DecisionMode, DecisionValidation, EvidenceMode};
 use crate::server::requests::{DecisionRequest, EvidenceRequest};
 use crate::server::responses::{
-    DecisionResponse, EvidenceAssessment, EvidenceResponse, RankedOption, StakeholderMap,
+    ComparisonInfo, CriterionInfo, DecisionBreakdown, DecisionResponse, DecisionValidationInfo,
+    DistanceInfo, EvidenceAssessment, EvidenceResponse, PairwiseBreakdown, RankedOption,
+    StakeholderMap, TopsisBreakdown, TopsisCriterionInfo, WeightedBreakdown,
 };
 
 use super::DEEP_THINKING;
+
+/// Map a mode-internal validation result to its JsonSchema response form.
+fn to_validation_info(v: DecisionValidation) -> DecisionValidationInfo {
+    DecisionValidationInfo {
+        consistent: v.consistent,
+        warnings: v.warnings,
+        ranking_corrected: v.ranking_corrected,
+    }
+}
+
+/// Serialize a `#[serde(rename_all)]` enum to its string form (e.g. `option_a`).
+fn enum_to_string<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default()
+}
 
 impl super::ReasoningServer {
     pub(super) async fn handle_decision(&self, req: DecisionRequest) -> DecisionResponse {
@@ -48,31 +67,53 @@ impl super::ReasoningServer {
         let (response, success) = match tokio::time::timeout(timeout_duration, async {
             match decision_type_for_timeout.as_str() {
                 "weighted" => match mode.weighted(content, req.session_id).await {
-                    Ok(resp) => (
-                        DecisionResponse {
-                            recommendation: resp
-                                .ranking
-                                .first()
-                                .map(|r| r.option.clone())
-                                .unwrap_or_default(),
-                            rankings: Some(
-                                resp.ranking
-                                    .into_iter()
-                                    .map(|r| RankedOption {
-                                        option: r.option,
-                                        score: r.score,
-                                        rank: r.rank,
+                    Ok(resp) => {
+                        let recommendation = resp
+                            .ranking
+                            .first()
+                            .map(|r| r.option.clone())
+                            .unwrap_or_default();
+                        let rankings = resp
+                            .ranking
+                            .iter()
+                            .map(|r| RankedOption {
+                                option: r.option.clone(),
+                                score: r.score,
+                                rank: r.rank,
+                            })
+                            .collect();
+                        let breakdown = DecisionBreakdown {
+                            weighted: Some(WeightedBreakdown {
+                                criteria: resp
+                                    .criteria
+                                    .iter()
+                                    .map(|c| CriterionInfo {
+                                        name: c.name.clone(),
+                                        weight: c.weight,
+                                        description: c.description.clone(),
                                     })
                                     .collect(),
-                            ),
-                            stakeholder_map: None,
-                            conflicts: None,
-                            alignments: None,
-                            rationale: Some(resp.sensitivity_notes),
-                            metadata: None,
-                        },
-                        true,
-                    ),
+                                scores: resp.scores.clone(),
+                                weighted_totals: resp.weighted_totals.clone(),
+                            }),
+                            topsis: None,
+                            pairwise: None,
+                        };
+                        (
+                            DecisionResponse {
+                                recommendation,
+                                rankings: Some(rankings),
+                                stakeholder_map: None,
+                                conflicts: None,
+                                alignments: None,
+                                rationale: Some(resp.sensitivity_notes),
+                                breakdown: Some(breakdown),
+                                validation: Some(to_validation_info(resp.validation)),
+                                metadata: None,
+                            },
+                            true,
+                        )
+                    }
                     Err(e) => (
                         DecisionResponse {
                             recommendation: format!(
@@ -85,37 +126,62 @@ impl super::ReasoningServer {
                             conflicts: None,
                             alignments: None,
                             rationale: None,
+                            breakdown: None,
+                            validation: None,
                             metadata: None,
                         },
                         false,
                     ),
                 },
                 "pairwise" => match mode.pairwise(content, req.session_id).await {
-                    Ok(resp) => (
-                        DecisionResponse {
-                            recommendation: resp
-                                .ranking
-                                .first()
-                                .map(|r| r.option.clone())
-                                .unwrap_or_default(),
-                            rankings: Some(
-                                resp.ranking
-                                    .into_iter()
-                                    .map(|r| RankedOption {
-                                        option: r.option,
-                                        score: f64::from(r.wins),
-                                        rank: r.rank,
+                    Ok(resp) => {
+                        let recommendation = resp
+                            .ranking
+                            .first()
+                            .map(|r| r.option.clone())
+                            .unwrap_or_default();
+                        let rankings = resp
+                            .ranking
+                            .iter()
+                            .map(|r| RankedOption {
+                                option: r.option.clone(),
+                                score: f64::from(r.wins),
+                                rank: r.rank,
+                            })
+                            .collect();
+                        let breakdown = DecisionBreakdown {
+                            weighted: None,
+                            topsis: None,
+                            pairwise: Some(PairwiseBreakdown {
+                                comparisons: resp
+                                    .comparisons
+                                    .iter()
+                                    .map(|c| ComparisonInfo {
+                                        option_a: c.option_a.clone(),
+                                        option_b: c.option_b.clone(),
+                                        preferred: enum_to_string(&c.preferred),
+                                        strength: enum_to_string(&c.strength),
+                                        reasoning: c.reasoning.clone(),
                                     })
                                     .collect(),
-                            ),
-                            stakeholder_map: None,
-                            conflicts: None,
-                            alignments: None,
-                            rationale: None,
-                            metadata: None,
-                        },
-                        true,
-                    ),
+                                consistency_check: resp.consistency_check.clone(),
+                            }),
+                        };
+                        (
+                            DecisionResponse {
+                                recommendation,
+                                rankings: Some(rankings),
+                                stakeholder_map: None,
+                                conflicts: None,
+                                alignments: None,
+                                rationale: Some(resp.consistency_check),
+                                breakdown: Some(breakdown),
+                                validation: Some(to_validation_info(resp.validation)),
+                                metadata: None,
+                            },
+                            true,
+                        )
+                    }
                     Err(e) => (
                         DecisionResponse {
                             recommendation: format!(
@@ -128,37 +194,73 @@ impl super::ReasoningServer {
                             conflicts: None,
                             alignments: None,
                             rationale: None,
+                            breakdown: None,
+                            validation: None,
                             metadata: None,
                         },
                         false,
                     ),
                 },
                 "topsis" => match mode.topsis(content, req.session_id).await {
-                    Ok(resp) => (
-                        DecisionResponse {
-                            recommendation: resp
-                                .ranking
-                                .first()
-                                .map(|r| r.option.clone())
-                                .unwrap_or_default(),
-                            rankings: Some(
-                                resp.ranking
-                                    .into_iter()
-                                    .map(|r| RankedOption {
-                                        option: r.option,
-                                        score: r.closeness,
-                                        rank: r.rank,
+                    Ok(resp) => {
+                        let recommendation = resp
+                            .ranking
+                            .first()
+                            .map(|r| r.option.clone())
+                            .unwrap_or_default();
+                        let rankings = resp
+                            .ranking
+                            .iter()
+                            .map(|r| RankedOption {
+                                option: r.option.clone(),
+                                score: r.closeness,
+                                rank: r.rank,
+                            })
+                            .collect();
+                        let breakdown = DecisionBreakdown {
+                            weighted: None,
+                            topsis: Some(TopsisBreakdown {
+                                criteria: resp
+                                    .criteria
+                                    .iter()
+                                    .map(|c| TopsisCriterionInfo {
+                                        name: c.name.clone(),
+                                        criterion_type: enum_to_string(&c.criterion_type),
+                                        weight: c.weight,
                                     })
                                     .collect(),
-                            ),
-                            stakeholder_map: None,
-                            conflicts: None,
-                            alignments: None,
-                            rationale: None,
-                            metadata: None,
-                        },
-                        true,
-                    ),
+                                closeness: resp.relative_closeness.clone(),
+                                distances: resp
+                                    .distances
+                                    .iter()
+                                    .map(|(opt, d)| {
+                                        (
+                                            opt.clone(),
+                                            DistanceInfo {
+                                                to_ideal: d.to_ideal,
+                                                to_anti_ideal: d.to_anti_ideal,
+                                            },
+                                        )
+                                    })
+                                    .collect(),
+                            }),
+                            pairwise: None,
+                        };
+                        (
+                            DecisionResponse {
+                                recommendation,
+                                rankings: Some(rankings),
+                                stakeholder_map: None,
+                                conflicts: None,
+                                alignments: None,
+                                rationale: Some(resp.rationale),
+                                breakdown: Some(breakdown),
+                                validation: Some(to_validation_info(resp.validation)),
+                                metadata: None,
+                            },
+                            true,
+                        )
+                    }
                     Err(e) => (
                         DecisionResponse {
                             recommendation: format!(
@@ -171,6 +273,8 @@ impl super::ReasoningServer {
                             conflicts: None,
                             alignments: None,
                             rationale: None,
+                            breakdown: None,
+                            validation: None,
                             metadata: None,
                         },
                         false,
@@ -216,6 +320,8 @@ impl super::ReasoningServer {
                                     .collect(),
                             ),
                             rationale: Some(resp.balanced_recommendation.rationale),
+                            breakdown: None,
+                            validation: None,
                             metadata: None,
                         },
                         true,
@@ -232,6 +338,8 @@ impl super::ReasoningServer {
                             conflicts: None,
                             alignments: None,
                             rationale: None,
+                            breakdown: None,
+                            validation: None,
                             metadata: None,
                         },
                         false,
@@ -248,6 +356,8 @@ impl super::ReasoningServer {
                         conflicts: None,
                         alignments: None,
                         rationale: None,
+                        breakdown: None,
+                        validation: None,
                         metadata: None,
                     },
                     false,
@@ -275,6 +385,8 @@ impl super::ReasoningServer {
                         conflicts: None,
                         alignments: None,
                         rationale: None,
+                        breakdown: None,
+                        validation: None,
                         metadata: None,
                     },
                     false,

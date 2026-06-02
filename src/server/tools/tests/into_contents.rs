@@ -189,6 +189,8 @@ fn test_decision_response_into_contents() {
         conflicts: Some(vec!["resource allocation".to_string()]),
         alignments: Some(vec!["shared goals".to_string()]),
         rationale: Some("highest weighted score".to_string()),
+        breakdown: None,
+        validation: None,
         metadata: None,
     };
     let contents = response.into_contents();
