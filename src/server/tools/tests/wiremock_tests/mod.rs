@@ -14,6 +14,7 @@ mod extended;
 mod graph_coverage;
 mod handler_success;
 mod more_tests;
+mod streaming_coverage;
 mod temporal;
 mod temporal_coverage;
 
@@ -31,6 +32,26 @@ fn anthropic_response(text: &str) -> serde_json::Value {
         "stop_reason": "end_turn",
         "usage": {"input_tokens": 100, "output_tokens": 50}
     })
+}
+
+/// Build an Anthropic SSE (`text/event-stream`) body that streams `text` as a
+/// single text delta. Use with `ResponseTemplate::set_body_string` to exercise
+/// the handlers that call `complete_streaming` (mcts, counterfactual).
+fn anthropic_sse_response(text: &str) -> String {
+    let start = serde_json::json!({
+        "type": "message_start",
+        "message": {"id": "msg_test", "stop_reason": null}
+    });
+    let delta = serde_json::json!({
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {"type": "text_delta", "text": text}
+    });
+    // The accumulator only flushes the text buffer on content_block_stop.
+    let block_stop = serde_json::json!({"type": "content_block_stop", "index": 0});
+    // message_stop carries no `message` object (RawMessage.id is required).
+    let stop = serde_json::json!({"type": "message_stop"});
+    format!("data: {start}\n\ndata: {delta}\n\ndata: {block_stop}\n\ndata: {stop}\n\n")
 }
 
 async fn create_mocked_server(mock_server: &MockServer) -> ReasoningServer {
