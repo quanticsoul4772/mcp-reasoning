@@ -29,19 +29,15 @@ fn verify_create(events: &[TimelineEvent], ts: &TemporalStructure) -> TimelineVa
     let mut warnings = Vec::new();
     let ids: HashSet<&str> = events.iter().map(|e| e.id.as_str()).collect();
 
+    // Only `causes` (backward references) must resolve to declared events.
+    // `effects` are forward-looking and routinely name downstream or terminal
+    // outcomes the model didn't elaborate into full event nodes, so requiring
+    // them to be declared produces noise rather than catching real errors.
     for e in events {
         for c in &e.causes {
             if !ids.contains(c.as_str()) {
                 warnings.push(format!(
                     "Event '{}' lists cause '{c}' which is not a declared event",
-                    e.id
-                ));
-            }
-        }
-        for f in &e.effects {
-            if !ids.contains(f.as_str()) {
-                warnings.push(format!(
-                    "Event '{}' lists effect '{f}' which is not a declared event",
                     e.id
                 ));
             }
@@ -210,35 +206,48 @@ fn verify_causal_model(
     analysis: &CausalAnalysis,
 ) -> CounterfactualValidationInfo {
     let mut warnings = Vec::new();
-    let nodes: HashSet<&str> = model.nodes.iter().map(String::as_str).collect();
+    // Names are matched case/whitespace-insensitively: models routinely vary
+    // capitalization between the question variables and the DAG node labels
+    // ("Average order value" vs "Average Order Value"), which is not a real
+    // structural inconsistency.
+    let norm = |s: &str| s.trim().to_lowercase();
+    let nodes: HashSet<String> = model.nodes.iter().map(|n| norm(n)).collect();
 
     for e in &model.edges {
-        if !nodes.contains(e.from.as_str()) {
+        if !nodes.contains(&norm(&e.from)) {
             warnings.push(format!("Edge source '{}' is not a declared node", e.from));
         }
-        if !nodes.contains(e.to.as_str()) {
+        if !nodes.contains(&norm(&e.to)) {
             warnings.push(format!("Edge target '{}' is not a declared node", e.to));
         }
     }
     for c in &model.confounders {
-        if !nodes.contains(c.as_str()) {
+        if !nodes.contains(&norm(c)) {
             warnings.push(format!("Confounder '{c}' is not a declared node"));
         }
     }
 
     let cause = &question.variables.cause;
     let effect = &question.variables.effect;
-    if !nodes.contains(cause.as_str()) {
+    let cause_n = norm(cause);
+    let effect_n = norm(effect);
+    if !nodes.contains(&cause_n) {
         warnings.push(format!("Cause '{cause}' is absent from the causal model"));
     }
-    if !nodes.contains(effect.as_str()) {
+    if !nodes.contains(&effect_n) {
         warnings.push(format!("Effect '{effect}' is absent from the causal model"));
     }
 
     // A confounder, by definition, influences both the cause and the effect.
     for c in &model.confounders {
-        let to_cause = model.edges.iter().any(|e| &e.from == c && &e.to == cause);
-        let to_effect = model.edges.iter().any(|e| &e.from == c && &e.to == effect);
+        let to_cause = model
+            .edges
+            .iter()
+            .any(|e| norm(&e.from) == norm(c) && norm(&e.to) == cause_n);
+        let to_effect = model
+            .edges
+            .iter()
+            .any(|e| norm(&e.from) == norm(c) && norm(&e.to) == effect_n);
         if !(to_cause && to_effect) {
             warnings.push(format!(
                 "Confounder '{c}' should have edges to both the cause and the effect"
@@ -1292,6 +1301,20 @@ mod counterfactual_verify_tests {
     }
 
     #[test]
+    fn test_case_only_name_differences_are_not_flagged() {
+        // The question's cause/effect differ from the DAG node labels only in
+        // capitalization/whitespace — not a real structural inconsistency.
+        let model = CausalModel {
+            nodes: vec!["Average Order Value".to_string(), "Widget".to_string()],
+            edges: vec![edge("Widget", "Average Order Value", EdgeType::Direct)],
+            confounders: vec![],
+        };
+        let q = question("widget", "average order value");
+        let v = verify_causal_model(&model, &q, &analysis(0.5, 0.7));
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
+    }
+
+    #[test]
     fn test_flags_confounder_not_connecting_both() {
         let model = CausalModel {
             nodes: vec!["X".to_string(), "Y".to_string(), "Z".to_string()],
@@ -1398,10 +1421,20 @@ mod timeline_verify_tests {
 
     #[test]
     fn test_create_flags_undeclared_reference() {
+        // An undeclared *cause* (backward reference) is a real inconsistency.
         let events = vec![event("a", &["ghost"], &[])];
         let v = verify_create(&events, &ts("a", "a"));
         assert!(!v.consistent);
         assert!(v.warnings.iter().any(|w| w.contains("cause 'ghost'")));
+    }
+
+    #[test]
+    fn test_create_tolerates_undeclared_effect() {
+        // An effect naming a downstream/terminal outcome that isn't a declared
+        // event is normal modeling, not an error.
+        let events = vec![event("a", &[], &["business_closure", "market_exit"])];
+        let v = verify_create(&events, &ts("a", "a"));
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
     }
 
     #[test]

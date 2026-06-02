@@ -21,11 +21,42 @@ fn normalize_for_grounding(s: &str) -> String {
         .to_lowercase()
 }
 
-/// True when `quote` appears (whitespace/case-insensitively) within `content`.
-/// An empty quote is treated as grounded (nothing to verify).
+/// Length of the longest run of words present contiguously in both slices.
+fn longest_common_word_run(a: &[&str], b: &[&str]) -> usize {
+    if a.is_empty() || b.is_empty() {
+        return 0;
+    }
+    let mut prev = vec![0usize; b.len() + 1];
+    let mut best = 0;
+    for ai in a {
+        let mut cur = vec![0usize; b.len() + 1];
+        for (j, bj) in b.iter().enumerate() {
+            if ai == bj {
+                cur[j + 1] = prev[j] + 1;
+                best = best.max(cur[j + 1]);
+            }
+        }
+        prev = cur;
+    }
+    best
+}
+
+/// True when the cited `quote` is grounded in `content`.
+///
+/// Models rarely quote verbatim — they embed the actual passage inside longer
+/// commentary (e.g. `"…never let me down - showing a preference for…"`). So
+/// rather than demand an exact substring, this accepts the quote when a
+/// substantial contiguous run of its words appears in the content: a run of ≥5
+/// words, or ≥half the quote (with a 3-word floor). An empty quote is grounded.
 fn quote_is_grounded(content_normalized: &str, quote: &str) -> bool {
     let q = normalize_for_grounding(quote);
-    q.is_empty() || content_normalized.contains(&q)
+    if q.is_empty() || content_normalized.contains(&q) {
+        return true;
+    }
+    let q_words: Vec<&str> = q.split(' ').collect();
+    let c_words: Vec<&str> = content_normalized.split(' ').collect();
+    let run = longest_common_word_run(&q_words, &c_words);
+    run >= 5 || (run >= 3 && run * 2 >= q_words.len())
 }
 
 /// Build a detect validation from a reported count vs. the actual detections
@@ -43,7 +74,7 @@ fn build_detect_validation(
     }
     for name in ungrounded {
         warnings.push(format!(
-            "Evidence for '{name}' was not found verbatim in the content (may be paraphrased)"
+            "Evidence for '{name}' could not be located in the content (may be paraphrased)"
         ));
     }
     DetectValidationInfo {
@@ -604,6 +635,28 @@ mod detect_helper_tests {
     }
 
     #[test]
+    fn test_quote_grounded_when_embedded_in_commentary() {
+        // The real failure mode: the model quotes a passage then appends its own
+        // commentary, so the full evidence string is not a verbatim substring.
+        let content =
+            normalize_for_grounding("I've used them for years and they've never let me down");
+        let evidence =
+            "I've used them for years and they've never let me down - showing a preference \
+             for maintaining the current vendor relationship without objective evaluation";
+        assert!(quote_is_grounded(&content, evidence));
+    }
+
+    #[test]
+    fn test_single_shared_word_does_not_ground_long_quote() {
+        // A lone common word must not count as grounding.
+        let content = normalize_for_grounding("The deployment pipeline is fast and reliable");
+        assert!(!quote_is_grounded(
+            &content,
+            "the moon orbits a distant planet very quietly"
+        ));
+    }
+
+    #[test]
     fn test_empty_quote_is_grounded() {
         let content = normalize_for_grounding("anything");
         assert!(quote_is_grounded(&content, "   "));
@@ -627,6 +680,9 @@ mod detect_helper_tests {
     fn test_validation_flags_ungrounded_quote() {
         let v = build_detect_validation(1, 1, &["Confirmation Bias".to_string()]);
         assert!(!v.consistent);
-        assert!(v.warnings.iter().any(|w| w.contains("not found verbatim")));
+        assert!(v
+            .warnings
+            .iter()
+            .any(|w| w.contains("could not be located")));
     }
 }
