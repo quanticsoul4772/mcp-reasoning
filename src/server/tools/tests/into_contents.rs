@@ -213,6 +213,8 @@ fn test_evidence_response_into_contents() {
             credibility_score: 0.9,
             source_tier: "tier1".to_string(),
             corroborated_by: Some(vec![1, 2]),
+            credibility: None,
+            quality: None,
         }]),
         posterior: Some(0.75),
         prior: Some(0.5),
@@ -223,6 +225,10 @@ fn test_evidence_response_into_contents() {
             upper: 0.9,
         }),
         synthesis: Some("strong evidence".to_string()),
+        evidential_support: None,
+        pivot_evidence: None,
+        bayesian: None,
+        validation: None,
         metadata: None,
     };
     let contents = response.into_contents();

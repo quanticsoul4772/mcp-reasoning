@@ -325,6 +325,10 @@ async fn test_into_contents_implementations() {
         entropy: None,
         confidence_interval: None,
         synthesis: None,
+        evidential_support: None,
+        pivot_evidence: None,
+        bayesian: None,
+        validation: None,
         metadata: None,
     };
     let _ = evidence_resp.into_contents();

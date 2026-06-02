@@ -2,15 +2,108 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::metrics::{MetricEvent, Timer};
-use crate::modes::{DecisionMode, DecisionValidation, EvidenceMode};
+use crate::modes::{DecisionMode, DecisionValidation, EvidenceAnalysis, EvidenceMode};
 use crate::server::requests::{DecisionRequest, EvidenceRequest};
 use crate::server::responses::{
-    ComparisonInfo, CriterionInfo, DecisionBreakdown, DecisionResponse, DecisionValidationInfo,
-    DistanceInfo, EvidenceAssessment, EvidenceResponse, PairwiseBreakdown, RankedOption,
+    BayesianBreakdown, BayesianEvidence, ComparisonInfo, CredibilityBreakdown, CriterionInfo,
+    DecisionBreakdown, DecisionResponse, DecisionValidationInfo, DistanceInfo, EvidenceAssessment,
+    EvidenceResponse, EvidenceValidationInfo, PairwiseBreakdown, QualityBreakdown, RankedOption,
     StakeholderMap, TopsisBreakdown, TopsisCriterionInfo, WeightedBreakdown,
 };
 
 use super::DEEP_THINKING;
+
+/// Binary Shannon entropy (bits) of a probability `p`. Zero at the extremes.
+fn binary_entropy(p: f64) -> f64 {
+    if p <= 0.0 || p >= 1.0 {
+        0.0
+    } else {
+        -(p * p.log2() + (1.0 - p) * (1.0 - p).log2())
+    }
+}
+
+/// Apply a set of independent Bayes factors to a prior via the odds form of
+/// Bayes' rule. Returns `(combined_bayes_factor, posterior)`.
+fn bayes_update<'a>(prior: f64, bayes_factors: impl Iterator<Item = &'a f64>) -> (f64, f64) {
+    let combined: f64 = bayes_factors.product();
+    let p = prior.clamp(0.0, 1.0);
+    if p <= 0.0 {
+        return (combined, 0.0);
+    }
+    if p >= 1.0 {
+        return (combined, 1.0);
+    }
+    let prior_odds = p / (1.0 - p);
+    let posterior_odds = prior_odds * combined;
+    (combined, posterior_odds / (1.0 + posterior_odds))
+}
+
+/// Verify the Bayesian arithmetic the model produced. Returns the validation,
+/// the combined Bayes factor, and the recomputed posterior.
+fn verify_probabilistic(
+    prior: f64,
+    evidence: &[EvidenceAnalysis],
+    stated_posterior: f64,
+    direction: &str,
+) -> (EvidenceValidationInfo, f64, f64) {
+    const PROB_TOL: f64 = 0.05;
+    let mut warnings = Vec::new();
+
+    if !(0.0..=1.0).contains(&prior) {
+        warnings.push(format!("Prior {prior:.3} is outside [0, 1]"));
+    }
+    if !(0.0..=1.0).contains(&stated_posterior) {
+        warnings.push(format!("Posterior {stated_posterior:.3} is outside [0, 1]"));
+    }
+
+    // Each Bayes factor should equal P(E|H) / P(E|¬H).
+    for (i, e) in evidence.iter().enumerate() {
+        if e.likelihood_if_false.abs() < f64::EPSILON {
+            continue; // division undefined; skip the ratio check
+        }
+        let ratio = e.likelihood_if_true / e.likelihood_if_false;
+        if (e.bayes_factor - ratio).abs() > 0.1 * ratio.abs().max(1.0) {
+            warnings.push(format!(
+                "Evidence {} Bayes factor stated as {:.3} but P(E|H)/P(E|¬H) = {:.3}",
+                i + 1,
+                e.bayes_factor,
+                ratio
+            ));
+        }
+    }
+
+    let (combined_bf, computed_posterior) =
+        bayes_update(prior, evidence.iter().map(|e| &e.bayes_factor));
+
+    if (computed_posterior - stated_posterior).abs() > PROB_TOL {
+        warnings.push(format!(
+            "Stated posterior {stated_posterior:.3} differs from Bayes' rule result {computed_posterior:.3} (prior {prior:.3} × combined Bayes factor {combined_bf:.3})"
+        ));
+    }
+
+    // Direction should match the sign of (posterior − prior).
+    let expected_direction = if stated_posterior - prior > 0.01 {
+        "increase"
+    } else if prior - stated_posterior > 0.01 {
+        "decrease"
+    } else {
+        "unchanged"
+    };
+    if direction != expected_direction {
+        warnings.push(format!(
+            "Belief direction stated as '{direction}' but posterior {stated_posterior:.3} vs prior {prior:.3} implies '{expected_direction}'"
+        ));
+    }
+
+    (
+        EvidenceValidationInfo {
+            consistent: warnings.is_empty(),
+            warnings,
+        },
+        combined_bf,
+        computed_posterior,
+    )
+}
 
 /// Map a mode-internal validation result to its JsonSchema response form.
 fn to_validation_info(v: DecisionValidation) -> DecisionValidationInfo {
@@ -424,35 +517,56 @@ impl super::ReasoningServer {
         let (response, success) = match tokio::time::timeout(timeout_duration, async {
             match evidence_type_for_timeout.as_str() {
                 "assess" => match mode.assess(content, req.session_id).await {
-                    Ok(resp) => (
-                        EvidenceResponse {
-                            overall_credibility: resp.confidence_in_conclusion,
-                            evidence_assessments: Some(
-                                resp.evidence_pieces
-                                    .into_iter()
-                                    .map(|p| EvidenceAssessment {
-                                        content: p.summary,
-                                        credibility_score: p.credibility.overall,
-                                        source_tier: p.source_type.as_str().to_string(),
-                                        corroborated_by: None,
-                                    })
-                                    .collect(),
-                            ),
-                            posterior: None,
-                            prior: None,
-                            likelihood_ratio: None,
-                            entropy: None,
-                            confidence_interval: None,
-                            synthesis: Some(format!(
-                                "Strengths: {}. Weaknesses: {}. Gaps: {}",
-                                resp.overall_assessment.key_strengths.join(", "),
-                                resp.overall_assessment.key_weaknesses.join(", "),
-                                resp.overall_assessment.gaps.join(", ")
-                            )),
-                            metadata: None,
-                        },
-                        true,
-                    ),
+                    Ok(resp) => {
+                        let assessments: Vec<EvidenceAssessment> = resp
+                            .evidence_pieces
+                            .into_iter()
+                            .map(|p| EvidenceAssessment {
+                                content: p.summary,
+                                credibility_score: p.credibility.overall,
+                                source_tier: p.source_type.as_str().to_string(),
+                                corroborated_by: None,
+                                credibility: Some(CredibilityBreakdown {
+                                    expertise: p.credibility.expertise,
+                                    objectivity: p.credibility.objectivity,
+                                    corroboration: p.credibility.corroboration,
+                                    recency: p.credibility.recency,
+                                    overall: p.credibility.overall,
+                                }),
+                                quality: Some(QualityBreakdown {
+                                    relevance: p.quality.relevance,
+                                    strength: p.quality.strength,
+                                    representativeness: p.quality.representativeness,
+                                    overall: p.quality.overall,
+                                }),
+                            })
+                            .collect();
+                        let a = resp.overall_assessment;
+                        let pivot = a.pivot_evidence.clone();
+                        (
+                            EvidenceResponse {
+                                overall_credibility: resp.confidence_in_conclusion,
+                                evidence_assessments: Some(assessments),
+                                posterior: None,
+                                prior: None,
+                                likelihood_ratio: None,
+                                entropy: None,
+                                confidence_interval: None,
+                                synthesis: Some(format!(
+                                    "Strengths: {}. Weaknesses: {}. Gaps: {}",
+                                    a.key_strengths.join(", "),
+                                    a.key_weaknesses.join(", "),
+                                    a.gaps.join(", ")
+                                )),
+                                evidential_support: Some(a.evidential_support),
+                                pivot_evidence: (!pivot.is_empty()).then_some(pivot),
+                                bayesian: None,
+                                validation: None,
+                                metadata: None,
+                            },
+                            true,
+                        )
+                    }
                     Err(e) => (
                         EvidenceResponse {
                             overall_credibility: 0.0,
@@ -467,6 +581,10 @@ impl super::ReasoningServer {
                                  Provide a claim or hypothesis to evaluate. \
                                  Try evidence_type='probabilistic' for Bayesian belief updates."
                             )),
+                            evidential_support: None,
+                            pivot_evidence: None,
+                            bayesian: None,
+                            validation: None,
                             metadata: None,
                         },
                         false,
@@ -474,34 +592,56 @@ impl super::ReasoningServer {
                 },
                 "probabilistic" => match mode.probabilistic(content, req.session_id).await {
                     Ok(resp) => {
-                        let likelihood_ratio =
-                            resp.evidence_analysis.first().map(|a| a.bayes_factor);
+                        let direction = enum_to_string(&resp.belief_update.direction);
+                        let magnitude = enum_to_string(&resp.belief_update.magnitude);
+                        let (validation, combined_bf, computed_posterior) = verify_probabilistic(
+                            resp.prior.probability,
+                            &resp.evidence_analysis,
+                            resp.posterior.probability,
+                            &direction,
+                        );
+                        let bayes_evidence: Vec<BayesianEvidence> = resp
+                            .evidence_analysis
+                            .iter()
+                            .map(|a| BayesianEvidence {
+                                evidence: a.evidence.clone(),
+                                likelihood_if_true: a.likelihood_if_true,
+                                likelihood_if_false: a.likelihood_if_false,
+                                bayes_factor: a.bayes_factor,
+                            })
+                            .collect();
+                        let bayesian = BayesianBreakdown {
+                            prior: resp.prior.probability,
+                            prior_basis: resp.prior.basis,
+                            evidence: bayes_evidence,
+                            combined_bayes_factor: combined_bf,
+                            stated_posterior: resp.posterior.probability,
+                            computed_posterior,
+                            posterior_calculation: resp.posterior.calculation,
+                            belief_direction: direction,
+                            belief_magnitude: magnitude,
+                            interpretation: resp.belief_update.interpretation.clone(),
+                            sensitivity: resp.sensitivity.clone(),
+                        };
                         (
                             EvidenceResponse {
                                 overall_credibility: resp.posterior.probability,
-                                evidence_assessments: Some(
-                                    resp.evidence_analysis
-                                        .into_iter()
-                                        .map(|a| EvidenceAssessment {
-                                            content: a.evidence,
-                                            credibility_score: a.bayes_factor.min(1.0),
-                                            source_tier: "computed".to_string(),
-                                            corroborated_by: None,
-                                        })
-                                        .collect(),
-                                ),
+                                evidence_assessments: None,
                                 posterior: Some(resp.posterior.probability),
                                 prior: Some(resp.prior.probability),
-                                likelihood_ratio,
-                                entropy: None,
+                                // The combined Bayes factor across all evidence,
+                                // not just the first piece.
+                                likelihood_ratio: Some(combined_bf),
+                                entropy: Some(binary_entropy(resp.posterior.probability)),
                                 confidence_interval: None,
                                 synthesis: Some(format!(
-                                    "{} ({:?} {:?}). Sensitivity: {}",
-                                    resp.belief_update.interpretation,
-                                    resp.belief_update.direction,
-                                    resp.belief_update.magnitude,
-                                    resp.sensitivity
+                                    "{}. Sensitivity: {}",
+                                    resp.belief_update.interpretation, resp.sensitivity
                                 )),
+                                evidential_support: None,
+                                pivot_evidence: None,
+                                bayesian: Some(bayesian),
+                                validation: Some(validation),
                                 metadata: None,
                             },
                             true,
@@ -521,6 +661,10 @@ impl super::ReasoningServer {
                                  Provide a hypothesis with a prior probability and evidence. \
                                  Try evidence_type='assess' for qualitative credibility scoring."
                             )),
+                            evidential_support: None,
+                            pivot_evidence: None,
+                            bayesian: None,
+                            validation: None,
                             metadata: None,
                         },
                         false,
@@ -539,6 +683,10 @@ impl super::ReasoningServer {
                             "Unknown evidence type: {}",
                             evidence_type_for_timeout
                         )),
+                        evidential_support: None,
+                        pivot_evidence: None,
+                        bayesian: None,
+                        validation: None,
                         metadata: None,
                     },
                     false,
@@ -565,6 +713,10 @@ impl super::ReasoningServer {
                         entropy: None,
                         confidence_interval: None,
                         synthesis: Some(format!("Tool execution timed out after {}ms", timeout_ms)),
+                        evidential_support: None,
+                        pivot_evidence: None,
+                        bayesian: None,
+                        validation: None,
                         metadata: None,
                     },
                     false,
@@ -577,5 +729,82 @@ impl super::ReasoningServer {
         );
 
         response
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp
+)]
+mod bayes_tests {
+    use super::{bayes_update, binary_entropy, verify_probabilistic};
+    use crate::modes::EvidenceAnalysis;
+
+    fn ev(lt: f64, lf: f64, bf: f64) -> EvidenceAnalysis {
+        EvidenceAnalysis {
+            evidence: "e".to_string(),
+            likelihood_if_true: lt,
+            likelihood_if_false: lf,
+            bayes_factor: bf,
+        }
+    }
+
+    #[test]
+    fn test_binary_entropy_bounds() {
+        assert_eq!(binary_entropy(0.0), 0.0);
+        assert_eq!(binary_entropy(1.0), 0.0);
+        assert!((binary_entropy(0.5) - 1.0).abs() < 1e-9);
+        // Symmetric.
+        assert!((binary_entropy(0.1) - binary_entropy(0.9)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_bayes_update_disease_example() {
+        // prior 0.01, BF 10 → posterior ≈ 0.0918
+        let (combined, posterior) = bayes_update(0.01, [10.0].iter());
+        assert!((combined - 10.0).abs() < 1e-9);
+        assert!((posterior - 0.0918).abs() < 0.001, "got {posterior}");
+    }
+
+    #[test]
+    fn test_bayes_update_combines_factors() {
+        let (combined, _) = bayes_update(0.5, [2.0, 3.0].iter());
+        assert!((combined - 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_verify_consistent_when_math_checks_out() {
+        let (v, _, computed) =
+            verify_probabilistic(0.01, &[ev(0.9, 0.09, 10.0)], 0.092, "increase");
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
+        assert!((computed - 0.0918).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_verify_flags_posterior_inconsistent_with_bayes_rule() {
+        // Base-rate neglect: model claims 0.5 when prior 0.01 × BF 10 → 0.092.
+        let (v, _, _) = verify_probabilistic(0.01, &[ev(0.9, 0.09, 10.0)], 0.5, "increase");
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("Bayes' rule result")));
+    }
+
+    #[test]
+    fn test_verify_flags_bad_bayes_factor() {
+        // BF stated 4.0 but P(E|H)/P(E|¬H) = 0.8/0.2 = 4.0 is correct; use a wrong one.
+        let (v, _, _) = verify_probabilistic(0.5, &[ev(0.8, 0.2, 9.0)], 0.9, "increase");
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("Bayes factor stated")));
+    }
+
+    #[test]
+    fn test_verify_flags_direction_mismatch() {
+        // Posterior (0.092) < prior would be decrease, but here posterior > prior
+        // yet direction says "decrease".
+        let (v, _, _) = verify_probabilistic(0.01, &[ev(0.9, 0.09, 10.0)], 0.092, "decrease");
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("direction")));
     }
 }
