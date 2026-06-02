@@ -89,6 +89,10 @@ pub struct OverallEvidenceAssessment {
     pub key_weaknesses: Vec<String>,
     /// What evidence is missing.
     pub gaps: Vec<String>,
+    /// The single existing piece of evidence that, if false, would most change
+    /// the conclusion — the most fragile link in the evidential chain.
+    #[serde(default)]
+    pub pivot_evidence: String,
 }
 
 /// Response from assess operation.

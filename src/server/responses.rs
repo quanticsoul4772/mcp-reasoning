@@ -594,6 +594,89 @@ pub struct EvidenceAssessment {
     pub source_tier: String,
     /// Corroborating evidence indices.
     pub corroborated_by: Option<Vec<u32>>,
+    /// Per-dimension credibility breakdown (assess).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credibility: Option<CredibilityBreakdown>,
+    /// Quality breakdown — relevance/strength/representativeness (assess).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality: Option<QualityBreakdown>,
+}
+
+/// Per-dimension credibility breakdown for a piece of evidence.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CredibilityBreakdown {
+    /// Expertise of the source (0.0-1.0).
+    pub expertise: f64,
+    /// Objectivity of the source (0.0-1.0).
+    pub objectivity: f64,
+    /// Level of corroboration (0.0-1.0).
+    pub corroboration: f64,
+    /// Recency of the evidence (0.0-1.0).
+    pub recency: f64,
+    /// Overall credibility (0.0-1.0).
+    pub overall: f64,
+}
+
+/// Quality breakdown for a piece of evidence.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct QualityBreakdown {
+    /// Relevance to the claim (0.0-1.0).
+    pub relevance: f64,
+    /// Strength of support (0.0-1.0).
+    pub strength: f64,
+    /// Representativeness (0.0-1.0).
+    pub representativeness: f64,
+    /// Overall quality (0.0-1.0).
+    pub overall: f64,
+}
+
+/// One piece of evidence in a Bayesian update.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BayesianEvidence {
+    /// Description of the evidence.
+    pub evidence: String,
+    /// P(E|H) — likelihood if the hypothesis is true.
+    pub likelihood_if_true: f64,
+    /// P(E|¬H) — likelihood if the hypothesis is false.
+    pub likelihood_if_false: f64,
+    /// Bayes factor = P(E|H) / P(E|¬H).
+    pub bayes_factor: f64,
+}
+
+/// Full Bayesian breakdown for a probabilistic update.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BayesianBreakdown {
+    /// Prior probability stated by the model.
+    pub prior: f64,
+    /// Why the prior was chosen.
+    pub prior_basis: String,
+    /// Per-evidence likelihoods and Bayes factors.
+    pub evidence: Vec<BayesianEvidence>,
+    /// Product of the per-evidence Bayes factors.
+    pub combined_bayes_factor: f64,
+    /// Posterior the model stated.
+    pub stated_posterior: f64,
+    /// Posterior recomputed from prior × combined Bayes factor (Bayes' rule).
+    pub computed_posterior: f64,
+    /// The model's explanation of the posterior calculation.
+    pub posterior_calculation: String,
+    /// Belief change direction: "increase"/"decrease"/"unchanged".
+    pub belief_direction: String,
+    /// Belief change magnitude: "strong"/"moderate"/"slight".
+    pub belief_magnitude: String,
+    /// Plain-language interpretation.
+    pub interpretation: String,
+    /// Sensitivity of the posterior to prior assumptions.
+    pub sensitivity: String,
+}
+
+/// Result of verifying the Bayesian arithmetic.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EvidenceValidationInfo {
+    /// True when the stated posterior, Bayes factors, and direction all reconcile.
+    pub consistent: bool,
+    /// Descriptions of every discrepancy found.
+    pub warnings: Vec<String>,
 }
 
 /// Confidence interval.
@@ -624,6 +707,19 @@ pub struct EvidenceResponse {
     pub confidence_interval: Option<ConfidenceInterval>,
     /// Synthesis of evidence.
     pub synthesis: Option<String>,
+    /// Overall evidential support (assess).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidential_support: Option<f64>,
+    /// The single piece of evidence that, if false, would most change the
+    /// conclusion (assess).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pivot_evidence: Option<String>,
+    /// Full Bayesian breakdown (probabilistic).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bayesian: Option<BayesianBreakdown>,
+    /// Result of verifying the Bayesian arithmetic (probabilistic).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<EvidenceValidationInfo>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1533,6 +1629,8 @@ mod tests {
                 credibility_score: 0.8,
                 source_tier: "primary".to_string(),
                 corroborated_by: Some(vec![1, 2]),
+                credibility: None,
+                quality: None,
             }]),
             posterior: Some(0.8),
             prior: Some(0.5),
@@ -1543,6 +1641,10 @@ mod tests {
                 upper: 0.9,
             }),
             synthesis: Some("Strong evidence".to_string()),
+            evidential_support: None,
+            pivot_evidence: None,
+            bayesian: None,
+            validation: None,
             metadata: None,
         };
         let contents = response.into_contents();

@@ -979,3 +979,156 @@ async fn test_detect_knowledge_gaps_surfaces_assumptions() {
     );
     assert!(resp.validation.is_some());
 }
+
+// ---------------------------------------------------------------------------
+// Evidence: parser-valid responses exercise Bayesian verification + breakdown.
+// ---------------------------------------------------------------------------
+
+fn probabilistic_json(posterior: f64, direction: &str) -> serde_json::Value {
+    serde_json::json!({
+        "hypothesis": "The treatment is effective",
+        "prior": { "probability": 0.3, "basis": "Limited prior evidence" },
+        "evidence_analysis": [
+            {
+                "evidence": "Clinical trial",
+                "likelihood_if_true": 0.9,
+                "likelihood_if_false": 0.1,
+                "bayes_factor": 9.0
+            }
+        ],
+        "posterior": { "probability": posterior, "calculation": "Bayes theorem" },
+        "belief_update": {
+            "direction": direction,
+            "magnitude": "strong",
+            "interpretation": "Evidence supports the hypothesis"
+        },
+        "sensitivity": "Moderate"
+    })
+}
+
+#[tokio::test]
+async fn test_evidence_probabilistic_consistent_math() {
+    let mock_server = MockServer::start().await;
+    // prior 0.3 × BF 9 → posterior ≈ 0.794, matching the stated 0.79.
+    let json = probabilistic_json(0.79, "increase");
+
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(anthropic_response(&json.to_string())),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let server = create_mocked_server(&mock_server).await;
+    let req = EvidenceRequest {
+        evidence_type: Some("probabilistic".to_string()),
+        claim: None,
+        hypothesis: Some("The treatment is effective".to_string()),
+        prior: Some(0.3),
+        context: None,
+        session_id: None,
+    };
+
+    let resp = server.reasoning_evidence(Parameters(req)).await;
+    let bayesian = resp.bayesian.expect("bayesian breakdown surfaced");
+    assert!((bayesian.combined_bayes_factor - 9.0).abs() < 1e-9);
+    assert!((bayesian.computed_posterior - 0.794).abs() < 0.01);
+    assert_eq!(bayesian.prior_basis, "Limited prior evidence");
+    // Combined Bayes factor surfaced as likelihood_ratio, entropy computed.
+    assert_eq!(resp.likelihood_ratio, Some(9.0));
+    assert!(resp.entropy.is_some());
+    let validation = resp.validation.expect("validation present");
+    assert!(validation.consistent, "warnings: {:?}", validation.warnings);
+}
+
+#[tokio::test]
+async fn test_evidence_probabilistic_flags_inconsistent_posterior() {
+    let mock_server = MockServer::start().await;
+    // Model claims 0.4 when prior 0.3 × BF 9 → 0.79 (base-rate-style error).
+    let json = probabilistic_json(0.4, "increase");
+
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(anthropic_response(&json.to_string())),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let server = create_mocked_server(&mock_server).await;
+    let req = EvidenceRequest {
+        evidence_type: Some("probabilistic".to_string()),
+        claim: None,
+        hypothesis: Some("The treatment is effective".to_string()),
+        prior: Some(0.3),
+        context: None,
+        session_id: None,
+    };
+
+    let resp = server.reasoning_evidence(Parameters(req)).await;
+    let validation = resp.validation.expect("validation present");
+    assert!(!validation.consistent);
+    assert!(validation
+        .warnings
+        .iter()
+        .any(|w| w.contains("Bayes' rule result")));
+}
+
+#[tokio::test]
+async fn test_evidence_assess_surfaces_breakdown_and_pivot() {
+    let mock_server = MockServer::start().await;
+    let json = serde_json::json!({
+        "evidence_pieces": [
+            {
+                "summary": "Peer-reviewed study",
+                "source_type": "primary",
+                "credibility": {
+                    "expertise": 0.9, "objectivity": 0.8,
+                    "corroboration": 0.7, "recency": 0.85, "overall": 0.81
+                },
+                "quality": {
+                    "relevance": 0.9, "strength": 0.8,
+                    "representativeness": 0.7, "overall": 0.8
+                }
+            }
+        ],
+        "overall_assessment": {
+            "evidential_support": 0.78,
+            "key_strengths": ["Strong primary source"],
+            "key_weaknesses": ["Single study"],
+            "gaps": ["Replication missing — would strengthen"],
+            "pivot_evidence": "The peer-reviewed study; if retracted, support collapses"
+        },
+        "confidence_in_conclusion": 0.75
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(anthropic_response(&json.to_string())),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let server = create_mocked_server(&mock_server).await;
+    let req = EvidenceRequest {
+        evidence_type: Some("assess".to_string()),
+        claim: Some("The treatment works".to_string()),
+        hypothesis: None,
+        prior: None,
+        context: None,
+        session_id: None,
+    };
+
+    let resp = server.reasoning_evidence(Parameters(req)).await;
+    assert_eq!(resp.evidential_support, Some(0.78));
+    assert!(resp.pivot_evidence.is_some());
+    let pieces = resp.evidence_assessments.expect("assessments present");
+    let cred = pieces[0]
+        .credibility
+        .as_ref()
+        .expect("credibility breakdown");
+    assert!((cred.expertise - 0.9).abs() < 1e-9);
+    assert!(pieces[0].quality.is_some());
+}

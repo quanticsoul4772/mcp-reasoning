@@ -25,6 +25,8 @@ pub use types::{
     ProbabilisticResponse, SourceType,
 };
 
+use std::fmt::Write as _;
+
 use crate::error::ModeError;
 use crate::modes::{extract_json, generate_thought_id, validate_content};
 use crate::prompts::{evidence_assess_prompt, evidence_probabilistic_prompt};
@@ -81,10 +83,19 @@ where
     ) -> Result<AssessResponse, ModeError> {
         validate_content(content)?;
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
 
         let prompt = evidence_assess_prompt();
-        let user_message = format!("{prompt}\n\nEvidence to assess:\n{content}");
+        let user_message = self
+            .build_user_message(
+                prompt,
+                content,
+                &session.id,
+                has_prior_session,
+                "Evidence to assess",
+            )
+            .await;
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -142,10 +153,19 @@ where
     ) -> Result<ProbabilisticResponse, ModeError> {
         validate_content(content)?;
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
 
         let prompt = evidence_probabilistic_prompt();
-        let user_message = format!("{prompt}\n\nHypothesis and evidence:\n{content}");
+        let user_message = self
+            .build_user_message(
+                prompt,
+                content,
+                &session.id,
+                has_prior_session,
+                "Hypothesis and evidence",
+            )
+            .await;
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -219,6 +239,79 @@ where
             .map_err(|e| ModeError::ApiUnavailable {
                 message: format!("Failed to get or create session: {e}"),
             })
+    }
+
+    /// Load recent prior thoughts for a session as a context block, so a
+    /// follow-up (e.g. "now run a Bayesian update on that same evidence") can
+    /// build on earlier findings. A lookup failure proceeds without history.
+    async fn load_prior_context(&self, session_id: &str) -> String {
+        let thoughts = match self.storage.get_thoughts(session_id).await {
+            Ok(thoughts) => thoughts,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load prior thoughts — proceeding without session context"
+                );
+                return String::new();
+            }
+        };
+
+        if thoughts.is_empty() {
+            return String::new();
+        }
+
+        let start = thoughts.len().saturating_sub(MAX_CONTEXT_THOUGHTS);
+        let mut block = String::from("Previous reasoning in this session (oldest to newest):\n");
+        for (idx, thought) in thoughts[start..].iter().enumerate() {
+            let content = truncate_chars(&thought.content, MAX_CONTEXT_THOUGHT_CHARS);
+            let _ = writeln!(
+                block,
+                "{}. [{}, confidence {:.2}] {content}",
+                idx + 1,
+                thought.mode,
+                thought.confidence,
+            );
+        }
+        block
+    }
+
+    /// Build the user message, prepending session history when an existing
+    /// session was referenced and has prior reasoning.
+    async fn build_user_message(
+        &self,
+        prompt: &str,
+        content: &str,
+        session_id: &str,
+        has_prior_session: bool,
+        content_label: &str,
+    ) -> String {
+        let prior_context = if has_prior_session {
+            self.load_prior_context(session_id).await
+        } else {
+            String::new()
+        };
+
+        if prior_context.is_empty() {
+            format!("{prompt}\n\n{content_label}:\n{content}")
+        } else {
+            format!("{prompt}\n\n{prior_context}\n{content_label}:\n{content}")
+        }
+    }
+}
+
+/// Maximum number of prior thoughts to include as session context.
+const MAX_CONTEXT_THOUGHTS: usize = 5;
+/// Maximum characters per prior thought when building the context block.
+const MAX_CONTEXT_THOUGHT_CHARS: usize = 600;
+
+/// Truncate a string to at most `max` characters (char-safe), appending an
+/// ellipsis when truncated.
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max).collect();
+        format!("{truncated}…")
     }
 }
 
@@ -325,6 +418,8 @@ mod tests {
             ))
         });
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_storage.expect_get_thoughts().returning(|_| Ok(vec![]));
 
         let response_json = mock_assess_response();
         mock_client.expect_complete().returning(move |_, _| {
@@ -469,6 +564,8 @@ mod tests {
         });
         mock_storage.expect_save_thought().returning(|_| Ok(()));
 
+        mock_storage.expect_get_thoughts().returning(|_| Ok(vec![]));
+
         let response_json = mock_probabilistic_response();
         mock_client.expect_complete().returning(move |_, _| {
             Ok(CompletionResponse::new(
@@ -588,6 +685,7 @@ mod tests {
                 key_strengths: vec![],
                 key_weaknesses: vec![],
                 gaps: vec![],
+                pivot_evidence: String::new(),
             },
             0.75,
         );
@@ -617,5 +715,107 @@ mod tests {
             "Sensitivity",
         );
         assert_eq!(response.hypothesis, "Hypothesis");
+    }
+
+    #[tokio::test]
+    async fn test_assess_injects_prior_session_context() {
+        use crate::traits::Thought;
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("ctx-session")));
+        mock_storage.expect_get_thoughts().returning(|_| {
+            Ok(vec![Thought::new(
+                "t-prev",
+                "ctx-session",
+                "Earlier: the key study had a small sample size",
+                "evidence_assess",
+                0.7,
+            )])
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_assess_response();
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages.first().is_some_and(|m| {
+                    m.content.contains("Previous reasoning in this session")
+                        && m.content.contains("small sample size")
+                })
+            })
+            .returning(move |_, _| {
+                Ok(CompletionResponse::new(
+                    response_json.clone(),
+                    Usage::new(100, 200),
+                ))
+            });
+
+        let mode = EvidenceMode::new(mock_storage, mock_client);
+        let result = mode
+            .assess("Re-evaluate the evidence", Some("ctx-session".to_string()))
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_assess_new_session_skips_history_lookup() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        // No session_id → get_thoughts must NOT be called.
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("fresh")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_assess_response();
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages
+                    .first()
+                    .is_some_and(|m| !m.content.contains("Previous reasoning in this session"))
+            })
+            .returning(move |_, _| {
+                Ok(CompletionResponse::new(
+                    response_json.clone(),
+                    Usage::new(100, 200),
+                ))
+            });
+
+        let mode = EvidenceMode::new(mock_storage, mock_client);
+        let result = mode.assess("Fresh evidence", None).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_truncate_chars() {
+        assert_eq!(truncate_chars("short", 10), "short");
+        assert_eq!(truncate_chars("12345", 5), "12345");
+        assert_eq!(truncate_chars("123456789", 4), "1234…");
+    }
+
+    #[test]
+    fn test_pivot_evidence_parsed() {
+        let json: serde_json::Value = serde_json::from_str(
+            r#"{
+                "evidence_pieces": [],
+                "overall_assessment": {
+                    "evidential_support": 0.7,
+                    "key_strengths": [],
+                    "key_weaknesses": [],
+                    "gaps": [],
+                    "pivot_evidence": "The eyewitness account"
+                },
+                "confidence_in_conclusion": 0.6
+            }"#,
+        )
+        .unwrap();
+        let assessment = parse_overall_assessment(&json).unwrap();
+        assert_eq!(assessment.pivot_evidence, "The eyewitness account");
     }
 }

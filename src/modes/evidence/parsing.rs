@@ -130,11 +130,20 @@ pub fn parse_overall_assessment(
     let key_weaknesses = get_string_array(assessment, "key_weaknesses")?;
     let gaps = get_string_array(assessment, "gaps")?;
 
+    // Optional: the most fragile link in the evidential chain. Absent on
+    // older/edge responses, so default to empty rather than failing the parse.
+    let pivot_evidence = assessment
+        .get("pivot_evidence")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+
     Ok(OverallEvidenceAssessment {
         evidential_support,
         key_strengths,
         key_weaknesses,
         gaps,
+        pivot_evidence,
     })
 }
 
