@@ -499,17 +499,23 @@ fn assess_convergence(frontier: &[FrontierNode], best_path_value: f64) -> MctsCo
     } else if best_path_value >= CONVERGENCE_HIGH_VALUE {
         (
             true,
-            format!("best-path value {best_path_value:.2} is near-optimal; commit"),
+            format!(
+                "best-path value {best_path_value:.2} is near-optimal (>= {CONVERGENCE_HIGH_VALUE:.2} threshold)"
+            ),
         )
     } else if top_gap >= CONVERGENCE_DOMINANCE_GAP {
         (
             true,
-            format!("top candidate leads the runner-up by {top_gap:.2} UCB1; commit"),
+            format!(
+                "top candidate leads the runner-up by {top_gap:.2} UCB1 (>= {CONVERGENCE_DOMINANCE_GAP:.2} threshold)"
+            ),
         )
     } else {
         (
             false,
-            format!("top candidates within {top_gap:.2} UCB1; keep exploring"),
+            format!(
+                "top candidates within {top_gap:.2} UCB1 (< {CONVERGENCE_DOMINANCE_GAP:.2} threshold); keep exploring"
+            ),
         )
     };
 
@@ -518,6 +524,8 @@ fn assess_convergence(frontier: &[FrontierNode], best_path_value: f64) -> MctsCo
         reason,
         top_gap,
         best_value: best_path_value,
+        dominance_gap_threshold: CONVERGENCE_DOMINANCE_GAP,
+        high_value_threshold: CONVERGENCE_HIGH_VALUE,
     }
 }
 
@@ -1491,6 +1499,21 @@ mod mcts_verify_tests {
         let c = assess_convergence(&frontier, 0.95);
         assert!(c.converged);
         assert!(c.reason.contains("near-optimal"));
+    }
+
+    #[test]
+    fn test_convergence_surfaces_thresholds_and_cites_them() {
+        // The cutoffs that drive `converged` are returned and named in the
+        // reason, so a caller can recompute the verdict from top_gap/best_value
+        // rather than trusting the bool.
+        let frontier = vec![node("a", 0.7, 0.2, 0.9, 8), node("b", 0.4, 0.2, 0.6, 5)];
+        let c = assess_convergence(&frontier, 0.7);
+        assert!((c.dominance_gap_threshold - 0.2).abs() < 1e-9);
+        assert!((c.high_value_threshold - 0.9).abs() < 1e-9);
+        assert!(c.reason.contains("threshold"));
+        // The raw evidence needed to override the heuristic is present.
+        assert!((c.top_gap - 0.3).abs() < 1e-9);
+        assert!((c.best_value - 0.7).abs() < 1e-9);
     }
 
     #[test]

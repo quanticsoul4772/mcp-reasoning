@@ -1086,19 +1086,29 @@ pub struct MctsValidationInfo {
     pub warnings: Vec<String>,
 }
 
-/// Advisory stop signal for an explore step: whether the search has converged
-/// enough to commit, so the caller knows when to stop iterating. Derived from
-/// the frontier UCB1 scores and best-path value; never blocks, only advises.
+/// Advisory stop signal for an explore step. Derived from the frontier UCB1
+/// scores and best-path value; never blocks, only advises.
+///
+/// `converged` is a heuristic computed from hand-picked cutoffs, surfaced as
+/// `dominance_gap_threshold` / `high_value_threshold`. Prefer to make your own
+/// stop decision from the raw `top_gap` and `best_value` against your own
+/// tolerance; treat `converged` as a default suggestion, not a directive.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MctsConvergence {
-    /// True when one candidate clearly dominates or the best value is near-optimal.
+    /// Heuristic suggestion that the search has converged enough to commit. True
+    /// when one candidate clearly dominates or the best value is near-optimal,
+    /// per the thresholds below. Advisory — weigh `top_gap`/`best_value` yourself.
     pub converged: bool,
-    /// Human-readable explanation of the convergence verdict.
+    /// Human-readable explanation, citing the raw value and the threshold it met.
     pub reason: String,
     /// UCB1 gap between the top frontier node and the runner-up (0.0 if <2 nodes).
     pub top_gap: f64,
     /// Best-path value reported by this step, echoed for the stop decision.
     pub best_value: f64,
+    /// The `top_gap` cutoff at/above which `converged` was set true for dominance.
+    pub dominance_gap_threshold: f64,
+    /// The `best_value` cutoff at/above which `converged` was set true for value.
+    pub high_value_threshold: f64,
 }
 
 /// Response from MCTS.
