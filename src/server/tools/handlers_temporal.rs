@@ -211,11 +211,15 @@ fn verify_causal_model(
     // ("Average_Order_Value" vs "Average order value") — a formatting difference,
     // not a structural one. Genuinely different names (e.g. "Widget" vs
     // "Recommendation widget presence") still differ and are still flagged.
+    // Strip every non-alphanumeric character (and lowercase), so the same
+    // variable matches regardless of how the model formatted it — snake_case
+    // ("Average_Order_Value"), CamelCase ("AverageOrderValue"), or spaced prose
+    // ("Average order value") all collapse to "averageordervalue". Genuinely
+    // different names (extra/other words) still differ and are still flagged.
     let norm = |s: &str| {
-        s.replace(['_', '-'], " ")
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
+        s.chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect::<String>()
             .to_lowercase()
     };
     let nodes: HashSet<String> = model.nodes.iter().map(|n| norm(n)).collect();
@@ -1308,13 +1312,26 @@ mod counterfactual_verify_tests {
     }
 
     #[test]
-    fn test_separator_and_case_name_differences_are_not_flagged() {
-        // The real failure mode: the DAG nodes are snake_case while the question
-        // variables are written in prose. That's formatting, not a structural
-        // inconsistency, so it must not be flagged.
+    fn test_snake_case_node_names_are_not_flagged() {
+        // DAG nodes in snake_case, question variables in prose — formatting only.
         let model = CausalModel {
             nodes: vec!["Average_Order_Value".to_string(), "Widget".to_string()],
             edges: vec![edge("Widget", "Average_Order_Value", EdgeType::Direct)],
+            confounders: vec![],
+        };
+        let q = question("widget", "Average order value");
+        let v = verify_causal_model(&model, &q, &analysis(0.5, 0.7));
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
+    }
+
+    #[test]
+    fn test_camelcase_node_names_are_not_flagged() {
+        // The format seen live that #67 still flagged: CamelCase nodes have no
+        // separators to split, so "Average order value" must collapse to the same
+        // token as "AverageOrderValue".
+        let model = CausalModel {
+            nodes: vec!["AverageOrderValue".to_string(), "Widget".to_string()],
+            edges: vec![edge("Widget", "AverageOrderValue", EdgeType::Direct)],
             confounders: vec![],
         };
         let q = question("widget", "Average order value");
