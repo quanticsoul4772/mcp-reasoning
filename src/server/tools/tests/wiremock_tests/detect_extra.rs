@@ -305,6 +305,8 @@ async fn test_into_contents_implementations() {
         conflicts: None,
         alignments: None,
         rationale: None,
+        breakdown: None,
+        validation: None,
         metadata: None,
     };
     let _ = decision_resp.into_contents();

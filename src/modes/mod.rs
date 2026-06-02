@@ -62,9 +62,9 @@ pub use counterfactual::{
 };
 pub use decision::{
     Alignment, BalancedRecommendation, Conflict, ConflictSeverity, Criterion, CriterionType,
-    DecisionMode, InfluenceLevel, PairwiseComparison, PairwiseRank, PairwiseResponse,
-    PerspectivesResponse, PreferenceResult, PreferenceStrength, RankedOption, Stakeholder,
-    TopsisCreterion, TopsisDistances, TopsisRank, TopsisResponse, WeightedResponse,
+    DecisionMode, DecisionValidation, InfluenceLevel, PairwiseComparison, PairwiseRank,
+    PairwiseResponse, PerspectivesResponse, PreferenceResult, PreferenceStrength, RankedOption,
+    Stakeholder, TopsisCreterion, TopsisDistances, TopsisRank, TopsisResponse, WeightedResponse,
 };
 pub use detect::{
     ArgumentStructure, ArgumentValidity, BiasAssessment, BiasSeverity, BiasesResponse, DetectMode,
