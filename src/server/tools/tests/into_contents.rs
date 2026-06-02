@@ -78,6 +78,11 @@ fn test_reflection_response_into_contents() {
         recommendations: Some(vec!["add examples".to_string()]),
         refined_content: Some("improved reasoning".to_string()),
         coherence_score: Some(0.9),
+        completeness_score: None,
+        depth_score: None,
+        confidence_improvement: None,
+        key_insights: None,
+        meta_observations: None,
         metadata: None,
     };
     let contents = response.into_contents();

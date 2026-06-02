@@ -188,7 +188,13 @@ impl super::ReasoningServer {
                 let content = req.content.as_deref().unwrap_or("");
                 let process_result = match tokio::time::timeout(
                     timeout_duration,
-                    mode.process_streaming(content, req.session_id, Some(&progress)),
+                    mode.process_streaming(
+                        content,
+                        req.session_id,
+                        req.max_iterations,
+                        req.quality_threshold,
+                        Some(&progress),
+                    ),
                 )
                 .await
                 {
@@ -208,10 +214,10 @@ impl super::ReasoningServer {
                 match process_result {
                     Ok(resp) => (
                         ReflectionResponse {
-                            quality_score: resp.confidence_improvement,
+                            quality_score: resp.quality_score,
                             thought_id: Some(resp.thought_id),
                             session_id: Some(resp.session_id),
-                            iterations_used: Some(1),
+                            iterations_used: Some(resp.iterations_used),
                             strengths: Some(resp.analysis.strengths),
                             weaknesses: Some(resp.analysis.weaknesses),
                             recommendations: Some(
@@ -222,6 +228,11 @@ impl super::ReasoningServer {
                             ),
                             refined_content: Some(resp.refined_reasoning),
                             coherence_score: None,
+                            completeness_score: None,
+                            depth_score: None,
+                            confidence_improvement: Some(resp.confidence_improvement),
+                            key_insights: None,
+                            meta_observations: None,
                             metadata: None,
                         },
                         true,
@@ -241,6 +252,11 @@ impl super::ReasoningServer {
                             recommendations: None,
                             refined_content: None,
                             coherence_score: None,
+                            completeness_score: None,
+                            depth_score: None,
+                            confidence_improvement: None,
+                            key_insights: None,
+                            meta_observations: None,
                             metadata: None,
                         },
                         false,
@@ -281,6 +297,11 @@ impl super::ReasoningServer {
                             recommendations: Some(resp.recommendations),
                             refined_content: None,
                             coherence_score: Some(resp.session_assessment.coherence),
+                            completeness_score: Some(resp.session_assessment.completeness),
+                            depth_score: Some(resp.session_assessment.depth),
+                            confidence_improvement: None,
+                            key_insights: Some(resp.key_insights),
+                            meta_observations: resp.meta_observations,
                             metadata: None,
                         },
                         true,
@@ -300,6 +321,11 @@ impl super::ReasoningServer {
                             recommendations: None,
                             refined_content: None,
                             coherence_score: None,
+                            completeness_score: None,
+                            depth_score: None,
+                            confidence_improvement: None,
+                            key_insights: None,
+                            meta_observations: None,
                             metadata: None,
                         },
                         false,
@@ -319,6 +345,11 @@ impl super::ReasoningServer {
                     recommendations: None,
                     refined_content: None,
                     coherence_score: None,
+                    completeness_score: None,
+                    depth_score: None,
+                    confidence_improvement: None,
+                    key_insights: None,
+                    meta_observations: None,
                     metadata: None,
                 },
                 false,

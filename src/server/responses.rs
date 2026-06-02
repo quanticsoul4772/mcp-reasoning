@@ -163,6 +163,21 @@ pub struct ReflectionResponse {
     pub refined_content: Option<String>,
     /// Session coherence score.
     pub coherence_score: Option<f64>,
+    /// Session completeness score (evaluate).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completeness_score: Option<f64>,
+    /// Session depth score (evaluate).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depth_score: Option<f64>,
+    /// Expected confidence improvement from the refinement (process).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence_improvement: Option<f64>,
+    /// Key insights drawn from the session (evaluate).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_insights: Option<Vec<String>>,
+    /// Higher-level meta observations (evaluate).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta_observations: Option<String>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1222,6 +1237,11 @@ mod tests {
             recommendations: Some(vec!["Be concise".to_string()]),
             refined_content: Some("Better content".to_string()),
             coherence_score: Some(0.8),
+            completeness_score: None,
+            depth_score: None,
+            confidence_improvement: None,
+            key_insights: None,
+            meta_observations: None,
             metadata: None,
         };
         let contents = response.into_contents();
