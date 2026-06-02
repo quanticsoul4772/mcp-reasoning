@@ -162,9 +162,16 @@ fn test_detect_response_into_contents() {
             evidence: "selective evidence".to_string(),
             explanation: "focusing on confirming data".to_string(),
             remediation: Some("consider counterexamples".to_string()),
+            changes_conclusion: Some("maybe".to_string()),
+            grounded: Some(false),
         }],
         summary: Some("1 bias detected".to_string()),
         overall_quality: Some(0.7),
+        debiased_version: None,
+        argument_structure: None,
+        unchallenged_assumptions: None,
+        conclusion_altering_biases: None,
+        validation: None,
         metadata: None,
     };
     let contents = response.into_contents();

@@ -744,3 +744,238 @@ async fn test_detect_fallacies_success_path() {
     let resp = server.reasoning_detect(Parameters(req)).await;
     assert!(!resp.detections.is_empty() || resp.summary.is_some());
 }
+
+// ---------------------------------------------------------------------------
+// Detect: parser-valid responses exercise the surfaced-output mapping.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_detect_biases_surfaces_debiased_and_grounding() {
+    let mock_server = MockServer::start().await;
+
+    let json = serde_json::json!({
+        "biases_detected": [
+            {
+                "bias": "Confirmation Bias",
+                "evidence": "customers say so",
+                "severity": "high",
+                "confidence": 0.85,
+                "changes_conclusion": "yes",
+                "impact": "Ignores contradictory data",
+                "debiasing": "Seek disconfirming evidence"
+            }
+        ],
+        "overall_assessment": {
+            "bias_count": 1,
+            "most_severe": "Confirmation Bias",
+            "conclusion_altering_biases": "Confirmation Bias",
+            "reasoning_quality": 0.6
+        },
+        "debiased_version": "A more balanced view weighing both sides."
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(anthropic_response(&json.to_string())),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let server = create_mocked_server(&mock_server).await;
+    let req = DetectRequest {
+        detect_type: "biases".to_string(),
+        // Evidence "customers say so" appears verbatim → grounded.
+        content: Some("Our product is superior because customers say so".to_string()),
+        thought_id: None,
+        session_id: Some("s1".to_string()),
+        check_types: None,
+        check_formal: Some(true),
+        check_informal: Some(true),
+    };
+
+    let resp = server.reasoning_detect(Parameters(req)).await;
+    assert_eq!(resp.detections.len(), 1);
+    // The debiased rewrite is now surfaced, not just announced.
+    assert!(resp.debiased_version.is_some());
+    assert_eq!(
+        resp.conclusion_altering_biases.as_deref(),
+        Some("Confirmation Bias")
+    );
+    assert_eq!(
+        resp.detections[0].changes_conclusion.as_deref(),
+        Some("yes")
+    );
+    assert_eq!(resp.detections[0].grounded, Some(true));
+    let validation = resp.validation.expect("validation present");
+    assert!(validation.consistent, "count matches and quote is grounded");
+}
+
+#[tokio::test]
+async fn test_detect_biases_flags_ungrounded_quote() {
+    let mock_server = MockServer::start().await;
+
+    let json = serde_json::json!({
+        "biases_detected": [
+            {
+                "bias": "Anchoring",
+                "evidence": "a quote that does not appear anywhere in the content",
+                "severity": "medium",
+                "confidence": 0.7,
+                "changes_conclusion": "no",
+                "impact": "Skews the estimate",
+                "debiasing": "Re-anchor on data"
+            }
+        ],
+        "overall_assessment": {
+            "bias_count": 1,
+            "most_severe": "Anchoring",
+            "reasoning_quality": 0.6
+        },
+        "debiased_version": "Restated."
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(anthropic_response(&json.to_string())),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let server = create_mocked_server(&mock_server).await;
+    let req = DetectRequest {
+        detect_type: "biases".to_string(),
+        content: Some("Entirely unrelated text about pricing".to_string()),
+        thought_id: None,
+        session_id: None,
+        check_types: None,
+        check_formal: None,
+        check_informal: None,
+    };
+
+    let resp = server.reasoning_detect(Parameters(req)).await;
+    assert_eq!(resp.detections[0].grounded, Some(false));
+    let validation = resp.validation.expect("validation present");
+    assert!(!validation.consistent);
+    assert!(validation
+        .warnings
+        .iter()
+        .any(|w| w.contains("not found verbatim")));
+}
+
+#[tokio::test]
+async fn test_detect_fallacies_surfaces_argument_structure() {
+    let mock_server = MockServer::start().await;
+
+    let json = serde_json::json!({
+        "fallacies_detected": [
+            {
+                "fallacy": "Ad Hominem",
+                "category": "informal",
+                "passage": "you're not an expert",
+                "severity": "high",
+                "confidence": 0.9,
+                "explanation": "Attacks the person, not the argument",
+                "correction": "Address the argument's merits"
+            }
+        ],
+        "argument_structure": {
+            "premises": ["He is not an expert", "Experts are trustworthy"],
+            "conclusion": "His argument is wrong",
+            "validity": "invalid"
+        },
+        "overall_assessment": {
+            "fallacy_count": 1,
+            "argument_strength": 0.4,
+            "most_critical": "Ad Hominem"
+        }
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(anthropic_response(&json.to_string())),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let server = create_mocked_server(&mock_server).await;
+    let req = DetectRequest {
+        detect_type: "fallacies".to_string(),
+        content: Some("You can't trust his claim because you're not an expert".to_string()),
+        thought_id: None,
+        session_id: None,
+        check_types: None,
+        check_formal: Some(true),
+        check_informal: Some(true),
+    };
+
+    let resp = server.reasoning_detect(Parameters(req)).await;
+    let structure = resp
+        .argument_structure
+        .expect("argument structure surfaced");
+    assert_eq!(structure.premises.len(), 2);
+    assert_eq!(structure.validity, "invalid");
+    assert_eq!(resp.detections[0].grounded, Some(true));
+    assert!(resp.validation.is_some());
+}
+
+#[tokio::test]
+async fn test_detect_knowledge_gaps_surfaces_assumptions() {
+    let mock_server = MockServer::start().await;
+
+    let json = serde_json::json!({
+        "gaps": [
+            {
+                "gap": "Market size data",
+                "category": "missing_data",
+                "confidence": 0.8,
+                "impact": "Could invalidate the opportunity",
+                "would_change_conclusion": "yes",
+                "investigation": "Check industry TAM reports"
+            }
+        ],
+        "unchallenged_assumptions": [
+            "Customers will adopt the feature",
+            "Competitors will not respond"
+        ],
+        "overall_assessment": {
+            "gap_count": 1,
+            "most_critical": "Market size data",
+            "completeness_score": 0.4
+        }
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(anthropic_response(&json.to_string())),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let server = create_mocked_server(&mock_server).await;
+    let req = DetectRequest {
+        detect_type: "knowledge_gaps".to_string(),
+        content: Some("Our market opportunity is huge and growth is guaranteed".to_string()),
+        thought_id: None,
+        session_id: None,
+        check_types: None,
+        check_formal: None,
+        check_informal: None,
+    };
+
+    let resp = server.reasoning_detect(Parameters(req)).await;
+    let assumptions = resp
+        .unchallenged_assumptions
+        .expect("unchallenged assumptions surfaced");
+    assert_eq!(assumptions.len(), 2);
+    // would_change_conclusion="yes" maps to high severity.
+    assert_eq!(resp.detections[0].severity, "high");
+    assert_eq!(
+        resp.detections[0].changes_conclusion.as_deref(),
+        Some("yes")
+    );
+    assert!(resp.validation.is_some());
+}

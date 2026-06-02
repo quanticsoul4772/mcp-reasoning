@@ -371,6 +371,34 @@ pub struct Detection {
     pub explanation: String,
     /// Remediation suggestion.
     pub remediation: Option<String>,
+    /// Whether removing this would change the conclusion ("yes"/"no"/"maybe").
+    /// The most actionable signal: which findings actually matter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changes_conclusion: Option<String>,
+    /// Whether the cited evidence/passage was found verbatim in the analyzed
+    /// content. `None` when grounding does not apply (e.g. knowledge gaps).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grounded: Option<bool>,
+}
+
+/// Structure of an analyzed argument (premises, conclusion, validity).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ArgumentStructureInfo {
+    /// Identified premises.
+    pub premises: Vec<String>,
+    /// The main conclusion.
+    pub conclusion: String,
+    /// Validity: "valid", "invalid", or "partially_valid".
+    pub validity: String,
+}
+
+/// Result of verifying a detection result against the analyzed content.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DetectValidationInfo {
+    /// True when reported counts match the detections and all quotes are grounded.
+    pub consistent: bool,
+    /// Descriptions of every discrepancy (count mismatch, ungrounded quote).
+    pub warnings: Vec<String>,
 }
 
 /// Response from detection.
@@ -382,6 +410,22 @@ pub struct DetectResponse {
     pub summary: Option<String>,
     /// Overall reasoning quality.
     pub overall_quality: Option<f64>,
+    /// Debiased restatement of the argument (biases operation).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debiased_version: Option<String>,
+    /// Decomposed argument structure (fallacies operation).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub argument_structure: Option<ArgumentStructureInfo>,
+    /// Assumptions taken as given without verification (knowledge_gaps operation).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unchallenged_assumptions: Option<Vec<String>>,
+    /// The subset of biases that, if removed, would change the conclusion
+    /// (biases operation).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conclusion_altering_biases: Option<String>,
+    /// Result of verifying counts and quote grounding.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<DetectValidationInfo>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1439,9 +1483,16 @@ mod tests {
                 evidence: "Only cited supporting".to_string(),
                 explanation: "Ignored contrary".to_string(),
                 remediation: Some("Seek disconfirming".to_string()),
+                changes_conclusion: Some("yes".to_string()),
+                grounded: Some(true),
             }],
             summary: Some("1 bias found".to_string()),
             overall_quality: Some(0.6),
+            debiased_version: Some("Balanced restatement".to_string()),
+            argument_structure: None,
+            unchallenged_assumptions: None,
+            conclusion_altering_biases: Some("confirmation_bias".to_string()),
+            validation: None,
             metadata: None,
         };
         let contents = response.into_contents();
@@ -1763,6 +1814,8 @@ mod tests {
             evidence: "Proof".to_string(),
             explanation: "Reason".to_string(),
             remediation: None,
+            changes_conclusion: None,
+            grounded: None,
         };
         let json = serde_json::to_string(&d).unwrap();
         assert!(json.contains("bias"));
