@@ -893,7 +893,9 @@ impl super::ReasoningServer {
         };
 
         self.state.metrics.record(
-            MetricEvent::new("timeline", timer.elapsed_ms(), success).with_operation(&operation),
+            MetricEvent::new("timeline", timer.elapsed_ms(), success)
+                .with_operation(&operation)
+                .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
 
         response
@@ -1190,7 +1192,10 @@ impl super::ReasoningServer {
         };
 
         self.state.metrics.record(
-            MetricEvent::new("mcts", timer.elapsed_ms(), success).with_operation(operation),
+            MetricEvent::new("mcts", timer.elapsed_ms(), success)
+                .with_operation(operation)
+                .with_validation(response.validation.as_ref().map(|v| v.consistent))
+                .with_convergence(response.convergence.as_ref().map(|c| c.converged)),
         );
 
         response
@@ -1351,11 +1356,10 @@ impl super::ReasoningServer {
             },
         };
 
-        self.state.metrics.record(MetricEvent::new(
-            "counterfactual",
-            timer.elapsed_ms(),
-            success,
-        ));
+        self.state.metrics.record(
+            MetricEvent::new("counterfactual", timer.elapsed_ms(), success)
+                .with_validation(response.validation.as_ref().map(|v| v.consistent)),
+        );
 
         response
     }

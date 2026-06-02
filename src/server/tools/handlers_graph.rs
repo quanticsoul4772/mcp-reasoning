@@ -347,9 +347,16 @@ impl super::ReasoningServer {
 
         let elapsed_ms = timer.elapsed_ms();
         let success = result.is_ok();
-        self.state
-            .metrics
-            .record(MetricEvent::new("graph", elapsed_ms, success).with_operation(&operation));
+        let graph_consistent = result
+            .as_ref()
+            .ok()
+            .and_then(|r| r.validation.as_ref())
+            .map(|v| v.consistent);
+        self.state.metrics.record(
+            MetricEvent::new("graph", elapsed_ms, success)
+                .with_operation(&operation)
+                .with_validation(graph_consistent),
+        );
 
         let mut response = result.unwrap_or_else(|e| GraphResponse {
             session_id: session_id.clone(),
@@ -680,7 +687,9 @@ impl super::ReasoningServer {
         };
 
         self.state.metrics.record(
-            MetricEvent::new("detect", timer.elapsed_ms(), success).with_operation(detect_type),
+            MetricEvent::new("detect", timer.elapsed_ms(), success)
+                .with_operation(detect_type)
+                .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
 
         response

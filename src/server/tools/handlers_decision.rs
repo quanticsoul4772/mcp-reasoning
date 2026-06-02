@@ -488,7 +488,9 @@ impl super::ReasoningServer {
         };
 
         self.state.metrics.record(
-            MetricEvent::new("decision", timer.elapsed_ms(), success).with_operation(decision_type),
+            MetricEvent::new("decision", timer.elapsed_ms(), success)
+                .with_operation(decision_type)
+                .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
 
         response
@@ -725,7 +727,9 @@ impl super::ReasoningServer {
         };
 
         self.state.metrics.record(
-            MetricEvent::new("evidence", timer.elapsed_ms(), success).with_operation(evidence_type),
+            MetricEvent::new("evidence", timer.elapsed_ms(), success)
+                .with_operation(evidence_type)
+                .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
 
         response
