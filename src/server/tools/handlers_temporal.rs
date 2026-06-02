@@ -198,6 +198,52 @@ fn causal_model_has_cycle(edges: &[CausalEdge]) -> bool {
     false
 }
 
+/// Split a name into lowercased word tokens, breaking on non-alphanumerics AND
+/// CamelCase boundaries: "Average_Order_Value", "AverageOrderValue", and
+/// "Average order value" all yield `["average", "order", "value"]`.
+fn causal_tokens(s: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut cur = String::new();
+    let mut prev_alnum_lower = false;
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            if c.is_ascii_uppercase() && prev_alnum_lower && !cur.is_empty() {
+                tokens.push(std::mem::take(&mut cur));
+            }
+            cur.push(c.to_ascii_lowercase());
+            prev_alnum_lower = c.is_ascii_lowercase() || c.is_ascii_digit();
+        } else {
+            if !cur.is_empty() {
+                tokens.push(std::mem::take(&mut cur));
+            }
+            prev_alnum_lower = false;
+        }
+    }
+    if !cur.is_empty() {
+        tokens.push(cur);
+    }
+    tokens
+}
+
+/// True when `needle` appears as a contiguous run inside `haystack`.
+fn is_contiguous_sublist(needle: &[String], haystack: &[String]) -> bool {
+    !needle.is_empty()
+        && needle.len() <= haystack.len()
+        && haystack.windows(needle.len()).any(|w| w == needle)
+}
+
+/// True when a question variable and a DAG node name refer to the same variable:
+/// equal token sequences, or one a contiguous run of words inside the other
+/// (so "recommendation_widget" matches "Recommendation widget implementation").
+fn var_matches_node(var: &str, node: &str) -> bool {
+    let v = causal_tokens(var);
+    let n = causal_tokens(node);
+    if v.is_empty() || n.is_empty() {
+        return v == n;
+    }
+    v == n || is_contiguous_sublist(&n, &v) || is_contiguous_sublist(&v, &n)
+}
+
 /// Validate the causal model for structural consistency (declared nodes, the
 /// cause/effect present, confounders connecting both, acyclicity) and value ranges.
 fn verify_causal_model(
@@ -238,14 +284,16 @@ fn verify_causal_model(
         }
     }
 
+    // The cause/effect come from the question's prose, so match them to nodes by
+    // contiguous word-subset (the model often names the node more tersely, e.g.
+    // "recommendation_widget" vs the question's "Recommendation widget
+    // implementation"). Node-vocabulary checks above stay exact.
     let cause = &question.variables.cause;
     let effect = &question.variables.effect;
-    let cause_n = norm(cause);
-    let effect_n = norm(effect);
-    if !nodes.contains(&cause_n) {
+    if !model.nodes.iter().any(|n| var_matches_node(cause, n)) {
         warnings.push(format!("Cause '{cause}' is absent from the causal model"));
     }
-    if !nodes.contains(&effect_n) {
+    if !model.nodes.iter().any(|n| var_matches_node(effect, n)) {
         warnings.push(format!("Effect '{effect}' is absent from the causal model"));
     }
 
@@ -254,11 +302,11 @@ fn verify_causal_model(
         let to_cause = model
             .edges
             .iter()
-            .any(|e| norm(&e.from) == norm(c) && norm(&e.to) == cause_n);
+            .any(|e| norm(&e.from) == norm(c) && var_matches_node(cause, &e.to));
         let to_effect = model
             .edges
             .iter()
-            .any(|e| norm(&e.from) == norm(c) && norm(&e.to) == effect_n);
+            .any(|e| norm(&e.from) == norm(c) && var_matches_node(effect, &e.to));
         if !(to_cause && to_effect) {
             warnings.push(format!(
                 "Confounder '{c}' should have edges to both the cause and the effect"
@@ -1340,21 +1388,45 @@ mod counterfactual_verify_tests {
     }
 
     #[test]
+    fn test_extra_word_in_cause_is_not_flagged() {
+        // The live failure: the question's cause carries an extra word
+        // ("implementation") vs the terser node ("recommendation_widget"). The
+        // node is a contiguous run of the cause's words, so it must match.
+        let model = CausalModel {
+            nodes: vec![
+                "recommendation_widget".to_string(),
+                "average_order_value".to_string(),
+            ],
+            edges: vec![edge(
+                "recommendation_widget",
+                "average_order_value",
+                EdgeType::Direct,
+            )],
+            confounders: vec![],
+        };
+        let q = question(
+            "Recommendation widget implementation",
+            "Average order value",
+        );
+        let v = verify_causal_model(&model, &q, &analysis(0.5, 0.7));
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
+    }
+
+    #[test]
     fn test_genuinely_different_name_is_still_flagged() {
-        // Normalization must not paper over a real naming mismatch: the question
-        // calls the cause one thing and the model names the node another.
+        // No shared words → a real "cause absent" mismatch that must still flag.
         let model = CausalModel {
             nodes: vec!["Widget".to_string(), "Average_Order_Value".to_string()],
             edges: vec![edge("Widget", "Average_Order_Value", EdgeType::Direct)],
             confounders: vec![],
         };
-        let q = question("Recommendation widget presence", "Average order value");
+        let q = question("Marketing email volume", "Average order value");
         let v = verify_causal_model(&model, &q, &analysis(0.5, 0.7));
         assert!(!v.consistent);
         assert!(v
             .warnings
             .iter()
-            .any(|w| w.contains("Recommendation widget presence")));
+            .any(|w| w.contains("Marketing email volume")));
     }
 
     #[test]
