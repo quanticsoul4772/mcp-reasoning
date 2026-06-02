@@ -650,7 +650,7 @@
 ```json
 {
   "name": "reasoning_mcts",
-  "description": "Monte Carlo Tree Search for guided reasoning exploration. Operations: EXPLORE uses UCB1 formula (Q/N + c*sqrt(ln(N_parent)/N)) to balance exploitation of promising paths with exploration of novel ones, runs iterations rollouts with simulation_depth, controlled by exploration_constant (default sqrt(2)); AUTO_BACKTRACK monitors reasoning quality and suggests/executes backtracking when quality drops below quality_threshold, looking back lookback_depth steps.",
+  "description": "Monte Carlo Tree Search for choosing among many candidate paths when each can be evaluated and you want to converge on the best one (e.g. picking between implementation/debugging/refactoring strategies, algorithm/config tuning). EXPLORE uses the UCB1 formula (Q/N + c*sqrt(ln(N_parent)/N)) to balance exploiting promising paths against exploring novel ones; exploration_constant tunes the balance and simulation_depth the rollout depth. AUTO_BACKTRACK monitors trajectory quality and suggests/executes backtracking when quality drops below quality_threshold, looking back lookback_depth steps. Most valuable when candidates carry a real evaluation signal (tests, benchmarks); each call is one evaluated step, so call repeatedly feeding results back in the content.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -663,7 +663,6 @@
       "content": { "type": "string", "description": "For explore" },
       "session_id": { "type": "string" },
       "node_id": { "type": "string" },
-      "iterations": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
       "exploration_constant": { "type": "number", "minimum": 0, "maximum": 10, "default": 1.414 },
       "simulation_depth": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5 },
       "quality_threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5 },
