@@ -289,6 +289,7 @@ fn test_mcts_response_into_contents() {
         alternatives: None,
         recommendation: None,
         validation: None,
+        convergence: None,
         metadata: None,
     };
     let contents = response.into_contents();

@@ -91,6 +91,40 @@ async fn test_mcts_explore_streaming_success_surfaces_breakdown() {
     assert_eq!(expanded[0].content, "Refine option b");
     let validation = resp.validation.expect("validation present");
     assert!(validation.consistent, "warnings: {:?}", validation.warnings);
+    // Top two are within 0.15 UCB1 and best value is 0.7 → keep exploring.
+    let convergence = resp.convergence.expect("convergence surfaced");
+    assert!(!convergence.converged);
+    assert!(convergence.reason.contains("keep exploring"));
+}
+
+/// Explore body where the top node dominates the runner-up by 0.45 UCB1.
+fn mcts_explore_dominant() -> String {
+    serde_json::json!({
+        "frontier_evaluation": [
+            {"node_id": "a", "visits": 8, "average_value": 0.7, "exploration_bonus": 0.25, "ucb1_score": 0.95},
+            {"node_id": "b", "visits": 5, "average_value": 0.3, "exploration_bonus": 0.2, "ucb1_score": 0.5}
+        ],
+        "selected_node": {"node_id": "a", "selection_reason": "Highest UCB1 (0.95)"},
+        "expansion": {"new_nodes": [
+            {"id": "a1", "content": "Deepen option a", "simulated_value": 0.7}
+        ]},
+        "backpropagation": {"updated_nodes": ["a", "root"], "value_changes": {"a": 0.1, "root": 0.02}},
+        "search_status": {"total_nodes": 6, "total_simulations": 30, "best_path_value": 0.7}
+    })
+    .to_string()
+}
+
+#[tokio::test]
+async fn test_mcts_explore_streaming_converges_on_dominant_candidate() {
+    let mock_server = MockServer::start().await;
+    mount_sse(&mock_server, &mcts_explore_dominant()).await;
+    let server = create_mocked_server(&mock_server).await;
+
+    let resp = server.reasoning_mcts(Parameters(mcts_req())).await;
+    let convergence = resp.convergence.expect("convergence surfaced");
+    assert!(convergence.converged);
+    assert!((convergence.top_gap - 0.45).abs() < 1e-9);
+    assert!(convergence.reason.contains("leads the runner-up"));
 }
 
 #[tokio::test]

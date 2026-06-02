@@ -17,10 +17,10 @@ use crate::server::responses::{
     BranchInfo, CausalEdgeInfo, CausalModelInfo, CausalStep, CommonPatternInfo,
     CompareRecommendationInfo, CounterfactualResponse, CounterfactualValidationInfo,
     DecisionPointInfo, FragileStrategyInfo, InterventionInfo, MctsAlternative, MctsBackpropagation,
-    MctsExpandedNode, MctsFrontierNode, MctsNode, MctsRecommendation, MctsResponse,
-    MctsSelectedNode, MctsValidationInfo, OpportunityAssessmentInfo, RiskAssessmentInfo,
-    RobustStrategyInfo, TemporalStructureInfo, TimelineBranch, TimelineEventInfo, TimelineResponse,
-    TimelineValidationInfo,
+    MctsConvergence, MctsExpandedNode, MctsFrontierNode, MctsNode, MctsRecommendation,
+    MctsResponse, MctsSelectedNode, MctsValidationInfo, OpportunityAssessmentInfo,
+    RiskAssessmentInfo, RobustStrategyInfo, TemporalStructureInfo, TimelineBranch,
+    TimelineEventInfo, TimelineResponse, TimelineValidationInfo,
 };
 
 /// Validate a created timeline: event causes/effects and the temporal structure
@@ -461,6 +461,54 @@ fn verify_explore(
     )
 }
 
+/// Best-path value at or above which the search is treated as near-optimal.
+const CONVERGENCE_HIGH_VALUE: f64 = 0.9;
+/// UCB1 lead of the top frontier node over the runner-up at or above which one
+/// candidate is treated as clearly dominant.
+const CONVERGENCE_DOMINANCE_GAP: f64 = 0.2;
+
+/// Derive an advisory stop signal for an explore step from the frontier UCB1
+/// scores and best-path value. Purely advisory — it never blocks, it tells the
+/// caller whether the search has converged enough to commit.
+fn assess_convergence(frontier: &[FrontierNode], best_path_value: f64) -> MctsConvergence {
+    let mut scores: Vec<f64> = frontier.iter().map(|n| n.ucb1_score).collect();
+    scores.sort_by(|a, b| b.partial_cmp(a).unwrap_or(Ordering::Equal));
+    let top_gap = if scores.len() >= 2 {
+        (scores[0] - scores[1]).max(0.0)
+    } else {
+        0.0
+    };
+
+    let (converged, reason) = if frontier.len() <= 1 {
+        (
+            true,
+            "single candidate remains; nothing left to explore".to_string(),
+        )
+    } else if best_path_value >= CONVERGENCE_HIGH_VALUE {
+        (
+            true,
+            format!("best-path value {best_path_value:.2} is near-optimal; commit"),
+        )
+    } else if top_gap >= CONVERGENCE_DOMINANCE_GAP {
+        (
+            true,
+            format!("top candidate leads the runner-up by {top_gap:.2} UCB1; commit"),
+        )
+    } else {
+        (
+            false,
+            format!("top candidates within {top_gap:.2} UCB1; keep exploring"),
+        )
+    };
+
+    MctsConvergence {
+        converged,
+        reason,
+        top_gap,
+        best_value: best_path_value,
+    }
+}
+
 /// Verify that the stated quality trend and decline magnitude are consistent
 /// with the recent value samples, and — when the caller supplied a
 /// `quality_threshold` — that the backtrack decision honored it.
@@ -882,6 +930,10 @@ impl super::ReasoningServer {
                             &resp.selected_node,
                             &resp.backpropagation,
                         );
+                        let convergence = assess_convergence(
+                            &resp.frontier_evaluation,
+                            resp.search_status.best_path_value,
+                        );
                         let frontier: Vec<MctsFrontierNode> = resp
                             .frontier_evaluation
                             .iter()
@@ -939,6 +991,7 @@ impl super::ReasoningServer {
                                 alternatives: None,
                                 recommendation: None,
                                 validation: Some(validation),
+                                convergence: Some(convergence),
                                 metadata: None,
                             },
                             true,
@@ -962,6 +1015,7 @@ impl super::ReasoningServer {
                             alternatives: None,
                             recommendation: None,
                             validation: None,
+                            convergence: None,
                             metadata: None,
                         },
                         false,
@@ -1039,6 +1093,7 @@ impl super::ReasoningServer {
                                 alternatives: Some(alternatives),
                                 recommendation: Some(recommendation),
                                 validation: Some(validation),
+                                convergence: None,
                                 metadata: None,
                             },
                             true,
@@ -1062,6 +1117,7 @@ impl super::ReasoningServer {
                             alternatives: None,
                             recommendation: None,
                             validation: None,
+                            convergence: None,
                             metadata: None,
                         },
                         false,
@@ -1086,6 +1142,7 @@ impl super::ReasoningServer {
                     alternatives: None,
                     recommendation: None,
                     validation: None,
+                    convergence: None,
                     metadata: None,
                 },
                 false,
@@ -1272,7 +1329,7 @@ impl super::ReasoningServer {
     clippy::float_cmp
 )]
 mod mcts_verify_tests {
-    use super::{verify_backtrack, verify_explore};
+    use super::{assess_convergence, verify_backtrack, verify_explore};
     use crate::modes::{
         Backpropagation, FrontierNode, QualityAssessment, QualityTrend, SelectedNode,
     };
@@ -1377,6 +1434,43 @@ mod mcts_verify_tests {
             &bp(&["a", "root"], &[("a", 0.05), ("root", 0.02)]),
         );
         assert!(v.consistent, "warnings: {:?}", v.warnings);
+    }
+
+    #[test]
+    fn test_convergence_single_candidate() {
+        let frontier = vec![node("a", 0.6, 0.2, 0.8, 8)];
+        let c = assess_convergence(&frontier, 0.6);
+        assert!(c.converged);
+        assert_eq!(c.top_gap, 0.0);
+        assert!(c.reason.contains("single candidate"));
+    }
+
+    #[test]
+    fn test_convergence_dominant_gap() {
+        // Top UCB1 0.9 leads runner-up 0.6 by 0.3 (>= 0.2 dominance gap).
+        let frontier = vec![node("a", 0.7, 0.2, 0.9, 8), node("b", 0.4, 0.2, 0.6, 5)];
+        let c = assess_convergence(&frontier, 0.7);
+        assert!(c.converged);
+        assert!((c.top_gap - 0.3).abs() < 1e-9);
+        assert!(c.reason.contains("leads the runner-up"));
+    }
+
+    #[test]
+    fn test_convergence_tight_race_keeps_exploring() {
+        // Top two within 0.05 and best value not near-optimal → keep exploring.
+        let frontier = vec![node("a", 0.6, 0.2, 0.82, 8), node("b", 0.5, 0.27, 0.79, 6)];
+        let c = assess_convergence(&frontier, 0.7);
+        assert!(!c.converged);
+        assert!(c.reason.contains("keep exploring"));
+    }
+
+    #[test]
+    fn test_convergence_near_optimal_value() {
+        // Tight race, but best-path value is near-optimal → commit.
+        let frontier = vec![node("a", 0.6, 0.2, 0.82, 8), node("b", 0.5, 0.27, 0.79, 6)];
+        let c = assess_convergence(&frontier, 0.95);
+        assert!(c.converged);
+        assert!(c.reason.contains("near-optimal"));
     }
 
     #[test]
