@@ -797,6 +797,79 @@ pub struct BacktrackSuggestion {
     pub quality_drop: Option<f64>,
 }
 
+/// A frontier node with its full UCB1 decomposition (explore).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MctsFrontierNode {
+    /// Node identifier.
+    pub node_id: String,
+    /// Number of visits.
+    pub visits: u32,
+    /// Exploitation term — average value from simulations.
+    pub average_value: f64,
+    /// Exploration term — the UCB1 bonus.
+    pub exploration_bonus: f64,
+    /// UCB1 score = `average_value + exploration_bonus`.
+    pub ucb1_score: f64,
+}
+
+/// The node UCB1 selected for expansion (explore).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MctsSelectedNode {
+    /// Node identifier.
+    pub node_id: String,
+    /// Why UCB1 selected this node.
+    pub selection_reason: String,
+}
+
+/// A newly expanded child node with its generated content (explore).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MctsExpandedNode {
+    /// Node identifier.
+    pub id: String,
+    /// The generated thought.
+    pub content: String,
+    /// Simulated value.
+    pub simulated_value: f64,
+}
+
+/// Backpropagation results (explore).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MctsBackpropagation {
+    /// Nodes whose statistics were updated.
+    pub updated_nodes: Vec<String>,
+    /// Value change per node.
+    pub value_changes: HashMap<String, f64>,
+}
+
+/// An alternative action considered during backtracking.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MctsAlternative {
+    /// Action: "prune"/"refine"/"widen"/"continue".
+    pub action: String,
+    /// Why this might be appropriate.
+    pub rationale: String,
+}
+
+/// The final recommended action (auto_backtrack).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MctsRecommendation {
+    /// Action: "backtrack"/"continue"/"terminate".
+    pub action: String,
+    /// Confidence in the recommendation (0.0-1.0).
+    pub confidence: f64,
+    /// Expected benefit of the action.
+    pub expected_benefit: String,
+}
+
+/// Result of verifying the UCB1 arithmetic / selection / quality trend.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MctsValidationInfo {
+    /// True when the UCB1 decomposition, selection, and trend all reconcile.
+    pub consistent: bool,
+    /// Descriptions of every discrepancy found.
+    pub warnings: Vec<String>,
+}
+
 /// Response from MCTS.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MctsResponse {
@@ -810,6 +883,39 @@ pub struct MctsResponse {
     pub backtrack_suggestion: Option<BacktrackSuggestion>,
     /// Whether backtrack was executed.
     pub executed: Option<bool>,
+    /// Frontier nodes with their full UCB1 decomposition (explore).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frontier: Option<Vec<MctsFrontierNode>>,
+    /// The node UCB1 selected for expansion (explore).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected_node: Option<MctsSelectedNode>,
+    /// Newly expanded child nodes with their generated content (explore).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expanded_nodes: Option<Vec<MctsExpandedNode>>,
+    /// Backpropagation results (explore).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backpropagation: Option<MctsBackpropagation>,
+    /// Best path value found so far (explore).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub best_path_value: Option<f64>,
+    /// The node to return to if backtracking (auto_backtrack).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backtrack_to: Option<String>,
+    /// Recent value samples used to assess quality (auto_backtrack).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recent_values: Option<Vec<f64>>,
+    /// Quality trend: "declining"/"stable"/"improving" (auto_backtrack).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality_trend: Option<String>,
+    /// Alternative actions considered (auto_backtrack).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alternatives: Option<Vec<MctsAlternative>>,
+    /// Final recommended action (auto_backtrack).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommendation: Option<MctsRecommendation>,
+    /// Result of verifying the UCB1 math / selection / quality trend.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<MctsValidationInfo>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1692,6 +1798,17 @@ mod tests {
                 quality_drop: None,
             }),
             executed: Some(false),
+            frontier: None,
+            selected_node: None,
+            expanded_nodes: None,
+            backpropagation: None,
+            best_path_value: None,
+            backtrack_to: None,
+            recent_values: None,
+            quality_trend: None,
+            alternatives: None,
+            recommendation: None,
+            validation: None,
             metadata: None,
         };
         let contents = response.into_contents();

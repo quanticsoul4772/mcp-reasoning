@@ -349,6 +349,17 @@ async fn test_into_contents_implementations() {
         iterations_completed: Some(10),
         backtrack_suggestion: None,
         executed: None,
+        frontier: None,
+        selected_node: None,
+        expanded_nodes: None,
+        backpropagation: None,
+        best_path_value: None,
+        backtrack_to: None,
+        recent_values: None,
+        quality_trend: None,
+        alternatives: None,
+        recommendation: None,
+        validation: None,
         metadata: None,
     };
     let _ = mcts_resp.into_contents();
