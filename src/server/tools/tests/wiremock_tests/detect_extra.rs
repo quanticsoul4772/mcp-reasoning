@@ -374,6 +374,15 @@ async fn test_into_contents_implementations() {
         assumptions: vec![],
         session_id: Some("s1".to_string()),
         analysis_depth: "counterfactual".to_string(),
+        ladder_rung: None,
+        association: None,
+        intervention: None,
+        counterfactual_scenario: None,
+        causal_model: None,
+        causal_claim: None,
+        causal_strength: None,
+        actionable_insight: None,
+        validation: None,
         metadata: None,
     };
     let _ = cf_resp.into_contents();

@@ -14,6 +14,8 @@
 
 #![allow(clippy::missing_const_for_fn)]
 
+use std::fmt::Write as _;
+
 use serde::{Deserialize, Serialize};
 
 use crate::anthropic::StreamAccumulator;
@@ -24,6 +26,22 @@ use crate::server::{ProgressMilestone, ProgressReporter};
 use crate::traits::{
     AnthropicClientTrait, CompletionConfig, Message, Session, StorageTrait, Thought,
 };
+
+/// Maximum number of prior thoughts to include as session context.
+const MAX_CONTEXT_THOUGHTS: usize = 5;
+/// Maximum characters per prior thought when building the context block.
+const MAX_CONTEXT_THOUGHT_CHARS: usize = 600;
+
+/// Truncate a string to at most `max` characters (char-safe), appending an
+/// ellipsis when truncated.
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max).collect();
+        format!("{truncated}…")
+    }
+}
 
 // ============================================================================
 // Response Types
@@ -248,10 +266,13 @@ where
     ) -> Result<CounterfactualResponse, ModeError> {
         validate_content(content)?;
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
 
         let prompt = counterfactual_prompt();
-        let user_message = format!("{prompt}\n\nCausal question to analyze:\n{content}");
+        let user_message = self
+            .build_user_message(prompt, content, &session.id, has_prior_session)
+            .await;
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -323,10 +344,13 @@ where
             p.report_milestone(ProgressMilestone::RequestPrepared);
         }
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
 
         let prompt = counterfactual_prompt();
-        let user_message = format!("{prompt}\n\nCausal question to analyze:\n{content}");
+        let user_message = self
+            .build_user_message(prompt, content, &session.id, has_prior_session)
+            .await;
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -411,6 +435,62 @@ where
             .map_err(|e| ModeError::ApiUnavailable {
                 message: format!("Failed to get or create session: {e}"),
             })
+    }
+
+    /// Load recent prior thoughts for a session as a context block, so a
+    /// follow-up causal question builds on earlier analysis. A lookup failure
+    /// proceeds without history rather than failing the operation.
+    async fn load_prior_context(&self, session_id: &str) -> String {
+        let thoughts = match self.storage.get_thoughts(session_id).await {
+            Ok(thoughts) => thoughts,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load prior thoughts — proceeding without session context"
+                );
+                return String::new();
+            }
+        };
+
+        if thoughts.is_empty() {
+            return String::new();
+        }
+
+        let start = thoughts.len().saturating_sub(MAX_CONTEXT_THOUGHTS);
+        let mut block = String::from("Previous reasoning in this session (oldest to newest):\n");
+        for (idx, thought) in thoughts[start..].iter().enumerate() {
+            let content = truncate_chars(&thought.content, MAX_CONTEXT_THOUGHT_CHARS);
+            let _ = writeln!(
+                block,
+                "{}. [{}, confidence {:.2}] {content}",
+                idx + 1,
+                thought.mode,
+                thought.confidence,
+            );
+        }
+        block
+    }
+
+    /// Build the user message, prepending session history when an existing
+    /// session was referenced and has prior reasoning.
+    async fn build_user_message(
+        &self,
+        prompt: &str,
+        content: &str,
+        session_id: &str,
+        has_prior_session: bool,
+    ) -> String {
+        let prior_context = if has_prior_session {
+            self.load_prior_context(session_id).await
+        } else {
+            String::new()
+        };
+
+        if prior_context.is_empty() {
+            format!("{prompt}\n\nCausal question to analyze:\n{content}")
+        } else {
+            format!("{prompt}\n\n{prior_context}\nCausal question to analyze:\n{content}")
+        }
     }
 
     fn parse_causal_question(json: &serde_json::Value) -> Result<CausalQuestion, ModeError> {
@@ -709,6 +789,7 @@ mod tests {
             ))
         });
         mock_storage.expect_save_thought().returning(|_| Ok(()));
+        mock_storage.expect_get_thoughts().returning(|_| Ok(vec![]));
 
         let response_json = mock_counterfactual_response();
         mock_client.expect_complete().returning(move |_, _| {
@@ -1648,5 +1729,88 @@ mod tests {
 
         let weak: CausalStrength = serde_json::from_str("\"weak\"").unwrap();
         assert_eq!(weak, CausalStrength::Weak);
+    }
+
+    #[tokio::test]
+    async fn test_analyze_injects_prior_session_context() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("ctx-session")));
+        mock_storage.expect_get_thoughts().returning(|_| {
+            Ok(vec![Thought::new(
+                "t-prev",
+                "ctx-session",
+                "Earlier: holiday seasonality was the main confounder",
+                "counterfactual",
+                0.7,
+            )])
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_counterfactual_response();
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages.first().is_some_and(|m| {
+                    m.content.contains("Previous reasoning in this session")
+                        && m.content.contains("holiday seasonality")
+                })
+            })
+            .returning(move |_, _| {
+                Ok(CompletionResponse::new(
+                    response_json.clone(),
+                    Usage::new(100, 200),
+                ))
+            });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode
+            .analyze(
+                "Re-examine the causal claim",
+                Some("ctx-session".to_string()),
+            )
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_analyze_new_session_skips_history_lookup() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        // No session_id → get_thoughts must NOT be called.
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("fresh")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        let response_json = mock_counterfactual_response();
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages
+                    .first()
+                    .is_some_and(|m| !m.content.contains("Previous reasoning in this session"))
+            })
+            .returning(move |_, _| {
+                Ok(CompletionResponse::new(
+                    response_json.clone(),
+                    Usage::new(100, 200),
+                ))
+            });
+
+        let mode = CounterfactualMode::new(mock_storage, mock_client);
+        let result = mode.analyze("Fresh causal question", None).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_truncate_chars() {
+        assert_eq!(truncate_chars("short", 10), "short");
+        assert_eq!(truncate_chars("12345", 5), "12345");
+        assert_eq!(truncate_chars("123456789", 4), "1234…");
     }
 }

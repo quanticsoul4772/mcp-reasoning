@@ -310,6 +310,15 @@ fn test_counterfactual_response_into_contents() {
         key_differences: vec!["difference 1".to_string()],
         confidence: 0.85,
         assumptions: vec!["assumption 1".to_string()],
+        ladder_rung: None,
+        association: None,
+        intervention: None,
+        counterfactual_scenario: None,
+        causal_model: None,
+        causal_claim: None,
+        causal_strength: None,
+        actionable_insight: None,
+        validation: None,
         metadata: None,
     };
     let contents = response.into_contents();

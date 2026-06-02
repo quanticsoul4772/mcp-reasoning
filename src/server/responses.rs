@@ -934,6 +934,55 @@ pub struct CausalStep {
     pub probability: f64,
 }
 
+/// A causal edge with its relationship type.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CausalEdgeInfo {
+    /// Source variable.
+    pub from: String,
+    /// Target variable.
+    pub to: String,
+    /// Relationship: "direct"/"mediated"/"confounded".
+    pub edge_type: String,
+}
+
+/// The causal model (DAG): variables, typed edges, and confounders.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CausalModelInfo {
+    /// Variable names.
+    pub nodes: Vec<String>,
+    /// Causal edges with their types.
+    pub edges: Vec<CausalEdgeInfo>,
+    /// Variables that affect both cause and effect.
+    pub confounders: Vec<String>,
+}
+
+/// Rung 1 — association: what correlates with what.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AssociationInfo {
+    /// Observed correlation (-1.0 to 1.0).
+    pub observed_correlation: f64,
+    /// Interpretation of the association.
+    pub interpretation: String,
+}
+
+/// Rung 2 — intervention: the effect of `do(X)`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct InterventionInfo {
+    /// Estimated causal effect.
+    pub causal_effect: f64,
+    /// How the intervention would work.
+    pub mechanism: String,
+}
+
+/// Result of validating the causal model and value ranges.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CounterfactualValidationInfo {
+    /// True when the DAG is structurally consistent and values are in range.
+    pub consistent: bool,
+    /// Descriptions of every issue found.
+    pub warnings: Vec<String>,
+}
+
 /// Response from counterfactual analysis.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CounterfactualResponse {
@@ -955,6 +1004,35 @@ pub struct CounterfactualResponse {
     pub confidence: f64,
     /// Assumptions made.
     pub assumptions: Vec<String>,
+    /// Which rung of Pearl's Ladder the question sits on:
+    /// "association"/"intervention"/"counterfactual".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ladder_rung: Option<String>,
+    /// Rung 1 — the observed association.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub association: Option<AssociationInfo>,
+    /// Rung 2 — the interventional effect, `P(Y|do(X))`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intervention: Option<InterventionInfo>,
+    /// Rung 3 — the counterfactual scenario (the outcome is in
+    /// `counterfactual_outcome`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counterfactual_scenario: Option<String>,
+    /// The causal model (variables, typed edges, confounders).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub causal_model: Option<CausalModelInfo>,
+    /// The conclusion's causal claim.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub causal_claim: Option<String>,
+    /// Strength of the causal evidence: "strong"/"moderate"/"weak".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub causal_strength: Option<String>,
+    /// What the analysis means for decisions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actionable_insight: Option<String>,
+    /// Result of validating the causal model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<CounterfactualValidationInfo>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1834,6 +1912,15 @@ mod tests {
             key_differences: vec!["Diff 1".to_string()],
             confidence: 0.75,
             assumptions: vec!["Assumption 1".to_string()],
+            ladder_rung: None,
+            association: None,
+            intervention: None,
+            counterfactual_scenario: None,
+            causal_model: None,
+            causal_claim: None,
+            causal_strength: None,
+            actionable_insight: None,
+            validation: None,
             metadata: None,
         };
         let contents = response.into_contents();
