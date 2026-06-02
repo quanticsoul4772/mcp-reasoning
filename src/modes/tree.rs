@@ -312,11 +312,26 @@ where
     ) -> Result<TreeResponse, ModeError> {
         validate_content(content)?;
 
+        // Only a referenced session can already hold branches to avoid duplicating.
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
         let num_branches = num_branches.unwrap_or(3).clamp(2, 4);
 
+        let existing = if has_prior_session {
+            self.existing_branch_context(&session.id).await
+        } else {
+            String::new()
+        };
+
         let prompt = get_prompt_for_mode(ReasoningMode::Tree, Some(&Operation::Create));
-        let user_message = format!("{prompt}\n\nGenerate {num_branches} branches for:\n{content}");
+        let user_message = if existing.is_empty() {
+            format!("{prompt}\n\nGenerate {num_branches} branches for:\n{content}")
+        } else {
+            format!(
+                "{prompt}\n\n{existing}\nGenerate {num_branches} NEW branches, \
+                 distinct from those already explored above, for:\n{content}"
+            )
+        };
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -356,8 +371,16 @@ where
                 .unwrap_or("")
                 .to_string();
 
+            // Use the model's per-branch score so ranking is meaningful; fall back
+            // to a neutral 0.5 only when it is missing or out of range.
+            let score = b
+                .get("score")
+                .and_then(serde_json::Value::as_f64)
+                .filter(|s| (0.0..=1.0).contains(s))
+                .unwrap_or(0.5);
+
             let branch_id = generate_branch_id();
-            branches.push(Branch::new(&branch_id, title, description, 0.5));
+            branches.push(Branch::new(&branch_id, title, description, score));
         }
 
         let recommendation = json
@@ -447,15 +470,27 @@ where
             })
             .unwrap_or_default();
 
+        // Re-assessed score from exploring this branch; keep the prior score if the
+        // model didn't return a usable one.
         let confidence = json
             .get("confidence")
             .and_then(serde_json::Value::as_f64)
-            .unwrap_or(0.5);
+            .filter(|c| (0.0..=1.0).contains(c))
+            .unwrap_or(branch.score);
 
-        // Note: We cannot update the branch score without a dedicated update_branch_score method.
-        // The update_branch_status only updates status, not score.
-        // For now, we just acknowledge the score was computed but not persisted.
-        let _ = confidence; // Acknowledge computed but not persisted
+        // Persist the deeper exploration back onto the branch so later steps (list,
+        // summarize) build on it, and update the score so ranking reflects what we
+        // learned rather than the initial estimate.
+        let mut explored = branch.clone();
+        explored.content = Self::merge_exploration(&branch.content, &exploration, &insights);
+        explored.score = confidence;
+        let stored = explored.to_stored(session_id);
+        self.storage
+            .update_branch(&stored.id, &stored.content, stored.score)
+            .await
+            .map_err(|e| ModeError::ApiUnavailable {
+                message: format!("Failed to persist branch exploration: {e}"),
+            })?;
 
         Ok(TreeResponse::new(session_id)
             .with_branch_id(branch_id)
@@ -685,6 +720,49 @@ where
                 message: format!("Failed to get or create session: {e}"),
             })
     }
+
+    /// Build a context block listing branches already in the session, so a repeat
+    /// `create` produces complementary branches instead of duplicates. Returns an
+    /// empty string when there are none or the lookup fails (best-effort).
+    async fn existing_branch_context(&self, session_id: &str) -> String {
+        let stored = match self.storage.get_branches(session_id).await {
+            Ok(stored) if !stored.is_empty() => stored,
+            Ok(_) => return String::new(),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load existing branches — generating without dedup context"
+                );
+                return String::new();
+            }
+        };
+
+        let titles: Vec<String> = stored
+            .iter()
+            .map(Branch::from_stored)
+            .map(|b| format!("- {}", b.title))
+            .collect();
+        format!(
+            "Branches already explored in this session:\n{}",
+            titles.join("\n")
+        )
+    }
+
+    /// Merge a branch's deeper exploration and insights into its content so the
+    /// accumulated reasoning is visible to later steps.
+    fn merge_exploration(original: &str, exploration: &str, insights: &[String]) -> String {
+        let mut merged = original.to_string();
+        let exploration = exploration.trim();
+        if !exploration.is_empty() {
+            merged.push_str("\n\nExploration:\n");
+            merged.push_str(exploration);
+        }
+        if !insights.is_empty() {
+            merged.push_str("\n\nInsights:\n- ");
+            merged.push_str(&insights.join("\n- "));
+        }
+        merged
+    }
 }
 
 impl<S, C> std::fmt::Debug for TreeMode<S, C>
@@ -905,6 +983,10 @@ mod tests {
                 id.unwrap_or_else(|| "test-session".to_string()),
             ))
         });
+        // Existing-branch lookup for dedup context (none yet).
+        mock_storage
+            .expect_get_branches()
+            .returning(|_| Ok(Vec::new()));
 
         // Mock save_branch for persisting branches
         mock_storage.expect_save_branch().returning(|_| Ok(()));
@@ -928,6 +1010,36 @@ mod tests {
         assert!(response.branches.is_some());
         assert_eq!(response.branches.as_ref().unwrap().len(), 3);
         assert!(response.recommendation.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_tree_create_uses_model_scores() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("s")));
+        mock_storage.expect_save_branch().returning(|_| Ok(()));
+
+        // Distinct per-branch scores must flow through instead of a flat 0.5.
+        mock_client.expect_complete().returning(|_, _| {
+            Ok(CompletionResponse::new(
+                r#"{"branches": [
+                    {"title": "A", "description": "da", "score": 0.9},
+                    {"title": "B", "description": "db", "score": 0.3}
+                ], "recommendation": "A"}"#,
+                Usage::new(50, 100),
+            ))
+        });
+
+        let mut mode = TreeMode::new(mock_storage, mock_client);
+        // None session → no existing-branch lookup.
+        let response = mode.create("topic", None, Some(2)).await.unwrap();
+        let branches = response.branches.unwrap();
+        assert_eq!(branches.len(), 2);
+        assert!((branches[0].score - 0.9).abs() < f64::EPSILON);
+        assert!((branches[1].score - 0.3).abs() < f64::EPSILON);
     }
 
     #[tokio::test]
@@ -1025,6 +1137,15 @@ mod tests {
                 r#"{"title": "Branch 1", "content": "Description for branch 1"}"#,
             )))
         });
+        // Capture the persisted exploration + re-assessed score.
+        let persisted: Arc<Mutex<Option<(String, f64)>>> = Arc::new(Mutex::new(None));
+        let persisted_clone = persisted.clone();
+        mock_storage
+            .expect_update_branch()
+            .returning(move |_id, content, score| {
+                *persisted_clone.lock().unwrap() = Some((content.to_string(), score));
+                Ok(())
+            });
 
         let focus_response = mock_focus_response();
         mock_client.expect_complete().returning(move |_, _| {
@@ -1044,6 +1165,12 @@ mod tests {
         assert_eq!(response.branch_id, Some("branch-1".to_string()));
         assert!(response.exploration.is_some());
         assert!(response.insights.is_some());
+
+        // The deeper exploration and re-assessed score (0.85) must be persisted.
+        let (content, score) = persisted.lock().unwrap().clone().expect("branch persisted");
+        assert!(content.contains("Deep exploration of this branch"));
+        assert!(content.contains("Insight 1"));
+        assert!((score - 0.85).abs() < f64::EPSILON);
     }
 
     #[tokio::test]

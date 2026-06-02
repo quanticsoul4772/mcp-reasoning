@@ -71,6 +71,9 @@ pub struct LinearResponse {
 pub struct Branch {
     /// Branch identifier.
     pub id: String,
+    /// Branch title/label.
+    #[serde(default)]
+    pub title: String,
     /// Branch content.
     pub content: String,
     /// Branch quality score.
@@ -1161,6 +1164,7 @@ mod tests {
             branch_id: Some("b-1".to_string()),
             branches: Some(vec![Branch {
                 id: "b-1".to_string(),
+                title: "Branch 1".to_string(),
                 content: "Branch content".to_string(),
                 score: 0.8,
                 status: "active".to_string(),
@@ -1574,6 +1578,7 @@ mod tests {
     fn test_branch_serialize() {
         let branch = Branch {
             id: "b-1".to_string(),
+            title: "Branch 1".to_string(),
             content: "Content".to_string(),
             score: 0.8,
             status: "active".to_string(),

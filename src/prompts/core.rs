@@ -60,7 +60,10 @@ pub fn tree_create_prompt() -> &'static str {
 Your task is to:
 1. Identify 3-5 distinct branches or approaches to explore
 2. For each branch, provide a title, description, and initial direction
-3. Ensure branches are meaningfully different, not just rephrased versions
+3. Score each branch 0.0-1.0 by how promising it is (likely to lead to a good
+   outcome, given feasibility and expected payoff) — use the full range and do
+   not give every branch the same score
+4. Ensure branches are meaningfully different, not just rephrased versions
 
 Respond with a JSON object in this exact format:
 {
@@ -68,7 +71,8 @@ Respond with a JSON object in this exact format:
     {
       "title": "Branch title",
       "description": "Brief description of this exploration direction",
-      "initial_thought": "First step or insight for this branch"
+      "initial_thought": "First step or insight for this branch",
+      "score": 0.7
     }
   ],
   "recommendation": "Which branch seems most promising and why"
@@ -111,7 +115,10 @@ Respond with a JSON object in this exact format:
 Important:
 - Build upon existing context
 - Be specific about insights gained
-- Honestly assess if this path is productive"#
+- Honestly assess if this path is productive
+- confidence is your re-assessed score (0.0-1.0) for how promising THIS branch now
+  looks after exploring it — it replaces the branch's ranking score, so move it up
+  or down from the initial estimate based on what you found"#
 }
 
 /// Prompt for tree reasoning mode (list operation).

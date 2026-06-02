@@ -181,6 +181,13 @@ pub trait StorageTrait: Send + Sync {
         status: StoredBranchStatus,
     ) -> Result<(), StorageError>;
 
+    /// Update a branch's content and score (e.g. after deeper exploration).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the branch does not exist or the operation fails.
+    async fn update_branch(&self, id: &str, content: &str, score: f64) -> Result<(), StorageError>;
+
     /// Save a graph node to the database.
     ///
     /// # Errors

@@ -192,6 +192,7 @@ impl super::ReasoningServer {
                                 bs.into_iter()
                                     .map(|b| Branch {
                                         id: b.id,
+                                        title: b.title,
                                         content: b.content,
                                         score: b.score,
                                         status: b.status.as_str().to_string(),
@@ -257,6 +258,7 @@ impl super::ReasoningServer {
                                 bs.into_iter()
                                     .map(|b| Branch {
                                         id: b.id,
+                                        title: b.title,
                                         content: b.content,
                                         score: b.score,
                                         status: b.status.as_str().to_string(),
@@ -301,6 +303,7 @@ impl super::ReasoningServer {
                             bs.into_iter()
                                 .map(|b| Branch {
                                     id: b.id,
+                                    title: b.title,
                                     content: b.content,
                                     score: b.score,
                                     status: b.status.as_str().to_string(),
@@ -347,6 +350,7 @@ impl super::ReasoningServer {
                                 bs.into_iter()
                                     .map(|b| Branch {
                                         id: b.id,
+                                        title: b.title,
                                         content: b.content,
                                         score: b.score,
                                         status: b.status.as_str().to_string(),
@@ -408,6 +412,7 @@ impl super::ReasoningServer {
                                 bs.into_iter()
                                     .map(|b| Branch {
                                         id: b.id,
+                                        title: b.title,
                                         content: b.content,
                                         score: b.score,
                                         status: b.status.as_str().to_string(),

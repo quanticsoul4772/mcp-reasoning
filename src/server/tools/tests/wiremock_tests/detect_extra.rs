@@ -202,6 +202,7 @@ async fn test_into_contents_implementations() {
         branch_id: Some("b1".to_string()),
         branches: Some(vec![Branch {
             id: "b1".to_string(),
+            title: "Branch 1".to_string(),
             content: "Content".to_string(),
             score: 0.7,
             status: "active".to_string(),

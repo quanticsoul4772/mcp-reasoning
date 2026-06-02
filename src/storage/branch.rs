@@ -16,6 +16,7 @@ const SELECT_BRANCH: &str =
 const SELECT_BRANCHES_BY_SESSION: &str =
     "SELECT id, session_id, parent_branch_id, content, score, status, created_at FROM branches WHERE session_id = ? ORDER BY created_at ASC";
 const UPDATE_BRANCH_STATUS: &str = "UPDATE branches SET status = ? WHERE id = ?";
+const UPDATE_BRANCH_CONTENT_SCORE: &str = "UPDATE branches SET content = ?, score = ? WHERE id = ?";
 
 impl SqliteStorage {
     /// Save a branch to the database.
@@ -81,6 +82,31 @@ impl SqliteStorage {
 
         let result = sqlx::query(UPDATE_BRANCH_STATUS)
             .bind(status_str)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Self::query_error("UPDATE branches", format!("{e}")))?;
+
+        if result.rows_affected() == 0 {
+            return Err(StorageError::Internal {
+                message: format!("Branch not found: {id}"),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Update a branch's content and score (used when a branch is explored
+    /// further and re-assessed). Status is left unchanged.
+    pub async fn update_branch(
+        &self,
+        id: &str,
+        content: &str,
+        score: f64,
+    ) -> Result<(), StorageError> {
+        let result = sqlx::query(UPDATE_BRANCH_CONTENT_SCORE)
+            .bind(content)
+            .bind(score)
             .bind(id)
             .execute(&self.pool)
             .await
@@ -223,6 +249,44 @@ mod tests {
         let result = storage
             .update_branch_status("nonexistent", BranchStatus::Completed)
             .await;
+        assert!(result.is_err());
+        assert!(matches!(result, Err(StorageError::Internal { .. })));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_update_branch_content_and_score() {
+        let storage = test_storage().await;
+        storage
+            .create_session_with_id("sess-123")
+            .await
+            .expect("create session");
+
+        let branch = StoredBranch::new("b-1", "sess-123", "Original content").with_score(0.5);
+        storage.save_branch(&branch).await.expect("save");
+
+        storage
+            .update_branch("b-1", "Explored content", 0.9)
+            .await
+            .expect("update");
+
+        let fetched = storage
+            .get_branch("b-1")
+            .await
+            .expect("fetch")
+            .expect("exists");
+        assert_eq!(fetched.content, "Explored content");
+        assert!((fetched.score - 0.9).abs() < f64::EPSILON);
+        // Status is left untouched.
+        assert_eq!(fetched.status, BranchStatus::Active);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_update_branch_not_found() {
+        let storage = test_storage().await;
+
+        let result = storage.update_branch("nonexistent", "x", 0.5).await;
         assert!(result.is_err());
         assert!(matches!(result, Err(StorageError::Internal { .. })));
     }
