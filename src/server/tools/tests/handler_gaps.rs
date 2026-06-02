@@ -335,6 +335,7 @@ async fn test_mcts_no_operation_defaults_explore() {
         simulation_depth: None,
         quality_threshold: None,
         lookback_depth: None,
+        thinking: None,
         auto_execute: None,
         progress_token: None,
     };
@@ -355,6 +356,7 @@ async fn test_mcts_no_content() {
         simulation_depth: None,
         quality_threshold: None,
         lookback_depth: None,
+        thinking: None,
         auto_execute: None,
         progress_token: None,
     };
@@ -374,6 +376,7 @@ async fn test_mcts_with_progress_token() {
         simulation_depth: Some(10),
         quality_threshold: None,
         lookback_depth: None,
+        thinking: None,
         auto_execute: None,
         progress_token: Some("mcts-token-abc".to_string()),
     };
@@ -393,6 +396,7 @@ async fn test_mcts_auto_backtrack_no_session() {
         simulation_depth: None,
         quality_threshold: Some(0.5),
         lookback_depth: Some(2),
+        thinking: None,
         auto_execute: Some(true),
         progress_token: None,
     };

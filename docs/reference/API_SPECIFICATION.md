@@ -667,7 +667,8 @@
       "simulation_depth": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5 },
       "quality_threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5 },
       "auto_execute": { "type": "boolean", "default": false },
-      "lookback_depth": { "type": "integer", "minimum": 1, "maximum": 10, "default": 5 }
+      "lookback_depth": { "type": "integer", "minimum": 1, "maximum": 10, "default": 5 },
+      "thinking": { "type": "string", "enum": ["standard", "deep", "maximum"], "default": "maximum", "description": "Thinking depth: standard=4096, deep=8192, maximum=16384 tokens. Lower trades depth for latency." }
     },
     "required": ["operation"]
   },

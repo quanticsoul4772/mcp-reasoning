@@ -391,6 +391,18 @@ fn backtrack_param_lines(
     lines
 }
 
+/// Map the caller's `thinking` selector to an extended-thinking budget in
+/// tokens. "standard"/"deep" trade depth for latency; anything else (including
+/// "maximum", an omitted field, or an unrecognized value) keeps the default
+/// maximum budget, so existing callers are unaffected.
+fn mcts_thinking_budget(selector: Option<&str>) -> u32 {
+    match selector {
+        Some("standard") => 4096,
+        Some("deep") => 8192,
+        _ => 16384,
+    }
+}
+
 /// Verify the UCB1 decomposition of each frontier node, that the selected node
 /// is the argmax of `ucb1_score`, and that backpropagation is structurally
 /// coherent. Returns the validation and the recomputed best node id.
@@ -891,11 +903,13 @@ impl super::ReasoningServer {
             "Tool invocation started (streaming)"
         );
 
-        // Apply tool-level timeout (MAXIMUM_THINKING = 16384 tokens)
+        // Thinking budget selected by the caller (default maximum). Drives both
+        // the API call depth and the matching tool-level timeout tier.
+        let thinking_budget = mcts_thinking_budget(req.thinking.as_deref());
         let timeout_ms = self
             .state
             .config
-            .timeout_for_thinking_budget(MAXIMUM_THINKING);
+            .timeout_for_thinking_budget(Some(thinking_budget));
         let timeout_duration = Duration::from_millis(timeout_ms);
 
         let (response, success) = match operation {
@@ -906,7 +920,12 @@ impl super::ReasoningServer {
                 );
                 let explore_result = match tokio::time::timeout(
                     timeout_duration,
-                    mode.explore_streaming(&explore_content, req.session_id, Some(&progress)),
+                    mode.explore_streaming(
+                        &explore_content,
+                        req.session_id,
+                        thinking_budget,
+                        Some(&progress),
+                    ),
                 )
                 .await
                 {
@@ -1032,6 +1051,7 @@ impl super::ReasoningServer {
                     mode.auto_backtrack_streaming(
                         &backtrack_content,
                         Some(input_session_id.clone()),
+                        thinking_budget,
                         Some(&progress),
                     ),
                 )
@@ -1553,13 +1573,25 @@ mod mcts_verify_tests {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod mcts_param_tests {
-    use super::{backtrack_param_lines, explore_param_lines, with_mcts_params};
+    use super::{
+        backtrack_param_lines, explore_param_lines, mcts_thinking_budget, with_mcts_params,
+    };
 
     #[test]
     fn test_no_params_leaves_content_unchanged() {
         assert!(explore_param_lines(None, None).is_empty());
         assert!(backtrack_param_lines(None, None).is_empty());
         assert_eq!(with_mcts_params("base", &[]), "base");
+    }
+
+    #[test]
+    fn test_thinking_budget_selector_maps_to_tiers() {
+        assert_eq!(mcts_thinking_budget(Some("standard")), 4096);
+        assert_eq!(mcts_thinking_budget(Some("deep")), 8192);
+        assert_eq!(mcts_thinking_budget(Some("maximum")), 16384);
+        // Omitted or unrecognized → default maximum (current behavior preserved).
+        assert_eq!(mcts_thinking_budget(None), 16384);
+        assert_eq!(mcts_thinking_budget(Some("turbo")), 16384);
     }
 
     #[test]

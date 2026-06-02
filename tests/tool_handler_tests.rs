@@ -1253,6 +1253,7 @@ mod server_tests {
             exploration_constant: Some(1.41),
             quality_threshold: None,
             lookback_depth: None,
+            thinking: None,
             auto_execute: None,
             progress_token: None,
         };
@@ -1269,6 +1270,7 @@ mod server_tests {
             exploration_constant: None,
             quality_threshold: Some(0.5),
             lookback_depth: Some(3),
+            thinking: None,
             auto_execute: Some(true),
             progress_token: None,
         };
