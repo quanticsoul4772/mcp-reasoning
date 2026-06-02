@@ -339,7 +339,7 @@ async fn test_into_contents_implementations() {
         branches: None,
         comparison: None,
         merged_content: None,
-        metadata: None,
+        ..Default::default()
     };
     let _ = timeline_resp.into_contents();
 

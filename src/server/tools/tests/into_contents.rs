@@ -252,7 +252,7 @@ fn test_timeline_response_into_contents() {
             convergence_opportunities: vec!["merge here".to_string()],
         }),
         merged_content: None,
-        metadata: None,
+        ..Default::default()
     };
     let contents = response.into_contents();
     assert_eq!(contents.len(), 1);
