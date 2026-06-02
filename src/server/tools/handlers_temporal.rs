@@ -5,18 +5,162 @@ use std::time::Duration;
 
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
+use crate::modes::TimelineBranch as ModeTimelineBranch;
 use crate::modes::{
-    CausalAnalysis, CausalEdge, CausalModel, CausalQuestion, FrontierNode, MctsMode,
-    QualityAssessment, QualityTrend, SelectedNode, TimelineMode,
+    CausalAnalysis, CausalEdge, CausalModel, CausalQuestion, CommonPattern, FrontierNode, MctsMode,
+    QualityAssessment, QualityTrend, RobustStrategy, SelectedNode, TemporalStructure,
+    TimelineEvent, TimelineMode,
 };
 use crate::server::requests::{CounterfactualRequest, MctsRequest, TimelineRequest};
 use crate::server::responses::{
-    AssociationInfo, BacktrackSuggestion, BranchComparison, CausalEdgeInfo, CausalModelInfo,
-    CausalStep, CounterfactualResponse, CounterfactualValidationInfo, InterventionInfo,
-    MctsAlternative, MctsBackpropagation, MctsExpandedNode, MctsFrontierNode, MctsNode,
-    MctsRecommendation, MctsResponse, MctsSelectedNode, MctsValidationInfo, TimelineBranch,
-    TimelineResponse,
+    AssociationInfo, BacktrackSuggestion, BranchComparison, BranchDifferenceInfo, BranchEventInfo,
+    BranchInfo, CausalEdgeInfo, CausalModelInfo, CausalStep, CommonPatternInfo,
+    CompareRecommendationInfo, CounterfactualResponse, CounterfactualValidationInfo,
+    DecisionPointInfo, FragileStrategyInfo, InterventionInfo, MctsAlternative, MctsBackpropagation,
+    MctsExpandedNode, MctsFrontierNode, MctsNode, MctsRecommendation, MctsResponse,
+    MctsSelectedNode, MctsValidationInfo, OpportunityAssessmentInfo, RiskAssessmentInfo,
+    RobustStrategyInfo, TemporalStructureInfo, TimelineBranch, TimelineEventInfo, TimelineResponse,
+    TimelineValidationInfo,
 };
+
+/// Validate a created timeline: event causes/effects and the temporal structure
+/// must reference declared events, and the event causal graph must be acyclic.
+fn verify_create(events: &[TimelineEvent], ts: &TemporalStructure) -> TimelineValidationInfo {
+    let mut warnings = Vec::new();
+    let ids: HashSet<&str> = events.iter().map(|e| e.id.as_str()).collect();
+
+    for e in events {
+        for c in &e.causes {
+            if !ids.contains(c.as_str()) {
+                warnings.push(format!(
+                    "Event '{}' lists cause '{c}' which is not a declared event",
+                    e.id
+                ));
+            }
+        }
+        for f in &e.effects {
+            if !ids.contains(f.as_str()) {
+                warnings.push(format!(
+                    "Event '{}' lists effect '{f}' which is not a declared event",
+                    e.id
+                ));
+            }
+        }
+    }
+    if !ts.start.is_empty() && !ids.contains(ts.start.as_str()) {
+        warnings.push(format!(
+            "temporal_structure.start '{}' is not a declared event",
+            ts.start
+        ));
+    }
+    if !ts.current.is_empty() && !ids.contains(ts.current.as_str()) {
+        warnings.push(format!(
+            "temporal_structure.current '{}' is not a declared event",
+            ts.current
+        ));
+    }
+
+    // Build the causal graph (cause → event) and check it is a DAG.
+    let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
+    for e in events {
+        for c in &e.causes {
+            adj.entry(c.as_str()).or_default().push(e.id.as_str());
+        }
+    }
+    let mut color: HashMap<&str, u8> = HashMap::new();
+    let nodes: Vec<&str> = events.iter().map(|e| e.id.as_str()).collect();
+    for &n in &nodes {
+        if color.get(n).copied().unwrap_or(0) == 0 && cycle_visit(n, &adj, &mut color) {
+            warnings.push(
+                "Timeline events contain a causal cycle; the graph must be acyclic".to_string(),
+            );
+            break;
+        }
+    }
+
+    TimelineValidationInfo {
+        consistent: warnings.is_empty(),
+        warnings,
+    }
+}
+
+/// Validate branch value ranges (plausibility, outcome quality, event probabilities).
+fn verify_branch(branches: &[ModeTimelineBranch]) -> TimelineValidationInfo {
+    let mut warnings = Vec::new();
+    for b in branches {
+        if !(0.0..=1.0).contains(&b.plausibility) {
+            warnings.push(format!(
+                "Branch '{}' plausibility {:.3} is outside [0, 1]",
+                b.id, b.plausibility
+            ));
+        }
+        if !(0.0..=1.0).contains(&b.outcome_quality) {
+            warnings.push(format!(
+                "Branch '{}' outcome_quality {:.3} is outside [0, 1]",
+                b.id, b.outcome_quality
+            ));
+        }
+        for ev in &b.events {
+            if !(0.0..=1.0).contains(&ev.probability) {
+                warnings.push(format!(
+                    "Branch '{}' event '{}' probability {:.3} is outside [0, 1]",
+                    b.id, ev.id, ev.probability
+                ));
+            }
+        }
+    }
+    TimelineValidationInfo {
+        consistent: warnings.is_empty(),
+        warnings,
+    }
+}
+
+/// Validate that a comparison's preferred branch names one of the compared branches.
+fn verify_compare(branches_compared: &[String], preferred_branch: &str) -> TimelineValidationInfo {
+    let mut warnings = Vec::new();
+    // Allow non-branch verdicts like "depends"/"neither"/"both".
+    let is_verdict = matches!(
+        preferred_branch.to_lowercase().as_str(),
+        "depends" | "neither" | "both" | "either" | ""
+    );
+    if !is_verdict && !branches_compared.iter().any(|b| b == preferred_branch) {
+        warnings.push(format!(
+            "Recommended branch '{preferred_branch}' is not among the compared branches"
+        ));
+    }
+    TimelineValidationInfo {
+        consistent: warnings.is_empty(),
+        warnings,
+    }
+}
+
+/// Validate merge value ranges (pattern frequency, strategy effectiveness).
+fn verify_merge(
+    patterns: &[CommonPattern],
+    strategies: &[RobustStrategy],
+) -> TimelineValidationInfo {
+    let mut warnings = Vec::new();
+    for p in patterns {
+        if !(0.0..=1.0).contains(&p.frequency) {
+            warnings.push(format!(
+                "Pattern frequency {:.3} is outside [0, 1]",
+                p.frequency
+            ));
+        }
+    }
+    for s in strategies {
+        if !(0.0..=1.0).contains(&s.effectiveness) {
+            warnings.push(format!(
+                "Strategy effectiveness {:.3} is outside [0, 1]",
+                s.effectiveness
+            ));
+        }
+    }
+    TimelineValidationInfo {
+        consistent: warnings.is_empty(),
+        warnings,
+    }
+}
 
 /// Three-color DFS helper for cycle detection: white (absent), gray (1, on
 /// stack), black (2, done). Returns true when a back-edge (cycle) is found.
@@ -243,17 +387,47 @@ impl super::ReasoningServer {
         let (response, success) = match tokio::time::timeout(timeout_duration, async {
             match op_for_timeout.as_str() {
             "create" => match mode.create(content, req.session_id).await {
-                Ok(resp) => (
-                    TimelineResponse {
-                        timeline_id: resp.timeline_id,
-                        branch_id: None,
-                        branches: None,
-                        comparison: None,
-                        merged_content: None,
-                        metadata: None,
-                    },
-                    true,
-                ),
+                Ok(resp) => {
+                    let validation = verify_create(&resp.events, &resp.temporal_structure);
+                    let events = resp
+                        .events
+                        .iter()
+                        .map(|e| TimelineEventInfo {
+                            id: e.id.clone(),
+                            description: e.description.clone(),
+                            time: e.time.clone(),
+                            event_type: enum_to_string(&e.event_type),
+                            causes: e.causes.clone(),
+                            effects: e.effects.clone(),
+                        })
+                        .collect();
+                    let decision_points = resp
+                        .decision_points
+                        .iter()
+                        .map(|d| DecisionPointInfo {
+                            id: d.id.clone(),
+                            description: d.description.clone(),
+                            options: d.options.clone(),
+                            deadline: d.deadline.clone(),
+                        })
+                        .collect();
+                    let temporal_structure = TemporalStructureInfo {
+                        start: resp.temporal_structure.start.clone(),
+                        current: resp.temporal_structure.current.clone(),
+                        horizon: resp.temporal_structure.horizon.clone(),
+                    };
+                    (
+                        TimelineResponse {
+                            timeline_id: resp.timeline_id,
+                            events: Some(events),
+                            decision_points: Some(decision_points),
+                            temporal_structure: Some(temporal_structure),
+                            validation: Some(validation),
+                            ..Default::default()
+                        },
+                        true,
+                    )
+                }
                 Err(e) => (
                     TimelineResponse {
                         timeline_id: format!(
@@ -261,49 +435,71 @@ impl super::ReasoningServer {
                              Provide non-empty content describing the scenario. \
                              Use operation='branch' once a timeline_id exists."
                         ),
-                        branch_id: None,
-                        branches: None,
-                        comparison: None,
-                        merged_content: None,
-                        metadata: None,
+                        ..Default::default()
                     },
                     false,
                 ),
             },
             "branch" => match mode.branch(content, req.session_id).await {
-                Ok(resp) => (
-                    TimelineResponse {
-                        timeline_id: String::new(),
-                        branch_id: Some(resp.branch_point.event_id.clone()),
-                        branches: Some(
-                            resp.branches
-                                .into_iter()
-                                .map(|b| TimelineBranch {
-                                    id: b.id,
-                                    label: Some(b.choice),
-                                    content: b
-                                        .events
-                                        .into_iter()
-                                        .map(|e| e.description)
-                                        .collect::<Vec<_>>()
-                                        .join("; "),
-                                    created_at: String::new(),
+                Ok(resp) => {
+                    let validation = verify_branch(&resp.branches);
+                    let branch_details = resp
+                        .branches
+                        .iter()
+                        .map(|b| BranchInfo {
+                            id: b.id.clone(),
+                            choice: b.choice.clone(),
+                            plausibility: b.plausibility,
+                            outcome_quality: b.outcome_quality,
+                            events: b
+                                .events
+                                .iter()
+                                .map(|e| BranchEventInfo {
+                                    id: e.id.clone(),
+                                    description: e.description.clone(),
+                                    probability: e.probability,
+                                    time_offset: e.time_offset.clone(),
                                 })
                                 .collect(),
-                        ),
-                        comparison: Some(BranchComparison {
-                            divergence_points: vec![resp.branch_point.description],
-                            quality_differences: serde_json::json!({
-                                "most_likely_good_outcome": resp.comparison.most_likely_good_outcome,
-                                "highest_risk": resp.comparison.highest_risk
+                        })
+                        .collect();
+                    let branch_ids = resp.branches.iter().map(|b| b.id.clone()).collect();
+                    // Legacy `branches` kept for compatibility (events joined to a string).
+                    let branches = resp
+                        .branches
+                        .iter()
+                        .map(|b| TimelineBranch {
+                            id: b.id.clone(),
+                            label: Some(b.choice.clone()),
+                            content: b
+                                .events
+                                .iter()
+                                .map(|e| e.description.clone())
+                                .collect::<Vec<_>>()
+                                .join("; "),
+                            created_at: String::new(),
+                        })
+                        .collect();
+                    (
+                        TimelineResponse {
+                            branch_id: Some(resp.branch_point.event_id.clone()),
+                            branches: Some(branches),
+                            comparison: Some(BranchComparison {
+                                divergence_points: vec![resp.branch_point.description],
+                                quality_differences: serde_json::json!({
+                                    "most_likely_good_outcome": resp.comparison.most_likely_good_outcome,
+                                    "highest_risk": resp.comparison.highest_risk
+                                }),
+                                convergence_opportunities: resp.comparison.key_differences,
                             }),
-                            convergence_opportunities: resp.comparison.key_differences,
-                        }),
-                        merged_content: None,
-                        metadata: None,
-                    },
-                    true,
-                ),
+                            branch_details: Some(branch_details),
+                            branch_ids: Some(branch_ids),
+                            validation: Some(validation),
+                            ..Default::default()
+                        },
+                        true,
+                    )
+                }
                 Err(e) => (
                     TimelineResponse {
                         timeline_id: format!(
@@ -311,45 +507,55 @@ impl super::ReasoningServer {
                              Provide a session_id from a previous create call. \
                              Use operation='create' first if no timeline exists yet."
                         ),
-                        branch_id: None,
-                        branches: None,
-                        comparison: None,
-                        merged_content: None,
-                        metadata: None,
+                        ..Default::default()
                     },
                     false,
                 ),
             },
             "compare" => match mode.compare(content, req.session_id).await {
-                Ok(resp) => (
-                    TimelineResponse {
-                        timeline_id: String::new(),
-                        branch_id: None,
-                        branches: None,
-                        comparison: Some(BranchComparison {
-                            divergence_points: vec![resp.divergence_point],
-                            quality_differences: serde_json::json!({
-                                "key_differences": resp.key_differences.iter().map(|d| {
-                                    serde_json::json!({
-                                        "dimension": d.dimension,
-                                        "branch_1_value": d.branch_1_value,
-                                        "branch_2_value": d.branch_2_value,
-                                        "significance": d.significance
-                                    })
-                                }).collect::<Vec<_>>(),
-                                "recommendation": {
-                                    "preferred_branch": resp.recommendation.preferred_branch,
-                                    "conditions": resp.recommendation.conditions,
-                                    "key_factors": resp.recommendation.key_factors
-                                }
+                Ok(resp) => {
+                    let validation = verify_compare(
+                        &resp.branches_compared,
+                        &resp.recommendation.preferred_branch,
+                    );
+                    let differences = resp
+                        .key_differences
+                        .iter()
+                        .map(|d| BranchDifferenceInfo {
+                            dimension: d.dimension.clone(),
+                            branch_1_value: d.branch_1_value.clone(),
+                            branch_2_value: d.branch_2_value.clone(),
+                            significance: d.significance.clone(),
+                        })
+                        .collect();
+                    (
+                        TimelineResponse {
+                            divergence_point: Some(resp.divergence_point),
+                            branch_ids: Some(resp.branches_compared),
+                            differences: Some(differences),
+                            risk_assessment: Some(RiskAssessmentInfo {
+                                branch_1_risks: resp.risk_assessment.branch_1_risks,
+                                branch_2_risks: resp.risk_assessment.branch_2_risks,
                             }),
-                            convergence_opportunities: resp.branches_compared,
-                        }),
-                        merged_content: None,
-                        metadata: None,
-                    },
-                    true,
-                ),
+                            opportunity_assessment: Some(OpportunityAssessmentInfo {
+                                branch_1_opportunities: resp
+                                    .opportunity_assessment
+                                    .branch_1_opportunities,
+                                branch_2_opportunities: resp
+                                    .opportunity_assessment
+                                    .branch_2_opportunities,
+                            }),
+                            recommendation: Some(CompareRecommendationInfo {
+                                preferred_branch: resp.recommendation.preferred_branch,
+                                conditions: resp.recommendation.conditions,
+                                key_factors: resp.recommendation.key_factors,
+                            }),
+                            validation: Some(validation),
+                            ..Default::default()
+                        },
+                        true,
+                    )
+                }
                 Err(e) => (
                     TimelineResponse {
                         timeline_id: format!(
@@ -357,31 +563,59 @@ impl super::ReasoningServer {
                              Provide a session_id with at least 2 branches to compare. \
                              Use operation='branch' first to create divergent paths."
                         ),
-                        branch_id: None,
-                        branches: None,
-                        comparison: None,
-                        merged_content: None,
-                        metadata: None,
+                        ..Default::default()
                     },
                     false,
                 ),
             },
             "merge" => match mode.merge(content, req.session_id).await {
-                Ok(resp) => (
-                    TimelineResponse {
-                        timeline_id: String::new(),
-                        branch_id: None,
-                        branches: None,
-                        comparison: None,
-                        merged_content: Some(format!(
-                            "Synthesis: {}. Recommendations: {}",
-                            resp.synthesis,
-                            resp.recommendations.join("; ")
-                        )),
-                        metadata: None,
-                    },
-                    true,
-                ),
+                Ok(resp) => {
+                    let validation = verify_merge(&resp.common_patterns, &resp.robust_strategies);
+                    let common_patterns = resp
+                        .common_patterns
+                        .iter()
+                        .map(|p| CommonPatternInfo {
+                            pattern: p.pattern.clone(),
+                            frequency: p.frequency,
+                            implications: p.implications.clone(),
+                        })
+                        .collect();
+                    let robust_strategies = resp
+                        .robust_strategies
+                        .iter()
+                        .map(|s| RobustStrategyInfo {
+                            strategy: s.strategy.clone(),
+                            effectiveness: s.effectiveness,
+                            conditions: s.conditions.clone(),
+                        })
+                        .collect();
+                    let fragile_strategies = resp
+                        .fragile_strategies
+                        .iter()
+                        .map(|s| FragileStrategyInfo {
+                            strategy: s.strategy.clone(),
+                            failure_modes: s.failure_modes.clone(),
+                        })
+                        .collect();
+                    (
+                        TimelineResponse {
+                            merged_content: Some(format!(
+                                "Synthesis: {}. Recommendations: {}",
+                                resp.synthesis,
+                                resp.recommendations.join("; ")
+                            )),
+                            common_patterns: Some(common_patterns),
+                            robust_strategies: Some(robust_strategies),
+                            fragile_strategies: Some(fragile_strategies),
+                            synthesis: Some(resp.synthesis),
+                            recommendations: Some(resp.recommendations),
+                            branch_ids: Some(resp.branches_merged),
+                            validation: Some(validation),
+                            ..Default::default()
+                        },
+                        true,
+                    )
+                }
                 Err(e) => (
                     TimelineResponse {
                         timeline_id: format!(
@@ -389,11 +623,7 @@ impl super::ReasoningServer {
                              Provide a session_id with branches to synthesize. \
                              Use operation='compare' first to identify divergence points."
                         ),
-                        branch_id: None,
-                        branches: None,
-                        comparison: None,
-                        merged_content: None,
-                        metadata: None,
+                        ..Default::default()
                     },
                     false,
                 ),
@@ -401,11 +631,7 @@ impl super::ReasoningServer {
             _ => (
                 TimelineResponse {
                     timeline_id: format!("Unknown operation: {}", op_for_timeout),
-                    branch_id: None,
-                    branches: None,
-                    comparison: None,
-                    merged_content: None,
-                    metadata: None,
+                    ..Default::default()
                 },
                 false,
             ),
@@ -427,11 +653,7 @@ impl super::ReasoningServer {
                             "timeline timed out after {timeout_ms}ms. \
                              Retry with shorter content or a simpler scenario."
                         ),
-                        branch_id: None,
-                        branches: None,
-                        comparison: None,
-                        merged_content: None,
-                        metadata: None,
+                        ..Default::default()
                     },
                     false,
                 )
@@ -1131,5 +1353,129 @@ mod counterfactual_verify_tests {
         let v = verify_causal_model(&model, &question("X", "Y"), &analysis(0.5, 0.7));
         assert!(!v.consistent);
         assert!(v.warnings.iter().any(|w| w.contains("acyclic")));
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp
+)]
+mod timeline_verify_tests {
+    use super::{verify_branch, verify_compare, verify_create, verify_merge};
+    use crate::modes::{
+        BranchEvent, CommonPattern, EventType, RobustStrategy, TemporalStructure, TimelineBranch,
+        TimelineEvent,
+    };
+
+    fn event(id: &str, causes: &[&str], effects: &[&str]) -> TimelineEvent {
+        TimelineEvent {
+            id: id.to_string(),
+            description: "d".to_string(),
+            time: "t".to_string(),
+            event_type: EventType::Event,
+            causes: causes.iter().map(|s| s.to_string()).collect(),
+            effects: effects.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn ts(start: &str, current: &str) -> TemporalStructure {
+        TemporalStructure {
+            start: start.to_string(),
+            current: current.to_string(),
+            horizon: "h".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_create_consistent() {
+        let events = vec![event("a", &[], &["b"]), event("b", &["a"], &[])];
+        let v = verify_create(&events, &ts("a", "b"));
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
+    }
+
+    #[test]
+    fn test_create_flags_undeclared_reference() {
+        let events = vec![event("a", &["ghost"], &[])];
+        let v = verify_create(&events, &ts("a", "a"));
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("cause 'ghost'")));
+    }
+
+    #[test]
+    fn test_create_flags_bad_temporal_ref() {
+        let events = vec![event("a", &[], &[])];
+        let v = verify_create(&events, &ts("a", "nope"));
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("current 'nope'")));
+    }
+
+    #[test]
+    fn test_create_flags_cycle() {
+        let events = vec![event("a", &["b"], &["b"]), event("b", &["a"], &["a"])];
+        let v = verify_create(&events, &ts("a", "b"));
+        assert!(!v.consistent);
+        assert!(v.warnings.iter().any(|w| w.contains("causal cycle")));
+    }
+
+    fn branch(id: &str, plaus: f64, quality: f64, prob: f64) -> TimelineBranch {
+        TimelineBranch {
+            id: id.to_string(),
+            choice: "c".to_string(),
+            events: vec![BranchEvent {
+                id: "ev".to_string(),
+                description: "d".to_string(),
+                probability: prob,
+                time_offset: "+1".to_string(),
+            }],
+            plausibility: plaus,
+            outcome_quality: quality,
+        }
+    }
+
+    #[test]
+    fn test_branch_ranges_ok_and_flagged() {
+        let ok = verify_branch(&[branch("b1", 0.8, 0.7, 0.9)]);
+        assert!(ok.consistent);
+        let bad = verify_branch(&[branch("b1", 1.5, 0.7, 0.9)]);
+        assert!(!bad.consistent);
+        assert!(bad.warnings.iter().any(|w| w.contains("plausibility")));
+        let bad_prob = verify_branch(&[branch("b1", 0.8, 0.7, 1.4)]);
+        assert!(bad_prob.warnings.iter().any(|w| w.contains("probability")));
+    }
+
+    #[test]
+    fn test_compare_membership() {
+        let ok = verify_compare(&["b1".to_string(), "b2".to_string()], "b1");
+        assert!(ok.consistent);
+        let verdict = verify_compare(&["b1".to_string()], "depends");
+        assert!(verdict.consistent);
+        let bad = verify_compare(&["b1".to_string(), "b2".to_string()], "b9");
+        assert!(!bad.consistent);
+        assert!(bad
+            .warnings
+            .iter()
+            .any(|w| w.contains("not among the compared")));
+    }
+
+    #[test]
+    fn test_merge_ranges() {
+        let pattern = |f: f64| CommonPattern {
+            pattern: "p".to_string(),
+            frequency: f,
+            implications: "i".to_string(),
+        };
+        let strat = |e: f64| RobustStrategy {
+            strategy: "s".to_string(),
+            effectiveness: e,
+            conditions: "c".to_string(),
+        };
+        assert!(verify_merge(&[pattern(0.8)], &[strat(0.9)]).consistent);
+        let bad = verify_merge(&[pattern(1.9)], &[strat(0.9)]);
+        assert!(!bad.consistent);
+        assert!(bad.warnings.iter().any(|w| w.contains("frequency")));
+        assert!(!verify_merge(&[pattern(0.8)], &[strat(2.0)]).consistent);
     }
 }

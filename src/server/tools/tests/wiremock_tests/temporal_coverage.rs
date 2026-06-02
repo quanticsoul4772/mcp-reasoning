@@ -173,6 +173,14 @@ async fn test_timeline_create_success_path() {
     let resp = server.reasoning_timeline(Parameters(req)).await;
     // Success path: timeline_id is the one from the mock, not an error message
     assert_eq!(resp.timeline_id, "tl-2026");
+    // The events, decision points, and temporal structure are now surfaced.
+    let events = resp.events.expect("events surfaced");
+    assert_eq!(events[0].id, "e1");
+    assert_eq!(events[0].event_type, "event");
+    let dps = resp.decision_points.expect("decision points surfaced");
+    assert_eq!(dps[0].options.len(), 2);
+    assert!(resp.temporal_structure.is_some());
+    assert!(resp.validation.is_some());
 }
 
 #[tokio::test]
@@ -206,6 +214,12 @@ async fn test_timeline_branch_success_path() {
     let branches = resp.branches.expect("branches should be populated");
     assert!(!branches.is_empty());
     assert!(resp.comparison.is_some());
+    // Structured branch details with per-branch quality scores and per-event
+    // probabilities are now surfaced (not flattened to a string).
+    let details = resp.branch_details.expect("branch details surfaced");
+    assert!((details[0].plausibility - 0.8).abs() < 1e-9);
+    assert!((details[0].events[0].probability - 0.8).abs() < 1e-9);
+    assert!(resp.validation.expect("validation").consistent);
 }
 
 #[tokio::test]
@@ -234,10 +248,21 @@ async fn test_timeline_compare_success_path() {
     };
 
     let resp = server.reasoning_timeline(Parameters(req)).await;
-    // Success path: comparison is populated from the mock
-    let comparison = resp.comparison.expect("comparison should be populated");
-    assert!(!comparison.divergence_points.is_empty());
-    assert!(!comparison.convergence_opportunities.is_empty());
+    // Success path: the structured comparison fields are surfaced (no longer an
+    // untyped JSON blob), including the risk and opportunity assessments.
+    assert_eq!(
+        resp.divergence_point.as_deref(),
+        Some("Architecture decision at dp1")
+    );
+    let differences = resp.differences.expect("differences surfaced");
+    assert_eq!(differences[0].dimension, "Delivery speed");
+    let risk = resp.risk_assessment.expect("risk assessment surfaced");
+    assert!(!risk.branch_1_risks.is_empty());
+    assert!(resp.opportunity_assessment.is_some());
+    let rec = resp.recommendation.expect("recommendation surfaced");
+    assert_eq!(rec.preferred_branch, "b1");
+    // preferred_branch "b1" is among the compared branches → consistent.
+    assert!(resp.validation.expect("validation").consistent);
 }
 
 #[tokio::test]
@@ -271,6 +296,13 @@ async fn test_timeline_merge_success_path() {
         .merged_content
         .expect("merged_content should be populated");
     assert!(content.contains("iterative"));
+    // The structured synthesis is now surfaced, not just a flattened string.
+    let patterns = resp.common_patterns.expect("common patterns surfaced");
+    assert_eq!(patterns[0].pattern, "Iterative delivery");
+    assert!(resp.robust_strategies.is_some());
+    assert!(resp.fragile_strategies.is_some());
+    assert_eq!(resp.recommendations.expect("recommendations").len(), 2);
+    assert!(resp.validation.expect("validation").consistent);
 }
 
 // ============================================================================

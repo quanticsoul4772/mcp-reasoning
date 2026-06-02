@@ -753,8 +753,159 @@ pub struct BranchComparison {
     pub convergence_opportunities: Vec<String>,
 }
 
-/// Response from timeline reasoning.
+/// A timeline event with its causal links (create).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TimelineEventInfo {
+    /// Event identifier.
+    pub id: String,
+    /// Description of the event.
+    pub description: String,
+    /// Time marker (relative or absolute).
+    pub time: String,
+    /// Type: "event"/"state"/"decision_point".
+    pub event_type: String,
+    /// Event IDs that cause this one.
+    pub causes: Vec<String>,
+    /// Event IDs caused by this one.
+    pub effects: Vec<String>,
+}
+
+/// A decision point on the timeline (create).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DecisionPointInfo {
+    /// Decision identifier.
+    pub id: String,
+    /// Description of the decision.
+    pub description: String,
+    /// Possible choices.
+    pub options: Vec<String>,
+    /// When the decision must be made.
+    pub deadline: String,
+}
+
+/// The timeline's temporal structure (create).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TemporalStructureInfo {
+    /// Beginning event ID.
+    pub start: String,
+    /// Current event ID.
+    pub current: String,
+    /// How far into the future is considered.
+    pub horizon: String,
+}
+
+/// An event within a branch (branch).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BranchEventInfo {
+    /// Event identifier.
+    pub id: String,
+    /// Description of the event.
+    pub description: String,
+    /// Probability of this event occurring (0.0-1.0).
+    pub probability: f64,
+    /// Time offset from the branch point.
+    pub time_offset: String,
+}
+
+/// A branch with its events and quality scores (branch).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BranchInfo {
+    /// Branch identifier.
+    pub id: String,
+    /// The choice made at the branch point.
+    pub choice: String,
+    /// How plausible this branch is (0.0-1.0).
+    pub plausibility: f64,
+    /// Quality of the outcome (0.0-1.0).
+    pub outcome_quality: f64,
+    /// Events along this branch.
+    pub events: Vec<BranchEventInfo>,
+}
+
+/// A dimension-by-dimension difference between branches (compare).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BranchDifferenceInfo {
+    /// What dimension is being compared.
+    pub dimension: String,
+    /// Outcome in branch 1.
+    pub branch_1_value: String,
+    /// Outcome in branch 2.
+    pub branch_2_value: String,
+    /// Why this difference matters.
+    pub significance: String,
+}
+
+/// Per-branch risk assessment (compare).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RiskAssessmentInfo {
+    /// Risks in branch 1.
+    pub branch_1_risks: Vec<String>,
+    /// Risks in branch 2.
+    pub branch_2_risks: Vec<String>,
+}
+
+/// Per-branch opportunity assessment (compare).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct OpportunityAssessmentInfo {
+    /// Opportunities in branch 1.
+    pub branch_1_opportunities: Vec<String>,
+    /// Opportunities in branch 2.
+    pub branch_2_opportunities: Vec<String>,
+}
+
+/// Recommendation from a comparison (compare).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CompareRecommendationInfo {
+    /// Preferred branch, or "depends".
+    pub preferred_branch: String,
+    /// Conditions under which this is preferred.
+    pub conditions: String,
+    /// Key factors in the decision.
+    pub key_factors: String,
+}
+
+/// A pattern observed across branches (merge).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CommonPatternInfo {
+    /// Description of the pattern.
+    pub pattern: String,
+    /// How often it appears (0.0-1.0).
+    pub frequency: f64,
+    /// What the pattern implies.
+    pub implications: String,
+}
+
+/// A strategy that works robustly across branches (merge).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RobustStrategyInfo {
+    /// Description of the strategy.
+    pub strategy: String,
+    /// How effective it is (0.0-1.0).
+    pub effectiveness: f64,
+    /// When it is applicable.
+    pub conditions: String,
+}
+
+/// A strategy that only works in some branches (merge).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct FragileStrategyInfo {
+    /// Description of the strategy.
+    pub strategy: String,
+    /// When it fails.
+    pub failure_modes: String,
+}
+
+/// Result of validating a timeline's references and value ranges.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TimelineValidationInfo {
+    /// True when references resolve and values are in range.
+    pub consistent: bool,
+    /// Descriptions of every issue found.
+    pub warnings: Vec<String>,
+}
+
+/// Response from timeline reasoning.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct TimelineResponse {
     /// Timeline identifier.
     pub timeline_id: String,
@@ -766,6 +917,54 @@ pub struct TimelineResponse {
     pub comparison: Option<BranchComparison>,
     /// Merged content.
     pub merged_content: Option<String>,
+    /// Events on the timeline (create).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub events: Option<Vec<TimelineEventInfo>>,
+    /// Decision points (create).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_points: Option<Vec<DecisionPointInfo>>,
+    /// Temporal structure (create).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temporal_structure: Option<TemporalStructureInfo>,
+    /// Branches with their events and quality scores (branch).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_details: Option<Vec<BranchInfo>>,
+    /// Where the branches diverged (compare).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub divergence_point: Option<String>,
+    /// Dimension-by-dimension differences (compare).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub differences: Option<Vec<BranchDifferenceInfo>>,
+    /// Per-branch risk assessment (compare).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk_assessment: Option<RiskAssessmentInfo>,
+    /// Per-branch opportunity assessment (compare).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opportunity_assessment: Option<OpportunityAssessmentInfo>,
+    /// Recommendation from the comparison (compare).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommendation: Option<CompareRecommendationInfo>,
+    /// Patterns observed across branches (merge).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub common_patterns: Option<Vec<CommonPatternInfo>>,
+    /// Strategies that work robustly (merge).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub robust_strategies: Option<Vec<RobustStrategyInfo>>,
+    /// Strategies that are fragile (merge).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fragile_strategies: Option<Vec<FragileStrategyInfo>>,
+    /// Overall synthesis (merge).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synthesis: Option<String>,
+    /// Actionable recommendations (merge).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommendations: Option<Vec<String>>,
+    /// Branch IDs involved (branch/compare/merge).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_ids: Option<Vec<String>>,
+    /// Result of validating references and value ranges.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<TimelineValidationInfo>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::metadata::ResponseMetadata>,
@@ -1850,7 +2049,7 @@ mod tests {
             }]),
             comparison: None,
             merged_content: None,
-            metadata: None,
+            ..Default::default()
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);
