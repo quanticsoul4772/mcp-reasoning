@@ -7,9 +7,9 @@ use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::TimelineBranch as ModeTimelineBranch;
 use crate::modes::{
-    CausalAnalysis, CausalEdge, CausalModel, CausalQuestion, CommonPattern, FrontierNode, MctsMode,
-    QualityAssessment, QualityTrend, RobustStrategy, SelectedNode, TemporalStructure,
-    TimelineEvent, TimelineMode,
+    Backpropagation, CausalAnalysis, CausalEdge, CausalModel, CausalQuestion, CommonPattern,
+    FrontierNode, MctsMode, QualityAssessment, QualityTrend, RobustStrategy, SelectedNode,
+    TemporalStructure, TimelineEvent, TimelineMode,
 };
 use crate::server::requests::{CounterfactualRequest, MctsRequest, TimelineRequest};
 use crate::server::responses::{
@@ -391,12 +391,13 @@ fn backtrack_param_lines(
     lines
 }
 
-/// Verify the UCB1 decomposition of each frontier node and that the selected
-/// node is the argmax of `ucb1_score`. Returns the validation and the
-/// recomputed best node id.
+/// Verify the UCB1 decomposition of each frontier node, that the selected node
+/// is the argmax of `ucb1_score`, and that backpropagation is structurally
+/// coherent. Returns the validation and the recomputed best node id.
 fn verify_explore(
     frontier: &[FrontierNode],
     selected: &SelectedNode,
+    backprop: &Backpropagation,
 ) -> (MctsValidationInfo, Option<String>) {
     let mut warnings = Vec::new();
 
@@ -429,6 +430,25 @@ fn verify_explore(
                 selected.node_id
             )),
             _ => {}
+        }
+    }
+
+    // Backpropagation coherence — pure structural invariants:
+    // (1) the selected (expanded) node lies on the backprop path, so it must
+    //     appear in updated_nodes when any node was updated; and
+    // (2) you cannot report a value change for a node you did not update, so
+    //     every value_changes key must appear in updated_nodes.
+    if !backprop.updated_nodes.is_empty() && !backprop.updated_nodes.contains(&selected.node_id) {
+        warnings.push(format!(
+            "Backpropagation updated_nodes {:?} does not include the selected node '{}'",
+            backprop.updated_nodes, selected.node_id
+        ));
+    }
+    for key in backprop.value_changes.keys() {
+        if !backprop.updated_nodes.contains(key) {
+            warnings.push(format!(
+                "Backpropagation value_changes references node '{key}' which is not in updated_nodes"
+            ));
         }
     }
 
@@ -857,8 +877,11 @@ impl super::ReasoningServer {
                 };
                 match explore_result {
                     Ok(resp) => {
-                        let (validation, _best_id) =
-                            verify_explore(&resp.frontier_evaluation, &resp.selected_node);
+                        let (validation, _best_id) = verify_explore(
+                            &resp.frontier_evaluation,
+                            &resp.selected_node,
+                            &resp.backpropagation,
+                        );
                         let frontier: Vec<MctsFrontierNode> = resp
                             .frontier_evaluation
                             .iter()
@@ -1250,7 +1273,9 @@ impl super::ReasoningServer {
 )]
 mod mcts_verify_tests {
     use super::{verify_backtrack, verify_explore};
-    use crate::modes::{FrontierNode, QualityAssessment, QualityTrend, SelectedNode};
+    use crate::modes::{
+        Backpropagation, FrontierNode, QualityAssessment, QualityTrend, SelectedNode,
+    };
 
     fn node(id: &str, avg: f64, bonus: f64, ucb: f64, visits: u32) -> FrontierNode {
         FrontierNode {
@@ -1269,10 +1294,21 @@ mod mcts_verify_tests {
         }
     }
 
+    /// Build a backpropagation result from updated-node ids and value changes.
+    fn bp(updated: &[&str], changes: &[(&str, f64)]) -> Backpropagation {
+        Backpropagation {
+            updated_nodes: updated.iter().map(|s| (*s).to_string()).collect(),
+            value_changes: changes
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), *v))
+                .collect(),
+        }
+    }
+
     #[test]
     fn test_explore_consistent_and_argmax() {
         let frontier = vec![node("a", 0.6, 0.2, 0.8, 8), node("b", 0.4, 0.3, 0.7, 3)];
-        let (v, best) = verify_explore(&frontier, &selected("a"));
+        let (v, best) = verify_explore(&frontier, &selected("a"), &bp(&["a"], &[]));
         assert!(v.consistent, "warnings: {:?}", v.warnings);
         assert_eq!(best.as_deref(), Some("a"));
     }
@@ -1281,7 +1317,7 @@ mod mcts_verify_tests {
     fn test_explore_flags_bad_ucb1_decomposition() {
         // 0.6 + 0.2 = 0.8, not the stated 0.95.
         let frontier = vec![node("a", 0.6, 0.2, 0.95, 8)];
-        let (v, _) = verify_explore(&frontier, &selected("a"));
+        let (v, _) = verify_explore(&frontier, &selected("a"), &bp(&["a"], &[]));
         assert!(!v.consistent);
         assert!(v.warnings.iter().any(|w| w.contains("UCB1 stated")));
     }
@@ -1290,7 +1326,7 @@ mod mcts_verify_tests {
     fn test_explore_flags_non_argmax_selection() {
         let frontier = vec![node("a", 0.6, 0.2, 0.8, 8), node("b", 0.5, 0.4, 0.9, 2)];
         // 'b' has the higher UCB1 (0.9) but 'a' was selected.
-        let (v, best) = verify_explore(&frontier, &selected("a"));
+        let (v, best) = verify_explore(&frontier, &selected("a"), &bp(&["a"], &[]));
         assert!(!v.consistent);
         assert_eq!(best.as_deref(), Some("b"));
         assert!(v.warnings.iter().any(|w| w.contains("highest-UCB1")));
@@ -1299,12 +1335,48 @@ mod mcts_verify_tests {
     #[test]
     fn test_explore_flags_selected_not_in_frontier() {
         let frontier = vec![node("a", 0.6, 0.2, 0.8, 8)];
-        let (v, _) = verify_explore(&frontier, &selected("ghost"));
+        let (v, _) = verify_explore(&frontier, &selected("ghost"), &bp(&["ghost"], &[]));
         assert!(!v.consistent);
         assert!(v
             .warnings
             .iter()
             .any(|w| w.contains("not present in the frontier")));
+    }
+
+    #[test]
+    fn test_explore_flags_backprop_missing_selected() {
+        // Frontier and selection are fine, but backprop never updated the
+        // selected node 'a' — only 'b' and root.
+        let frontier = vec![node("a", 0.6, 0.2, 0.8, 8), node("b", 0.4, 0.3, 0.7, 3)];
+        let (v, _) = verify_explore(&frontier, &selected("a"), &bp(&["b", "root"], &[]));
+        assert!(!v.consistent);
+        assert!(v
+            .warnings
+            .iter()
+            .any(|w| w.contains("does not include the selected node")));
+    }
+
+    #[test]
+    fn test_explore_flags_value_change_outside_updated() {
+        // A value change is reported for 'ghost', which was never updated.
+        let frontier = vec![node("a", 0.6, 0.2, 0.8, 8)];
+        let (v, _) = verify_explore(&frontier, &selected("a"), &bp(&["a"], &[("ghost", 0.1)]));
+        assert!(!v.consistent);
+        assert!(v
+            .warnings
+            .iter()
+            .any(|w| w.contains("not in updated_nodes")));
+    }
+
+    #[test]
+    fn test_explore_backprop_coherent_passes() {
+        let frontier = vec![node("a", 0.6, 0.2, 0.8, 8), node("b", 0.4, 0.3, 0.7, 3)];
+        let (v, _) = verify_explore(
+            &frontier,
+            &selected("a"),
+            &bp(&["a", "root"], &[("a", 0.05), ("root", 0.02)]),
+        );
+        assert!(v.consistent, "warnings: {:?}", v.warnings);
     }
 
     #[test]
