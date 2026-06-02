@@ -126,13 +126,32 @@ where
         &self,
         content: &str,
         session_id: Option<String>,
+        hints: &[String],
     ) -> Result<AutoResponse, ModeError> {
         validate_content(content)?;
 
+        let has_prior_session = session_id.is_some();
         let session = self.get_or_create_session(session_id).await?;
+        let prior_context = if has_prior_session {
+            self.load_prior_context(&session.id).await
+        } else {
+            String::new()
+        };
         let prompt = get_prompt_for_mode(ReasoningMode::Auto, None);
 
-        let user_message = format!("{prompt}\n\nAnalyze this content:\n{content}");
+        // Fold caller-supplied hints into the prompt so they actually influence
+        // the selection.
+        let hints_block = if hints.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "Caller hints to weigh when choosing:\n- {}\n\n",
+                hints.join("\n- ")
+            )
+        };
+
+        let user_message =
+            format!("{prompt}\n\n{prior_context}{hints_block}Analyze this content:\n{content}");
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
             .with_max_tokens(4096)
@@ -256,6 +275,36 @@ where
             .map_err(|e| ModeError::ApiUnavailable {
                 message: format!("Failed to get or create session: {e}"),
             })
+    }
+
+    /// Build a short context block from recent prior thoughts in the session, so
+    /// routing accounts for what has already been explored. Best-effort: returns an
+    /// empty string when there is no history or the lookup fails.
+    async fn load_prior_context(&self, session_id: &str) -> String {
+        const MAX_THOUGHTS: usize = 3;
+        const MAX_CHARS: usize = 300;
+
+        let thoughts = match self.storage.get_thoughts(session_id).await {
+            Ok(thoughts) if !thoughts.is_empty() => thoughts,
+            Ok(_) => return String::new(),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load prior thoughts — routing without session context"
+                );
+                return String::new();
+            }
+        };
+
+        let start = thoughts.len().saturating_sub(MAX_THOUGHTS);
+        let lines: Vec<String> = thoughts[start..]
+            .iter()
+            .map(|t| {
+                let content: String = t.content.chars().take(MAX_CHARS).collect();
+                format!("- [{}] {content}", t.mode)
+            })
+            .collect();
+        format!("Earlier in this session:\n{}\n\n", lines.join("\n"))
     }
 }
 
@@ -396,7 +445,7 @@ mod tests {
         });
 
         let mode = AutoMode::new(mock_storage, mock_client);
-        let result = mode.select("Analyze this step by step", None).await;
+        let result = mode.select("Analyze this step by step", None, &[]).await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -406,6 +455,77 @@ mod tests {
         assert!(response.alternative_mode.is_some());
         // Confidence from mock response
         assert!((response.confidence - 0.88).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_auto_select_injects_hints() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("s")));
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        // The caller's hints must appear in the prompt sent to the model.
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages.first().is_some_and(|m| {
+                    m.content.contains("Caller hints to weigh")
+                        && m.content.contains("prefer a fast mode")
+                })
+            })
+            .returning(|_, _| {
+                Ok(CompletionResponse::new(
+                    r#"{"selected_mode": "linear", "reasoning": "x"}"#,
+                    Usage::new(50, 100),
+                ))
+            });
+
+        let mode = AutoMode::new(mock_storage, mock_client);
+        let hints = vec!["prefer a fast mode".to_string()];
+        let result = mode.select("content", None, &hints).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_auto_select_injects_prior_context() {
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|_| Ok(Session::new("ctx")));
+        mock_storage.expect_get_thoughts().returning(|_| {
+            Ok(vec![Thought::new(
+                "t-prev",
+                "ctx",
+                "Earlier we explored pricing options",
+                "linear",
+                0.7,
+            )])
+        });
+        mock_storage.expect_save_thought().returning(|_| Ok(()));
+
+        mock_client
+            .expect_complete()
+            .withf(|messages, _| {
+                messages.first().is_some_and(|m| {
+                    m.content.contains("Earlier in this session")
+                        && m.content.contains("Earlier we explored pricing options")
+                })
+            })
+            .returning(|_, _| {
+                Ok(CompletionResponse::new(
+                    r#"{"selected_mode": "linear", "reasoning": "x"}"#,
+                    Usage::new(50, 100),
+                ))
+            });
+
+        let mode = AutoMode::new(mock_storage, mock_client);
+        let result = mode.select("content", Some("ctx".to_string()), &[]).await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -426,7 +546,7 @@ mod tests {
         });
 
         let mode = AutoMode::new(mock_storage, mock_client);
-        let result = mode.select("Content", None).await.unwrap();
+        let result = mode.select("Content", None, &[]).await.unwrap();
         assert!((result.confidence - 0.7).abs() < 1e-9);
     }
 
@@ -448,7 +568,7 @@ mod tests {
         });
 
         let mode = AutoMode::new(mock_storage, mock_client);
-        let result = mode.select("Content", None).await.unwrap();
+        let result = mode.select("Content", None, &[]).await.unwrap();
         assert!((result.confidence - 1.0).abs() < 1e-9);
     }
 
@@ -470,7 +590,7 @@ mod tests {
         });
 
         let mode = AutoMode::new(mock_storage, mock_client);
-        let result = mode.select("Content", None).await.unwrap();
+        let result = mode.select("Content", None, &[]).await.unwrap();
         assert!((result.confidence - 0.0).abs() < 1e-9);
     }
 
@@ -480,7 +600,7 @@ mod tests {
         let mock_client = MockAnthropicClientTrait::new();
 
         let mode = AutoMode::new(mock_storage, mock_client);
-        let result = mode.select("", None).await;
+        let result = mode.select("", None, &[]).await;
 
         assert!(result.is_err());
         assert!(matches!(
@@ -506,7 +626,7 @@ mod tests {
         });
 
         let mode = AutoMode::new(mock_storage, mock_client);
-        let result = mode.select("Content", None).await;
+        let result = mode.select("Content", None, &[]).await;
 
         assert!(result.is_err());
         assert!(matches!(
@@ -532,7 +652,7 @@ mod tests {
         });
 
         let mode = AutoMode::new(mock_storage, mock_client);
-        let result = mode.select("Content", None).await;
+        let result = mode.select("Content", None, &[]).await;
 
         assert!(result.is_err());
         assert!(matches!(
@@ -557,7 +677,7 @@ mod tests {
         });
 
         let mode = AutoMode::new(mock_storage, mock_client);
-        let result = mode.select("Content", None).await;
+        let result = mode.select("Content", None, &[]).await;
 
         assert!(result.is_err());
         assert!(matches!(result, Err(ModeError::ApiUnavailable { .. })));
@@ -600,7 +720,7 @@ mod tests {
             });
 
             let mode = AutoMode::new(mock_storage, mock_client);
-            let result = mode.select("Content", None).await;
+            let result = mode.select("Content", None, &[]).await;
 
             assert!(result.is_ok(), "Failed for mode: {mode_str}");
             assert_eq!(result.unwrap().selected_mode, expected_mode);
@@ -625,7 +745,7 @@ mod tests {
         });
 
         let mode = AutoMode::new(mock_storage, mock_client);
-        let result = mode.select("Content", None).await;
+        let result = mode.select("Content", None, &[]).await;
 
         assert!(result.is_ok());
         assert!(result.unwrap().alternative_mode.is_none());

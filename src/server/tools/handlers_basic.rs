@@ -7,7 +7,7 @@ use crate::modes::meta::MetaMode;
 use crate::modes::{AutoMode, LinearMode, TreeMode};
 use crate::server::metadata_builders;
 use crate::server::requests::{
-    AutoRequest, DivergentRequest, LinearRequest, MetaRequest, TreeRequest,
+    AutoRequest, DivergentRequest, LinearRequest, MetaRequest, ReflectionRequest, TreeRequest,
 };
 use crate::server::responses::{
     AutoResponse, Branch, LinearResponse, MetaResponse, NextCallHint, SkillSuggestion, TreeResponse,
@@ -521,22 +521,28 @@ impl super::ReasoningServer {
         let timeout_ms = self.state.config.timeout_for_thinking_budget(NO_THINKING);
         let timeout_duration = Duration::from_millis(timeout_ms);
 
-        let result =
-            match tokio::time::timeout(timeout_duration, mode.select(&req.content, req.session_id))
-                .await
-            {
-                Ok(inner_result) => inner_result,
-                Err(_elapsed) => {
-                    tracing::error!(
-                        tool = "reasoning_auto",
-                        timeout_ms = timeout_ms,
-                        "Tool execution timed out"
-                    );
-                    Err(ModeError::Timeout {
-                        elapsed_ms: timeout_ms,
-                    })
-                }
-            };
+        let result = match tokio::time::timeout(
+            timeout_duration,
+            mode.select(
+                &req.content,
+                req.session_id,
+                req.hints.as_deref().unwrap_or(&[]),
+            ),
+        )
+        .await
+        {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::error!(
+                    tool = "reasoning_auto",
+                    timeout_ms = timeout_ms,
+                    "Tool execution timed out"
+                );
+                Err(ModeError::Timeout {
+                    elapsed_ms: timeout_ms,
+                })
+            }
+        };
         let success = result.is_ok();
         self.state
             .metrics
@@ -544,6 +550,30 @@ impl super::ReasoningServer {
 
         match result {
             Ok(resp) => {
+                // Pull the model's suggested parameters so execute can apply them
+                // (read before selection_meta consumes the map). Keys are best-effort.
+                let sugg = &resp.suggested_parameters;
+                let sugg_confidence = sugg
+                    .get("min_confidence")
+                    .and_then(serde_json::Value::as_f64);
+                let sugg_num_perspectives = sugg
+                    .get("num_perspectives")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|n| n as u32);
+                let sugg_challenge = sugg
+                    .get("challenge_assumptions")
+                    .and_then(serde_json::Value::as_bool);
+                let sugg_rebellion = sugg
+                    .get("force_rebellion")
+                    .and_then(serde_json::Value::as_bool);
+                let sugg_max_iterations = sugg
+                    .get("max_iterations")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|n| n as u32);
+                let sugg_quality_threshold = sugg
+                    .get("quality_threshold")
+                    .and_then(serde_json::Value::as_f64);
+
                 // Build selection metadata
                 let selection_meta = serde_json::json!({
                     "thought_id": resp.thought_id,
@@ -561,8 +591,9 @@ impl super::ReasoningServer {
                 let content = req.content.clone();
                 let should_execute = req.execute == Some(true);
 
-                // When execute=true, immediately run the selected mode (linear/divergent only).
-                // Other modes have required parameters that auto cannot infer — return next_call hint.
+                // When execute=true, immediately run the selected mode (linear/divergent/
+                // reflection), applying the model's suggested_parameters. Other modes have
+                // required parameters auto cannot infer — return a next_call hint.
                 if should_execute {
                     match selected_mode_name.as_str() {
                         "linear" => {
@@ -570,7 +601,10 @@ impl super::ReasoningServer {
                                 .handle_linear(LinearRequest {
                                     content,
                                     session_id: Some(session_id),
-                                    confidence: None,
+                                    confidence: sugg_confidence.and_then(|c| {
+                                        super::super::requests::ConfidenceThreshold::try_from(c)
+                                            .ok()
+                                    }),
                                     timeout_ms: None,
                                 })
                                 .await;
@@ -590,9 +624,32 @@ impl super::ReasoningServer {
                                 .handle_divergent(DivergentRequest {
                                     content,
                                     session_id: Some(session_id),
-                                    num_perspectives: None,
-                                    challenge_assumptions: None,
-                                    force_rebellion: None,
+                                    num_perspectives: sugg_num_perspectives,
+                                    challenge_assumptions: sugg_challenge,
+                                    force_rebellion: sugg_rebellion,
+                                    progress_token: None,
+                                })
+                                .await;
+                            return AutoResponse {
+                                selected_mode: selected_mode_name,
+                                confidence: resp.confidence,
+                                rationale: resp.reasoning,
+                                result: serde_json::to_value(&exec_resp).unwrap_or(selection_meta),
+                                metadata: None,
+                                next_call: None,
+                                executed: Some(true),
+                                skill_suggestion: None,
+                            };
+                        }
+                        "reflection" => {
+                            let exec_resp = self
+                                .handle_reflection(ReflectionRequest {
+                                    operation: None,
+                                    content: Some(content),
+                                    thought_id: None,
+                                    session_id: Some(session_id),
+                                    max_iterations: sugg_max_iterations,
+                                    quality_threshold: sugg_quality_threshold,
                                     progress_token: None,
                                 })
                                 .await;
