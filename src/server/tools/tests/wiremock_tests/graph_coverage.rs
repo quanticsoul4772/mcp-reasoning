@@ -42,6 +42,32 @@ fn graph_generate_json() -> String {
     .to_string()
 }
 
+/// `graph.generate` mock whose second child reports a score of 1.5 — outside
+/// the [0, 1] range the prompt specifies. Parses fine; the value is invalid.
+fn graph_generate_out_of_range_score_json() -> String {
+    serde_json::json!({
+        "parent_id": "root-1",
+        "children": [
+            {
+                "id": "c1",
+                "content": "A reasonable child",
+                "score": 0.7,
+                "type": "reasoning",
+                "relationship": "elaborates"
+            },
+            {
+                "id": "c2",
+                "content": "A child with an impossible score",
+                "score": 1.5,
+                "type": "evidence",
+                "relationship": "supports"
+            }
+        ],
+        "generation_notes": "One child has an out-of-range score"
+    })
+    .to_string()
+}
+
 /// Correct mock JSON for `graph.score`.
 /// Requires: node_id, scores{relevance,coherence,depth,novelty,overall},
 ///           assessment{strengths[],weaknesses[],recommendation}.
@@ -192,6 +218,45 @@ async fn test_graph_generate_success_path() {
     assert!(!nodes.is_empty());
     assert_eq!(nodes[0].id, "c1");
     assert!(nodes[0].score.is_some());
+    // In-range scores validate clean.
+    let validation = resp.validation.expect("generate should attach validation");
+    assert!(validation.consistent, "warnings: {:?}", validation.warnings);
+}
+
+#[tokio::test]
+async fn test_graph_generate_flags_out_of_range_score() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(anthropic_response(&graph_generate_out_of_range_score_json())),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let server = create_mocked_server(&mock_server).await;
+    let req = GraphRequest {
+        operation: "generate".to_string(),
+        session_id: "s-graph-gen-bad".to_string(),
+        content: Some("Explore approaches".to_string()),
+        problem: None,
+        node_id: None,
+        node_ids: None,
+        k: None,
+        threshold: None,
+        terminal_node_ids: None,
+    };
+
+    let resp = server.reasoning_graph(Parameters(req)).await;
+    // The out-of-range score is surfaced through the handler's validation.
+    let validation = resp.validation.expect("generate should attach validation");
+    assert!(!validation.consistent);
+    assert!(validation
+        .warnings
+        .iter()
+        .any(|w| w.contains("outside the [0, 1]")));
 }
 
 #[tokio::test]

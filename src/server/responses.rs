@@ -329,6 +329,15 @@ pub struct GraphState {
     pub pruned_count: u32,
 }
 
+/// Consistency check over a graph operation's numeric/structural output.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GraphValidationInfo {
+    /// True when every checked value is in range and the state counts reconcile.
+    pub consistent: bool,
+    /// Descriptions of every discrepancy (out-of-range score, count mismatch).
+    pub warnings: Vec<String>,
+}
+
 /// Response from graph reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GraphResponse {
@@ -344,6 +353,10 @@ pub struct GraphResponse {
     pub conclusions: Option<Vec<String>>,
     /// Graph state.
     pub state: Option<GraphState>,
+    /// Consistency check over this operation's output. Set for operations that
+    /// return verifiable numeric/structural data (generate scores, state counts).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<GraphValidationInfo>,
     /// Set when one or more nodes/edges failed to persist to storage, so the
     /// caller knows the graph wasn't fully saved (reasoning result is unaffected).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1952,6 +1965,7 @@ mod tests {
                 max_depth: 3,
                 pruned_count: 2,
             }),
+            validation: None,
             persistence_warning: None,
             metadata: None,
         };
