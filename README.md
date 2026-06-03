@@ -1,6 +1,6 @@
 # MCP Reasoning Server
 
-A Rust MCP server providing 32 tools for structured reasoning, self-improvement, session management, and agent coordination. 2,294+ tests, 95%+ coverage.
+A Rust MCP server providing 32 tools for structured reasoning, self-improvement, session management, and agent coordination. 2,620+ tests, 95%+ coverage.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
@@ -27,6 +27,8 @@ Provides Claude with structured reasoning modes:
 - **Preset** - Pre-configured multi-step workflows
 - **Metrics** - Track usage and performance
 
+Plus **session memory**: list and resume past reasoning sessions, and **semantically search or relate** them by meaning using Voyage AI embeddings (see [Semantic Memory](#semantic-memory)).
+
 Each tool returns metadata: execution time estimates, next-step suggestions, and workflow recommendations.
 
 ---
@@ -36,6 +38,7 @@ Each tool returns metadata: execution time estimates, next-step suggestions, and
 ### Prerequisites
 
 - [Anthropic API key](https://console.anthropic.com/) (required)
+- [Voyage AI API key](https://www.voyageai.com/) (optional; **required only for the memory tools** `reasoning_search` / `reasoning_relate`)
 - Choose one installation method below
 
 ### Installation
@@ -178,6 +181,8 @@ mcp-reasoning --health
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | **Yes** | - | Your Anthropic API key |
+| `VOYAGE_API_KEY` | For memory tools | - | Enables `reasoning_search` / `reasoning_relate` (embeddings + reranking). Without it those two tools return a config error; the other 30 are unaffected |
+| `VOYAGE_MODEL` | No | `voyage-4` | Voyage embedding model |
 | `DATABASE_PATH` | No | `./data/reasoning.db` | SQLite database location |
 | `LOG_LEVEL` | No | `info` | `error`, `warn`, `info`, `debug`, or `trace` |
 
@@ -199,7 +204,13 @@ Once installed, ask Claude to use reasoning tools:
 "Detect any cognitive biases in my previous reasoning"
 
 "Use counterfactual analysis: what if we had chosen Rust instead of Python?"
+
+"Search past sessions for anything I reasoned about rate limiting"   # reasoning_search
+
+"Relate this session to my earlier ones to spot conflicting conclusions"  # reasoning_relate
 ```
+
+> `reasoning_search` / `reasoning_relate` require `VOYAGE_API_KEY` (see [Semantic Memory](#semantic-memory)).
 
 ### Example: Tree Reasoning
 
@@ -234,6 +245,14 @@ Ask Claude: *"Run the architecture-decision preset to evaluate switching to Kube
 ### Session Persistence
 
 Reasoning state is stored in SQLite. Sessions can be resumed across conversations using checkpoints.
+
+### Semantic Memory
+
+`reasoning_search` and `reasoning_relate` rank past sessions by **meaning**, not keywords, using [Voyage AI](https://www.voyageai.com/):
+
+- Each session is embedded on `voyage-4` and cached (keyed on content **and** model). Search is cosine recall followed by a cross-encoder rerank (`rerank-2.5`); relate builds a depth-bounded, edge-capped session graph.
+- **Requires `VOYAGE_API_KEY`** — there is no keyword fallback. Without the key, the two memory tools return a clear config error and the other 30 tools work normally.
+- A background worker warms embeddings off the request path, so the first search/relate after writing a session isn't slowed by embedding.
 
 ### Self-Improvement (4-Phase)
 
@@ -291,12 +310,13 @@ MCP Reasoning Server (Rust)
 │  ├─ Advanced (3)│ ← Timeline, MCTS, Counterfactual
 │  └─ Infra (2)   │ ← Preset, Metrics
 └─────────────────┘
-    ↓                    ↓
-Anthropic API        SQLite DB
-(Claude models)      (persistence)
+    ↓              ↓              ↓
+Anthropic API   Voyage AI      SQLite DB
+(Claude models) (memory:       (persistence)
+                 embed+rerank)
 ```
 
-**Tech Stack**: Rust, [rmcp SDK](https://crates.io/crates/rmcp), SQLite, Anthropic API
+**Tech Stack**: Rust, [rmcp SDK](https://crates.io/crates/rmcp), SQLite, Anthropic API, Voyage AI
 
 ---
 
