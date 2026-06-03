@@ -78,7 +78,6 @@ mod tests {
             model: "claude-sonnet-4-20250514".to_string(),
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
-            voyage_context_model: "voyage-context-3".to_string(),
         }
     }
 
@@ -102,7 +101,6 @@ mod tests {
             model: "claude-sonnet-4-20250514".to_string(),
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
-            voyage_context_model: "voyage-context-3".to_string(),
         };
         let result = validate_config(&config);
         assert!(result.is_err());

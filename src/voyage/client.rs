@@ -12,8 +12,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 
 use super::types::{
-    ContextualizedRequest, ContextualizedResponse, EmbeddingRequest, EmbeddingResponse,
-    RerankRequest, RerankResponse, DEFAULT_CONTEXT_MODEL, DEFAULT_RERANK_MODEL,
+    EmbeddingRequest, EmbeddingResponse, RerankRequest, RerankResponse, DEFAULT_RERANK_MODEL,
     DEFAULT_VOYAGE_BASE_URL, DEFAULT_VOYAGE_MODEL,
 };
 use crate::anthropic::ClientConfig;
@@ -31,7 +30,6 @@ pub struct VoyageClient {
     config: ClientConfig,
     model: String,
     rerank_model: String,
-    context_model: String,
 }
 
 impl VoyageClient {
@@ -61,53 +59,6 @@ impl VoyageClient {
             config,
             model: model.into(),
             rerank_model: DEFAULT_RERANK_MODEL.to_string(),
-            context_model: DEFAULT_CONTEXT_MODEL.to_string(),
-        })
-    }
-
-    /// Override the contextualized-embedding model (default `voyage-context-3`).
-    #[must_use]
-    pub fn with_context_model(mut self, model: impl Into<String>) -> Self {
-        self.context_model = model.into();
-        self
-    }
-
-    /// The contextualized-embedding model name.
-    #[must_use]
-    pub fn context_model(&self) -> &str {
-        &self.context_model
-    }
-
-    /// Embed one document's ordered `chunks` with the contextualized model,
-    /// returning the **mean-pooled** document vector (one vector summarizing the
-    /// whole, with each chunk aware of its siblings).
-    pub async fn embed_contextualized(
-        &self,
-        chunks: &[String],
-        input_type: &str,
-    ) -> Result<Vec<f32>, ModeError> {
-        if chunks.is_empty() {
-            return Ok(Vec::new());
-        }
-        let request = ContextualizedRequest {
-            inputs: vec![chunks.to_vec()],
-            model: self.context_model.clone(),
-            input_type: Some(input_type.to_string()),
-            output_dimension: None,
-            output_dtype: None,
-        };
-        let resp: ContextualizedResponse = self
-            .post_with_retry("contextualizedembeddings", &request)
-            .await?;
-        let doc = resp
-            .data
-            .into_iter()
-            .next()
-            .ok_or_else(|| ModeError::ParseError {
-                message: "Voyage returned no contextualized document".to_string(),
-            })?;
-        mean_pool(doc.data.into_iter().map(|d| d.embedding)).ok_or_else(|| ModeError::ParseError {
-            message: "Voyage returned no contextualized chunk embeddings".to_string(),
         })
     }
 
@@ -283,33 +234,6 @@ impl VoyageClient {
     }
 }
 
-/// Element-wise mean of a set of equal-length vectors. Returns `None` if there
-/// are no vectors; ignores the degenerate empty-vector case.
-fn mean_pool(vectors: impl Iterator<Item = Vec<f32>>) -> Option<Vec<f32>> {
-    let mut sum: Vec<f32> = Vec::new();
-    let mut count = 0usize;
-    for v in vectors {
-        if sum.is_empty() {
-            sum = v;
-        } else if sum.len() == v.len() {
-            for (s, x) in sum.iter_mut().zip(v.iter()) {
-                *s += x;
-            }
-        } else {
-            continue; // skip mismatched lengths defensively
-        }
-        count += 1;
-    }
-    if count == 0 || sum.is_empty() {
-        return None;
-    }
-    let n = count as f32;
-    for s in &mut sum {
-        *s /= n;
-    }
-    Some(sum)
-}
-
 #[async_trait]
 impl EmbeddingProvider for VoyageClient {
     async fn embed_query(&self, text: &str) -> Result<Vec<f32>, ModeError> {
@@ -317,14 +241,6 @@ impl EmbeddingProvider for VoyageClient {
         out.pop().ok_or_else(|| ModeError::ParseError {
             message: "Voyage returned no embedding for query".to_string(),
         })
-    }
-
-    async fn embed_contextualized(
-        &self,
-        chunks: &[String],
-        input_type: &str,
-    ) -> Result<Vec<f32>, ModeError> {
-        Self::embed_contextualized(self, chunks, input_type).await
     }
 
     async fn embed_documents(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, ModeError> {
