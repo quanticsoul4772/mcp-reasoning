@@ -73,6 +73,42 @@ pub async fn embed_session_cached<E: EmbeddingProvider>(
     Ok(Some(vector))
 }
 
+/// Objective novelty for a set of texts, grounded in their embeddings.
+///
+/// Each text's novelty is its distance from its nearest neighbour among the
+/// others — `1 - max_cosine` — clamped to `[0,1]`. A text with a near-duplicate
+/// scores ~0; one unlike everything else scores ~1. With 0 or 1 texts every
+/// score is `1.0` (nothing to be similar to). Returns one score per input,
+/// in input order.
+pub async fn novelty_scores<E: EmbeddingProvider>(
+    embedder: &E,
+    texts: &[String],
+) -> Result<Vec<f64>, ModeError> {
+    if texts.len() <= 1 {
+        return Ok(vec![1.0; texts.len()]);
+    }
+    let vectors = embedder.embed_documents(texts).await?;
+    if vectors.len() != texts.len() {
+        return Err(ModeError::ParseError {
+            message: format!(
+                "embedding provider returned {} vectors for {} texts",
+                vectors.len(),
+                texts.len()
+            ),
+        });
+    }
+    let scores = (0..vectors.len())
+        .map(|i| {
+            let max_sim = (0..vectors.len())
+                .filter(|&j| j != i)
+                .map(|j| cosine(&vectors[i], &vectors[j]))
+                .fold(f32::MIN, f32::max);
+            f64::from((1.0 - max_sim).clamp(0.0, 1.0))
+        })
+        .collect();
+    Ok(scores)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)]
 mod tests {
@@ -98,6 +134,50 @@ mod tests {
         assert_eq!(cosine(&[], &[]), 0.0);
         assert_eq!(cosine(&[1.0, 2.0], &[1.0]), 0.0);
         assert_eq!(cosine(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_novelty_scores_flags_near_duplicates() {
+        use crate::traits::MockEmbeddingProvider;
+        let mut m = MockEmbeddingProvider::new();
+        // First two texts embed identically; the third is orthogonal to both.
+        m.expect_embed_documents().returning(|texts| {
+            Ok(texts
+                .iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    if i < 2 {
+                        vec![1.0_f32, 0.0]
+                    } else {
+                        vec![0.0_f32, 1.0]
+                    }
+                })
+                .collect())
+        });
+        let texts = vec![
+            "a".to_string(),
+            "a-dup".to_string(),
+            "different".to_string(),
+        ];
+        let n = novelty_scores(&m, &texts).await.expect("novelty");
+        // The duplicated pair each have a near-identical neighbour → novelty ~0.
+        assert!(n[0] < 1e-6 && n[1] < 1e-6);
+        // The orthogonal one is unlike both → max cosine 0 → novelty 1.0.
+        assert!((n[2] - 1.0).abs() < 1e-6);
+    }
+
+    #[tokio::test]
+    async fn test_novelty_scores_single_text_is_one() {
+        use crate::traits::MockEmbeddingProvider;
+        // 0 or 1 texts: nothing to compare against, embedder is never called.
+        let m = MockEmbeddingProvider::new();
+        assert_eq!(
+            novelty_scores(&m, &["only".to_string()])
+                .await
+                .expect("novelty"),
+            vec![1.0]
+        );
+        assert!(novelty_scores(&m, &[]).await.expect("novelty").is_empty());
     }
 
     #[tokio::test]

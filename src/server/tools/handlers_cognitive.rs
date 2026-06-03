@@ -14,6 +14,18 @@ use crate::server::responses::{
 use super::DEEP_THINKING;
 
 impl super::ReasoningServer {
+    /// Build a failed divergent response carrying `message`.
+    fn divergent_error(session_id: String, message: &str) -> DivergentResponse {
+        DivergentResponse {
+            thought_id: String::new(),
+            session_id,
+            perspectives: vec![],
+            challenged_assumptions: None,
+            synthesis: Some(format!("divergent failed: {message}")),
+            metadata: None,
+        }
+    }
+
     pub(super) async fn handle_divergent(&self, req: DivergentRequest) -> DivergentResponse {
         let timer = Timer::start();
         let challenge = req.challenge_assumptions.unwrap_or(false);
@@ -119,36 +131,70 @@ impl super::ReasoningServer {
                     }
                 };
 
+                let mut perspectives: Vec<Perspective> = resp
+                    .perspectives
+                    .into_iter()
+                    .map(|p| Perspective {
+                        viewpoint: p.viewpoint,
+                        content: p.content,
+                        novelty_score: p.novelty_score,
+                        key_insight: p.key_insight,
+                        blind_spots: p.blind_spots,
+                    })
+                    .collect();
+
+                // Ground novelty objectively in the perspectives' embeddings when
+                // Voyage is configured, replacing the model's self-assessed score.
+                // The grounding MUST succeed: an embed error (or a mismatched
+                // score count) fails the call — it is never swallowed in favour
+                // of the unverified self-assessed value. When Voyage is not
+                // configured the self-assessed score stands; divergent is a core
+                // tool and does not require the embedding backend.
+                if let Some(voyage) = self.state.voyage_client.as_deref() {
+                    let texts: Vec<String> =
+                        perspectives.iter().map(|p| p.content.clone()).collect();
+                    let scores = crate::modes::memory::novelty_scores(voyage, &texts).await;
+                    match scores {
+                        Ok(scores) if scores.len() == perspectives.len() => {
+                            for (p, s) in perspectives.iter_mut().zip(scores) {
+                                p.novelty_score = s;
+                            }
+                        }
+                        Ok(scores) => {
+                            return Self::divergent_error(
+                                resp.session_id,
+                                &format!(
+                                    "novelty grounding returned {} scores for {} perspectives",
+                                    scores.len(),
+                                    perspectives.len()
+                                ),
+                            );
+                        }
+                        Err(e) => {
+                            return Self::divergent_error(
+                                resp.session_id,
+                                &format!("novelty grounding failed: {e}"),
+                            );
+                        }
+                    }
+                }
+
                 DivergentResponse {
                     thought_id: resp.thought_id,
                     session_id: resp.session_id,
-                    perspectives: resp
-                        .perspectives
-                        .into_iter()
-                        .map(|p| Perspective {
-                            viewpoint: p.viewpoint,
-                            content: p.content,
-                            novelty_score: p.novelty_score,
-                            key_insight: p.key_insight,
-                            blind_spots: p.blind_spots,
-                        })
-                        .collect(),
+                    perspectives,
                     challenged_assumptions: resp.challenged_assumptions,
                     synthesis: resp.synthesis,
                     metadata,
                 }
             }
-            Err(e) => DivergentResponse {
-                thought_id: String::new(),
-                session_id: input_session_id,
-                perspectives: vec![],
-                challenged_assumptions: None,
-                synthesis: Some(format!(
-                    "divergent failed: {e}. Ensure content is non-empty. \
+            Err(e) => Self::divergent_error(
+                input_session_id,
+                &format!(
+                    "{e}. Ensure content is non-empty. \
                      Try reducing num_perspectives (2-4) or retry without force_rebellion."
-                )),
-                metadata: None,
-            },
+                ),
+            ),
         }
     }
 
