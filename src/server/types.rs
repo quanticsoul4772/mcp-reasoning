@@ -101,9 +101,7 @@ impl AppState {
                 config.voyage_model.clone(),
                 vconfig,
             ) {
-                Ok(c) => Some(Arc::new(
-                    c.with_context_model(config.voyage_context_model.clone()),
-                )),
+                Ok(c) => Some(Arc::new(c)),
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to build Voyage client; memory tools unavailable");
                     None
@@ -179,7 +177,6 @@ mod tests {
             model: "claude-sonnet-4-20250514".to_string(),
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
-            voyage_context_model: "voyage-context-3".to_string(),
         }
     }
 
