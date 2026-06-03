@@ -7,6 +7,7 @@
 //! - `relate_sessions` - Show relationships between sessions
 
 mod cluster;
+mod embed_worker;
 mod embeddings;
 mod list;
 mod relate;
@@ -15,6 +16,7 @@ mod search;
 mod similarity;
 mod types;
 
+pub use embed_worker::{process_pending_batch, run_embed_worker, EmbedBatchOutcome};
 pub use list::list_sessions;
 pub use relate::relate_sessions;
 pub use resume::resume_session;

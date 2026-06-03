@@ -47,6 +47,7 @@ mod agent_metrics;
 mod branch;
 mod checkpoint;
 mod core;
+mod embedding_queue;
 mod embeddings;
 mod graph;
 mod metrics;

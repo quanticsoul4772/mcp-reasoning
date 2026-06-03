@@ -42,6 +42,17 @@ impl SqliteStorage {
             .await
             .map_err(|e| Self::query_error("INSERT thoughts", format!("{e}")))?;
 
+        // Queue the session for background (re)embedding. Best-effort: a queue
+        // failure must not fail the thought write, and the cache is derived data
+        // recomputed on demand if the worker never runs.
+        if let Err(e) = self.enqueue_embedding(&thought.session_id).await {
+            tracing::warn!(
+                session_id = %thought.session_id,
+                error = %e,
+                "Failed to enqueue session for background embedding"
+            );
+        }
+
         Ok(())
     }
 

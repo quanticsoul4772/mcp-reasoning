@@ -112,6 +112,27 @@ impl McpServer {
             progress_tx,
         );
 
+        // Spawn the background embedding worker when Voyage is configured, so the
+        // embedding cost is paid ahead of the first search/relate instead of on
+        // that call. Shares the self-improvement shutdown signal.
+        if let Some(voyage) = state.voyage_client.clone() {
+            let worker_storage = state.storage.clone();
+            let worker_model = self.config.voyage_model.clone();
+            let worker_shutdown = shutdown_tx.subscribe();
+            tokio::spawn(async move {
+                tracing::info!("Embedding worker started");
+                crate::modes::memory::run_embed_worker(
+                    worker_storage,
+                    voyage,
+                    worker_model,
+                    std::time::Duration::from_secs(30),
+                    worker_shutdown,
+                )
+                .await;
+                tracing::info!("Embedding worker stopped");
+            });
+        }
+
         // Create reasoning server
         let server = ReasoningServer::new(Arc::new(state));
 
