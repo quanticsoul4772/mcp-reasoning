@@ -1,37 +1,41 @@
-//! Full-text search over reasoning sessions using SQLite FTS5.
+//! Semantic search over reasoning sessions using Voyage embeddings + reranking.
 //!
-//! Replaces hash-based embedding similarity with BM25-ranked keyword search.
-//! Sessions are ranked by relevance using SQLite's built-in BM25 algorithm;
-//! scores are normalized to [0.0, 1.0] within the result set.
+//! The query is embedded and ranked against each session's cached embedding by
+//! cosine similarity (recall); the top candidates are then reordered by the
+//! cross-encoder reranker (precision). Replaces the previous BM25 keyword search.
 
-use std::collections::HashMap;
+use std::cmp::Ordering;
 
 use crate::error::ModeError;
+use crate::modes::memory::embeddings::get_session_content;
+use crate::modes::memory::similarity::{cosine, embed_session_cached};
 use crate::modes::memory::types::SearchResult;
 use crate::storage::SqliteStorage;
-use crate::traits::AnthropicClientTrait;
+use crate::traits::EmbeddingProvider;
 use sqlx::Row;
 
-/// Search reasoning sessions using full-text BM25 search.
+/// Cosine candidates passed to the reranker before final ordering.
+const SEARCH_RERANK_CANDIDATES: usize = 50;
+
+/// Search reasoning sessions semantically.
 ///
 /// # Arguments
 ///
 /// * `storage` - Storage implementation
-/// * `_client` - Unused (kept for API compatibility with future embedding upgrades)
-/// * `query` - Search query (tokenized by SQLite FTS5)
+/// * `embedder` - Embedding/rerank provider
+/// * `model` - Embedding model name (recorded with cached vectors)
+/// * `query` - Free-text search query
 /// * `limit` - Maximum number of results
-/// * `min_similarity` - Minimum normalized similarity threshold (0.0–1.0).
-///   With BM25 normalization, all matched sessions have similarity ≥ 0.5.
-///   Use 0.5 (the default) to return all matches; use higher values to require
-///   the session to be in the top fraction of matched sessions.
+/// * `min_similarity` - Minimum cosine similarity for a session to be a candidate
 /// * `mode_filter` - Optional filter by reasoning mode
 ///
 /// # Returns
 ///
-/// Search results sorted by relevance (best match first)
-pub async fn search_sessions<C: AnthropicClientTrait>(
+/// Search results sorted by reranked relevance (best match first)
+pub async fn search_sessions<E: EmbeddingProvider>(
     storage: &SqliteStorage,
-    _client: &C,
+    embedder: &E,
+    model: &str,
     query: &str,
     limit: u32,
     min_similarity: f32,
@@ -41,86 +45,59 @@ pub async fn search_sessions<C: AnthropicClientTrait>(
         return Ok(vec![]);
     }
 
-    // Sanitize query for FTS5: escape double-quotes by doubling them
-    let safe_query = query.replace('"', "\"\"");
+    let query_vec = embedder.embed_query(query).await?;
 
-    // FTS5 MATCH query: get all matching thoughts with BM25 rank score.
-    // bm25() returns negative values; more negative = more relevant.
-    // We fetch more than needed to allow deduplication by session_id.
-    let rows = sqlx::query(
-        r"
-        SELECT
-            session_id,
-            bm25(thoughts_fts) AS score
-        FROM thoughts_fts
-        WHERE thoughts_fts MATCH ?
-        ORDER BY score ASC
-        LIMIT ?
-        ",
-    )
-    .bind(&safe_query)
-    .bind(i64::from(limit.saturating_mul(10))) // fetch extra for dedup + mode filtering
-    .fetch_all(&storage.get_pool())
-    .await
-    .map_err(|e| ModeError::StorageError {
-        message: format!("FTS5 search failed: {e}"),
-    })?;
+    let session_ids: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
+        .fetch_all(&storage.get_pool())
+        .await
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to list sessions: {e}"),
+        })?;
 
-    if rows.is_empty() {
+    // Recall: cosine of the query against every session's embedding.
+    let mut scored: Vec<(String, f32)> = Vec::new();
+    for sid in session_ids {
+        if let Some(vec) = embed_session_cached(storage, embedder, model, &sid).await? {
+            let similarity = cosine(&query_vec, &vec).clamp(0.0, 1.0);
+            if similarity >= min_similarity {
+                scored.push((sid, similarity));
+            }
+        }
+    }
+    if scored.is_empty() {
         return Ok(vec![]);
     }
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+    scored.truncate(SEARCH_RERANK_CANDIDATES);
 
-    // Deduplicate by session_id, keeping the best (most negative) BM25 score per session.
-    // Preserves the ORDER BY score ASC ordering from the query.
-    let mut best_per_session: HashMap<String, f64> = HashMap::new();
-    let mut session_order: Vec<String> = Vec::new();
-    for row in &rows {
-        let session_id: String = row.get("session_id");
-        let score: f64 = row.get("score");
-        let entry = best_per_session
-            .entry(session_id.clone())
-            .or_insert(f64::MAX);
-        if score < *entry {
-            *entry = score;
-        }
-        if !session_order.contains(&session_id) {
-            session_order.push(session_id);
-        }
+    // Precision: rerank the candidates with the cross-encoder. The relevance
+    // score replaces cosine as the displayed similarity. Fall back to cosine
+    // order if the reranker returns nothing.
+    let candidate_ids: Vec<String> = scored.iter().map(|(id, _)| id.clone()).collect();
+    let mut contents: Vec<String> = Vec::with_capacity(candidate_ids.len());
+    for id in &candidate_ids {
+        contents.push(get_session_content(storage, id).await?);
     }
+    let reranked = embedder.rerank(query, &contents, None).await?;
+    let ordered: Vec<(String, f64)> = if reranked.is_empty() {
+        scored
+            .iter()
+            .map(|(id, s)| (id.clone(), f64::from(*s)))
+            .collect()
+    } else {
+        reranked
+            .into_iter()
+            .filter_map(|(i, score)| candidate_ids.get(i).map(|id| (id.clone(), score)))
+            .collect()
+    };
 
-    // Sort sessions by their best score (most negative = most relevant first)
-    session_order.sort_by(|a, b| {
-        let score_a = best_per_session[a];
-        let score_b = best_per_session[b];
-        score_a
-            .partial_cmp(&score_b)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    // Normalize BM25 scores to [0.5, 1.0]:
-    //   rank 1 (best match) → 1.0, rank N (worst match) → 0.5
-    let count = session_order.len();
-    let scored: Vec<(String, f32)> = session_order
-        .into_iter()
-        .enumerate()
-        .map(|(i, session_id)| {
-            let similarity = if count == 1 {
-                1.0_f32
-            } else {
-                1.0 - (i as f32 / (count - 1) as f32) * 0.5
-            };
-            (session_id, similarity)
-        })
-        .filter(|(_, sim)| *sim >= min_similarity)
-        .collect();
-
-    // Load full session data, applying mode filter
+    // Materialize results, applying the mode filter and the limit.
     let mut results = Vec::new();
-    for (session_id, similarity_score) in scored {
+    for (session_id, score) in ordered {
         if results.len() >= limit as usize {
             break;
         }
-        if let Some(result) = load_search_result(storage, &session_id, similarity_score).await? {
+        if let Some(result) = load_search_result(storage, &session_id, score as f32).await? {
             if let Some(ref filter) = mode_filter {
                 match result.primary_mode.as_deref() {
                     Some(mode) if mode == filter => {}
@@ -181,232 +158,134 @@ async fn load_search_result(
 mod tests {
     use super::*;
     use crate::storage::{SqliteStorage, StoredThought};
-    use crate::test_utils::mock_anthropic_success;
+    use crate::traits::MockEmbeddingProvider;
 
-    #[tokio::test]
-    async fn test_search_empty_db() {
-        let storage = SqliteStorage::new_in_memory()
+    /// An embedder where any text mentioning "rust" maps to [1, 0] and
+    /// everything else to [0, 1], so a "rust" query is similar only to rust
+    /// sessions. Rerank preserves cosine order.
+    fn topic_embedder() -> MockEmbeddingProvider {
+        fn vec_for(text: &str) -> Vec<f32> {
+            if text.to_lowercase().contains("rust") {
+                vec![1.0_f32, 0.0]
+            } else {
+                vec![0.0_f32, 1.0]
+            }
+        }
+        let mut m = MockEmbeddingProvider::new();
+        m.expect_embed_query().returning(|q| Ok(vec_for(q)));
+        m.expect_embed_documents()
+            .returning(|texts| Ok(texts.iter().map(|t| vec_for(t)).collect()));
+        m.expect_rerank().returning(|_q, docs, _k| {
+            Ok((0..docs.len())
+                .map(|i| (i, 1.0 - i as f64 * 0.01))
+                .collect())
+        });
+        m
+    }
+
+    async fn add_session(storage: &SqliteStorage, mode: &str, text: &str) -> String {
+        let session = storage.create_session().await.expect("create session");
+        storage
+            .save_stored_thought(&StoredThought::new(
+                uuid::Uuid::new_v4().to_string(),
+                &session.id,
+                mode,
+                text,
+                0.8,
+            ))
             .await
-            .expect("create storage");
-        let client = mock_anthropic_success("", 0, 0);
-
-        let results = search_sessions(&storage, &client, "test query", 5, 0.5, None)
-            .await
-            .expect("search sessions");
-
-        assert_eq!(results.len(), 0);
+            .expect("save thought");
+        session.id
     }
 
     #[tokio::test]
     async fn test_search_empty_query() {
-        let storage = SqliteStorage::new_in_memory()
+        let storage = SqliteStorage::new_in_memory().await.expect("storage");
+        let results = search_sessions(&storage, &topic_embedder(), "voyage-4", "", 5, 0.0, None)
             .await
-            .expect("create storage");
-        let client = mock_anthropic_success("", 0, 0);
-
-        let results = search_sessions(&storage, &client, "", 5, 0.0, None)
-            .await
-            .expect("search sessions");
-
+            .expect("search");
         assert_eq!(results.len(), 0);
     }
 
     #[tokio::test]
-    async fn test_search_finds_matching_session() {
-        let storage = SqliteStorage::new_in_memory()
-            .await
-            .expect("create storage");
-        let client = mock_anthropic_success("", 0, 0);
+    async fn test_search_empty_db() {
+        let storage = SqliteStorage::new_in_memory().await.expect("storage");
+        let results = search_sessions(
+            &storage,
+            &topic_embedder(),
+            "voyage-4",
+            "rust",
+            5,
+            0.5,
+            None,
+        )
+        .await
+        .expect("search");
+        assert_eq!(results.len(), 0);
+    }
 
-        let session = storage.create_session().await.expect("create session");
-        let thought = StoredThought::new(
-            uuid::Uuid::new_v4().to_string(),
-            &session.id,
-            "linear",
-            "Deep analysis of Rust async programming patterns",
-            0.8,
-        );
-        storage
-            .save_stored_thought(&thought)
-            .await
-            .expect("save thought");
+    #[tokio::test]
+    async fn test_search_finds_semantically_similar() {
+        let storage = SqliteStorage::new_in_memory().await.expect("storage");
+        let rust_id = add_session(&storage, "linear", "Rust async programming patterns").await;
+        let _other = add_session(&storage, "linear", "cooking pasta recipes").await;
 
-        let results = search_sessions(&storage, &client, "async programming", 5, 0.0, None)
-            .await
-            .expect("search sessions");
+        // Query embeds to the rust vector; only the rust session clears 0.5.
+        let results = search_sessions(
+            &storage,
+            &topic_embedder(),
+            "voyage-4",
+            "rust",
+            5,
+            0.5,
+            None,
+        )
+        .await
+        .expect("search");
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].session_id, session.id);
-        assert!(results[0].similarity_score > 0.0);
+        assert_eq!(results[0].session_id, rust_id);
     }
 
     #[tokio::test]
-    async fn test_search_no_match_returns_empty() {
-        let storage = SqliteStorage::new_in_memory()
-            .await
-            .expect("create storage");
-        let client = mock_anthropic_success("", 0, 0);
+    async fn test_search_no_match_below_threshold_is_empty() {
+        let storage = SqliteStorage::new_in_memory().await.expect("storage");
+        add_session(&storage, "linear", "cooking pasta recipes").await;
 
-        let session = storage.create_session().await.expect("create session");
-        let thought = StoredThought::new(
-            uuid::Uuid::new_v4().to_string(),
-            &session.id,
-            "linear",
-            "Discussion about machine learning neural networks",
-            0.8,
-        );
-        storage
-            .save_stored_thought(&thought)
-            .await
-            .expect("save thought");
-
-        // Search for something completely unrelated
-        let results = search_sessions(&storage, &client, "cooking recipes", 5, 0.5, None)
-            .await
-            .expect("search sessions");
-
+        // "rust" query is orthogonal (cosine 0) to the cooking session → empty.
+        let results = search_sessions(
+            &storage,
+            &topic_embedder(),
+            "voyage-4",
+            "rust",
+            5,
+            0.5,
+            None,
+        )
+        .await
+        .expect("search");
         assert_eq!(results.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_search_ranking_best_first() {
-        let storage = SqliteStorage::new_in_memory()
-            .await
-            .expect("create storage");
-        let client = mock_anthropic_success("", 0, 0);
-
-        // Session 1: mentions Rust once
-        let session1 = storage.create_session().await.expect("create session");
-        storage
-            .save_stored_thought(&StoredThought::new(
-                uuid::Uuid::new_v4().to_string(),
-                &session1.id,
-                "linear",
-                "Rust programming language overview",
-                0.8,
-            ))
-            .await
-            .expect("save thought");
-
-        // Session 2: mentions Rust multiple times (should score higher)
-        let session2 = storage.create_session().await.expect("create session");
-        storage
-            .save_stored_thought(&StoredThought::new(
-                uuid::Uuid::new_v4().to_string(),
-                &session2.id,
-                "linear",
-                "Rust Rust Rust: comprehensive guide to Rust borrow checker and Rust lifetimes",
-                0.8,
-            ))
-            .await
-            .expect("save thought");
-
-        let results = search_sessions(&storage, &client, "Rust", 5, 0.0, None)
-            .await
-            .expect("search sessions");
-
-        assert_eq!(results.len(), 2);
-        // Best match should have highest similarity score
-        assert!(results[0].similarity_score >= results[1].similarity_score);
-        // Best match is the one with more Rust mentions
-        assert_eq!(results[0].session_id, session2.id);
     }
 
     #[tokio::test]
     async fn test_search_mode_filter() {
-        let storage = SqliteStorage::new_in_memory()
-            .await
-            .expect("create storage");
-        let client = mock_anthropic_success("", 0, 0);
+        let storage = SqliteStorage::new_in_memory().await.expect("storage");
+        let linear_id = add_session(&storage, "linear", "Rust ownership model").await;
+        let _tree = add_session(&storage, "tree", "Rust borrow checker").await;
 
-        let session1 = storage.create_session().await.expect("create session");
-        storage
-            .save_stored_thought(&StoredThought::new(
-                uuid::Uuid::new_v4().to_string(),
-                &session1.id,
-                "linear",
-                "algorithm analysis and complexity",
-                0.8,
-            ))
-            .await
-            .expect("save thought");
-
-        let session2 = storage.create_session().await.expect("create session");
-        storage
-            .save_stored_thought(&StoredThought::new(
-                uuid::Uuid::new_v4().to_string(),
-                &session2.id,
-                "tree",
-                "algorithm branching and complexity",
-                0.8,
-            ))
-            .await
-            .expect("save thought");
-
-        // Filter to only linear sessions
         let results = search_sessions(
             &storage,
-            &client,
-            "algorithm complexity",
+            &topic_embedder(),
+            "voyage-4",
+            "rust",
             5,
-            0.0,
+            0.5,
             Some("linear".to_string()),
         )
         .await
-        .expect("search sessions");
+        .expect("search");
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].session_id, session1.id);
-    }
-
-    #[tokio::test]
-    async fn test_search_mode_filter_excludes_no_mode_sessions() {
-        // Regression test: sessions with no matching mode should be excluded
-        // even if primary_mode is None (previously they slipped through the filter)
-        let storage = SqliteStorage::new_in_memory()
-            .await
-            .expect("create storage");
-        let client = mock_anthropic_success("", 0, 0);
-
-        // Session using "linear" mode
-        let s_linear = storage.create_session().await.expect("create session");
-        storage
-            .save_stored_thought(&StoredThought::new(
-                uuid::Uuid::new_v4().to_string(),
-                &s_linear.id,
-                "linear",
-                "graph traversal algorithm depth first",
-                0.8,
-            ))
-            .await
-            .expect("save thought");
-
-        // Session using "tree" mode
-        let s_tree = storage.create_session().await.expect("create session");
-        storage
-            .save_stored_thought(&StoredThought::new(
-                uuid::Uuid::new_v4().to_string(),
-                &s_tree.id,
-                "tree",
-                "graph traversal algorithm breadth first",
-                0.8,
-            ))
-            .await
-            .expect("save thought");
-
-        // Search with mode_filter = "linear" — only s_linear should appear
-        let results = search_sessions(
-            &storage,
-            &client,
-            "graph traversal algorithm",
-            5,
-            0.0,
-            Some("linear".to_string()),
-        )
-        .await
-        .expect("search sessions");
-
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].session_id, s_linear.id);
+        assert_eq!(results[0].session_id, linear_id);
     }
 }

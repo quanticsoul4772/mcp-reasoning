@@ -394,6 +394,25 @@ async fn test_reasoning_search_tool() {
 }
 
 #[tokio::test]
+async fn test_reasoning_search_requires_voyage_key() {
+    // No VOYAGE_API_KEY on the test server → semantic search returns a clear
+    // config error instead of a silent empty result (no BM25 fallback).
+    let server = create_test_server().await;
+    let resp = server
+        .reasoning_search(Parameters(SearchSessionsRequest {
+            query: "anything".to_string(),
+            limit: Some(5),
+            min_similarity: Some(0.5),
+            mode_filter: None,
+        }))
+        .await;
+    assert!(resp.results.is_empty());
+    assert_eq!(resp.count, 0);
+    let err = resp.error.expect("missing-key error surfaced");
+    assert!(err.contains("VOYAGE_API_KEY"), "{err}");
+}
+
+#[tokio::test]
 async fn test_reasoning_relate_tool() {
     let server = create_test_server().await;
     let req = RelateSessionsRequest {
