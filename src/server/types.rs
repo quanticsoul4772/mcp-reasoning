@@ -152,6 +152,8 @@ mod tests {
             factory_timeout_ms: 30000,
             max_retries: 3,
             model: "claude-sonnet-4-20250514".to_string(),
+            voyage_api_key: None,
+            voyage_model: "voyage-4".to_string(),
         }
     }
 

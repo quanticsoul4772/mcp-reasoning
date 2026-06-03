@@ -67,6 +67,7 @@ pub mod server;
 pub mod skills;
 pub mod storage;
 pub mod traits;
+pub mod voyage;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

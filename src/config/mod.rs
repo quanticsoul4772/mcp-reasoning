@@ -22,6 +22,8 @@
 //!     factory_timeout_ms: 30000,
 //!     max_retries: 3,
 //!     model: DEFAULT_MODEL.to_string(),
+//!     voyage_api_key: None,
+//!     voyage_model: "voyage-4".to_string(),
 //! };
 //!
 //! println!("Using model: {}", config.model);
@@ -99,6 +101,11 @@ pub struct Config {
     pub max_retries: u32,
     /// Anthropic model to use.
     pub model: String,
+    /// Voyage AI API key for embeddings/reranking (memory tools). Optional at
+    /// the process level; the memory tools require it and error clearly if absent.
+    pub voyage_api_key: Option<SecretString>,
+    /// Voyage embedding model to use (default `voyage-4`).
+    pub voyage_model: String,
 }
 
 impl Config {
@@ -153,6 +160,10 @@ impl Config {
 
         let model = std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into());
 
+        let voyage_api_key = std::env::var("VOYAGE_API_KEY").ok().map(SecretString::new);
+        let voyage_model = std::env::var("VOYAGE_MODEL")
+            .unwrap_or_else(|_| crate::voyage::DEFAULT_VOYAGE_MODEL.into());
+
         let config = Self {
             api_key: SecretString::new(api_key),
             database_path,
@@ -163,6 +174,8 @@ impl Config {
             factory_timeout_ms,
             max_retries,
             model,
+            voyage_api_key,
+            voyage_model,
         };
 
         validate_config(&config)?;
@@ -190,6 +203,8 @@ impl Config {
     /// #     factory_timeout_ms: 30_000,
     /// #     max_retries: 3,
     /// #     model: "claude-sonnet-4-20250514".into(),
+    /// #     voyage_api_key: None,
+    /// #     voyage_model: "voyage-4".into(),
     /// # };
     ///
     /// assert_eq!(config.timeout_for_thinking_budget(None), 30_000);
@@ -449,6 +464,8 @@ mod tests {
             factory_timeout_ms: 30000,
             max_retries: 2,
             model: "test-model".to_string(),
+            voyage_api_key: None,
+            voyage_model: "voyage-4".to_string(),
         };
 
         let cloned = config.clone();
@@ -467,6 +484,8 @@ mod tests {
             factory_timeout_ms: 30000,
             max_retries: 2,
             model: "test-model".to_string(),
+            voyage_api_key: None,
+            voyage_model: "voyage-4".to_string(),
         };
 
         let debug = format!("{config:?}");
