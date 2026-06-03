@@ -484,7 +484,7 @@ pub struct SearchSessionsRequest {
     pub query: String,
     /// Maximum number of results.
     pub limit: Option<u32>,
-    /// Minimum similarity score (0.0-1.0).
+    /// Minimum query→session cosine similarity (0.0-1.0, default 0.35).
     pub min_similarity: Option<f32>,
     /// Filter by reasoning mode.
     pub mode_filter: Option<String>,
@@ -497,7 +497,7 @@ pub struct RelateSessionsRequest {
     pub session_id: Option<String>,
     /// Maximum graph depth.
     pub depth: Option<u32>,
-    /// Minimum relationship strength (0.0-1.0).
+    /// Minimum session→session cosine for a similarity edge (0.0-1.0, default 0.6).
     pub min_strength: Option<f32>,
 }
 

@@ -194,7 +194,11 @@ impl super::ReasoningServer {
             &self.state.config.voyage_model,
             &req.query,
             req.limit.unwrap_or(10),
-            req.min_similarity.unwrap_or(0.5),
+            // Recall threshold on query→session cosine. voyage-4 query→session
+            // scores run low (measured noise floor ~0.26; relevant matches
+            // ~0.4–0.69), so 0.5 silently dropped real matches. 0.35 sits above
+            // the noise floor and leans toward recall — rerank handles precision.
+            req.min_similarity.unwrap_or(0.35),
             req.mode_filter,
         )
         .await;
@@ -276,7 +280,12 @@ impl super::ReasoningServer {
             &self.state.config.voyage_model,
             req.session_id,
             req.depth.unwrap_or(2),
-            req.min_strength.unwrap_or(0.5),
+            // Edge threshold on session→session cosine. voyage-4 session→session
+            // scores run high (measured median 0.42, p90 0.60), so 0.5 linked
+            // ~25% of all pairs into a hairball. 0.6 (~p90) keeps only notably
+            // similar pairs as edges. (Corpus is duplicate-heavy, so this is a
+            // reasonable floor, not a precision-tuned constant.)
+            req.min_strength.unwrap_or(0.6),
         )
         .await;
 
