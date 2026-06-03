@@ -34,6 +34,9 @@ pub struct AppState {
     pub storage: Arc<SqliteStorage>,
     /// Anthropic client for LLM calls.
     pub client: Arc<AnthropicClient>,
+    /// Voyage AI client for embeddings/reranking (memory tools). `None` when
+    /// `VOYAGE_API_KEY` is unset — the memory tools then return a config error.
+    pub voyage_client: Option<Arc<crate::voyage::VoyageClient>>,
     /// Server configuration.
     pub config: Arc<Config>,
     /// Metrics collector for tracking tool usage.
@@ -86,9 +89,29 @@ impl AppState {
     ) -> Self {
         let preset_registry = PresetRegistry::new();
         let skill_registry = SkillRegistry::with_presets(&preset_registry);
+        // Build the Voyage client from config when a key is present. Construction
+        // failure (not a missing key) is logged and treated as unavailable; the
+        // memory tools surface a clear error rather than silently degrading.
+        let voyage_client = config.voyage_api_key.as_ref().and_then(|key| {
+            let vconfig = crate::anthropic::ClientConfig::default()
+                .with_timeout_ms(config.request_timeout_ms)
+                .with_max_retries(config.max_retries);
+            match crate::voyage::VoyageClient::new(
+                key.expose(),
+                config.voyage_model.clone(),
+                vconfig,
+            ) {
+                Ok(c) => Some(Arc::new(c)),
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to build Voyage client; memory tools unavailable");
+                    None
+                }
+            }
+        });
         Self {
             storage: Arc::new(storage),
             client: Arc::new(client),
+            voyage_client,
             config: Arc::new(config),
             metrics,
             presets: Arc::new(preset_registry),

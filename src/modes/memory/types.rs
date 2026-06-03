@@ -115,7 +115,7 @@ pub struct RelationshipEdge {
 }
 
 /// Type of relationship between sessions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RelationshipType {
     /// Session B continues from session A.

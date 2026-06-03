@@ -12,6 +12,7 @@ mod list;
 mod relate;
 mod resume;
 mod search;
+mod similarity;
 mod types;
 
 pub use list::list_sessions;

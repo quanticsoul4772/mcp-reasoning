@@ -1650,6 +1650,10 @@ pub struct RelateSessionsResponse {
     pub nodes: Vec<SessionNode>,
     /// Relationship edges.
     pub edges: Vec<RelationshipEdge>,
+    /// Set when the analysis could not run — notably when the memory tools'
+    /// required `VOYAGE_API_KEY` is unset, or when the embedding backend failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ResponseMetadata>,

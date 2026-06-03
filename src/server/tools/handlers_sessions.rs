@@ -226,10 +226,31 @@ impl super::ReasoningServer {
             "Analyzing session relationships"
         );
 
-        // Call memory::relate function
+        // Semantic relation requires the Voyage embedding backend. Without the
+        // key it is unavailable — return a clear config error, not a silent
+        // empty graph (no BM25 fallback).
+        let Some(voyage) = self.state.voyage_client.clone() else {
+            self.state.metrics.record(MetricEvent::new(
+                "relate_sessions",
+                timer.elapsed_ms(),
+                false,
+            ));
+            return RelateSessionsResponse {
+                nodes: vec![],
+                edges: vec![],
+                error: Some(
+                    "reasoning_relate requires VOYAGE_API_KEY to be set; semantic relation \
+                     is unavailable without it."
+                        .to_string(),
+                ),
+                metadata: None,
+            };
+        };
+
         let result = crate::modes::memory::relate_sessions(
             &self.state.storage,
-            &self.state.client,
+            voyage.as_ref(),
+            &self.state.config.voyage_model,
             req.session_id,
             req.depth.unwrap_or(2),
             req.min_strength.unwrap_or(0.5),
@@ -264,6 +285,7 @@ impl super::ReasoningServer {
                         strength: e.strength,
                     })
                     .collect(),
+                error: None,
                 metadata: None,
             },
             Err(e) => {
@@ -275,6 +297,7 @@ impl super::ReasoningServer {
                 RelateSessionsResponse {
                     nodes: vec![],
                     edges: vec![],
+                    error: Some(format!("relationship analysis failed: {e}")),
                     metadata: None,
                 }
             }

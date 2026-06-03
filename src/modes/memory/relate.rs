@@ -5,19 +5,24 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::error::ModeError;
 use crate::modes::memory::cluster::{compute_clusters, dedup_edges};
 use crate::modes::memory::embeddings::get_session_content;
+use crate::modes::memory::similarity::{cosine, embed_session_cached};
 use crate::modes::memory::types::{
     RelationshipEdge, RelationshipGraph, RelationshipType, SessionNode,
 };
 use crate::storage::SqliteStorage;
-use crate::traits::AnthropicClientTrait;
+use crate::traits::EmbeddingProvider;
 use sqlx::Row;
+
+/// Cap on similar-session edges emitted per source session.
+const MAX_SIMILAR_SESSIONS: usize = 50;
 
 /// Analyze relationships between reasoning sessions.
 ///
 /// # Arguments
 ///
 /// * `storage` - Storage implementation
-/// * `client` - Anthropic client for embeddings
+/// * `embedder` - Embedding/rerank provider for semantic similarity
+/// * `model` - Embedding model name (recorded with cached vectors)
 /// * `session_id` - Optional specific session to analyze (None = all sessions)
 /// * `depth` - How many levels of relationships to traverse
 /// * `min_strength` - Minimum relationship strength (0.0-1.0)
@@ -25,24 +30,26 @@ use sqlx::Row;
 /// # Returns
 ///
 /// Relationship graph with nodes and edges
-pub async fn relate_sessions<C: AnthropicClientTrait>(
+pub async fn relate_sessions<E: EmbeddingProvider>(
     storage: &SqliteStorage,
-    client: &C,
+    embedder: &E,
+    model: &str,
     session_id: Option<String>,
     depth: u32,
     min_strength: f32,
 ) -> Result<RelationshipGraph, ModeError> {
     if let Some(id) = session_id {
-        analyze_session_relationships(storage, client, &id, depth, min_strength).await
+        analyze_session_relationships(storage, embedder, model, &id, depth, min_strength).await
     } else {
-        analyze_all_relationships(storage, client, min_strength).await
+        analyze_all_relationships(storage, embedder, model, min_strength).await
     }
 }
 
 /// Analyze relationships for a specific session (BFS traversal).
-async fn analyze_session_relationships<C: AnthropicClientTrait>(
+async fn analyze_session_relationships<E: EmbeddingProvider>(
     storage: &SqliteStorage,
-    client: &C,
+    embedder: &E,
+    model: &str,
     session_id: &str,
     depth: u32,
     min_strength: f32,
@@ -76,7 +83,8 @@ async fn analyze_session_relationships<C: AnthropicClientTrait>(
         }
 
         // Find related sessions
-        let related = find_related_sessions(storage, client, &current_id, min_strength).await?;
+        let related =
+            find_related_sessions(storage, embedder, model, &current_id, min_strength).await?;
 
         for (related_id, relationship_type, strength) in related {
             // Add edge
@@ -104,9 +112,10 @@ async fn analyze_session_relationships<C: AnthropicClientTrait>(
 }
 
 /// Analyze all relationships in the database.
-async fn analyze_all_relationships<C: AnthropicClientTrait>(
+async fn analyze_all_relationships<E: EmbeddingProvider>(
     storage: &SqliteStorage,
-    client: &C,
+    embedder: &E,
+    model: &str,
     min_strength: f32,
 ) -> Result<RelationshipGraph, ModeError> {
     let session_ids: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
@@ -128,7 +137,8 @@ async fn analyze_all_relationships<C: AnthropicClientTrait>(
         let content = get_session_content(storage, session_id).await?;
         session_contents.insert(session_id.clone(), content);
 
-        let related = find_related_sessions(storage, client, session_id, min_strength).await?;
+        let related =
+            find_related_sessions(storage, embedder, model, session_id, min_strength).await?;
         for (related_id, relationship_type, strength) in related {
             edges.push(RelationshipEdge {
                 from_session: session_id.clone(),
@@ -187,16 +197,17 @@ async fn load_session_node(
 }
 
 /// Find all sessions related to the given session.
-async fn find_related_sessions<C: AnthropicClientTrait>(
+async fn find_related_sessions<E: EmbeddingProvider>(
     storage: &SqliteStorage,
-    client: &C,
+    embedder: &E,
+    model: &str,
     session_id: &str,
     min_strength: f32,
 ) -> Result<Vec<(String, RelationshipType, f32)>, ModeError> {
     let mut relationships = Vec::new();
 
     // Find similar sessions by embedding
-    let similar = find_similar_sessions(storage, client, session_id, min_strength).await?;
+    let similar = find_similar_sessions(storage, embedder, model, session_id, min_strength).await?;
     relationships.extend(similar);
 
     // Find sessions with shared modes
@@ -210,111 +221,49 @@ async fn find_related_sessions<C: AnthropicClientTrait>(
     Ok(relationships)
 }
 
-/// Find sessions with similar content using FTS5 full-text search.
+/// Find sessions with semantically similar content using embeddings.
 ///
-/// Extracts significant keywords from the source session and searches
-/// for other sessions containing those keywords. Similarity is derived
-/// from BM25 rank normalized to [0.5, 1.0].
-async fn find_similar_sessions<C: AnthropicClientTrait>(
+/// Embeds the source session (cached by content hash) and ranks every other
+/// session by cosine similarity of their embeddings, keeping those at or above
+/// `min_similarity`. Cosine is the natural metric for session↔session
+/// similarity; query→session reranking lives in the search path.
+async fn find_similar_sessions<E: EmbeddingProvider>(
     storage: &SqliteStorage,
-    _client: &C,
+    embedder: &E,
+    model: &str,
     session_id: &str,
     min_similarity: f32,
 ) -> Result<Vec<(String, RelationshipType, f32)>, ModeError> {
-    let content = get_session_content(storage, session_id).await?;
-    if content.is_empty() {
+    let Some(source_vec) = embed_session_cached(storage, embedder, model, session_id).await? else {
         return Ok(vec![]);
-    }
+    };
 
-    // Extract query terms: lowercase words with 4+ chars (skip common short words)
-    let query_terms: Vec<String> = content
-        .split_whitespace()
-        .map(str::to_lowercase)
-        .map(|w| {
-            // Strip common punctuation from word boundaries
-            w.trim_matches(|c: char| !c.is_alphanumeric()).to_string()
-        })
-        .filter(|w| w.len() >= 4)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .take(20) // Use top 20 unique terms for the query
-        .collect();
+    let other_ids: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions WHERE id != ?")
+        .bind(session_id)
+        .fetch_all(&storage.get_pool())
+        .await
+        .map_err(|e| ModeError::StorageError {
+            message: format!("Failed to list sessions: {e}"),
+        })?;
 
-    if query_terms.is_empty() {
-        return Ok(vec![]);
-    }
-
-    // Build FTS5 OR query from extracted terms (each term double-quoted for exact match)
-    let fts_query = query_terms
-        .iter()
-        .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
-        .collect::<Vec<_>>()
-        .join(" OR ");
-
-    // Find other sessions matching these terms, ranked by BM25
-    let rows = sqlx::query(
-        r"
-        SELECT
-            session_id,
-            bm25(thoughts_fts) AS score
-        FROM thoughts_fts
-        WHERE thoughts_fts MATCH ?
-          AND session_id != ?
-        ORDER BY score ASC
-        LIMIT 50
-        ",
-    )
-    .bind(&fts_query)
-    .bind(session_id)
-    .fetch_all(&storage.get_pool())
-    .await
-    .map_err(|e| ModeError::StorageError {
-        message: format!("FTS5 similarity search failed: {e}"),
-    })?;
-
-    if rows.is_empty() {
-        return Ok(vec![]);
-    }
-
-    // Deduplicate by session_id (keep best BM25 score per session)
-    let mut best_per_session: HashMap<String, f64> = HashMap::new();
-    let mut session_order: Vec<String> = Vec::new();
-    for row in &rows {
-        let sid: String = row.get("session_id");
-        let score: f64 = row.get("score");
-        let entry = best_per_session.entry(sid.clone()).or_insert(f64::MAX);
-        if score < *entry {
-            *entry = score;
-        }
-        if !session_order.contains(&sid) {
-            session_order.push(sid);
+    let mut scored: Vec<(String, f32)> = Vec::new();
+    for other in other_ids {
+        if let Some(other_vec) = embed_session_cached(storage, embedder, model, &other).await? {
+            let similarity = cosine(&source_vec, &other_vec).clamp(0.0, 1.0);
+            if similarity >= min_similarity {
+                scored.push((other, similarity));
+            }
         }
     }
 
-    // Sort by best score (most negative = most relevant)
-    session_order.sort_by(|a, b| {
-        best_per_session[a]
-            .partial_cmp(&best_per_session[b])
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    // Most-similar first; cap the number of edges per source session.
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(MAX_SIMILAR_SESSIONS);
 
-    // Normalize to [0.5, 1.0] similarity range
-    let count = session_order.len();
-    let results = session_order
+    Ok(scored
         .into_iter()
-        .enumerate()
-        .map(|(i, sid)| {
-            let similarity = if count == 1 {
-                1.0_f32
-            } else {
-                1.0 - (i as f32 / (count - 1) as f32) * 0.5
-            };
-            (sid, RelationshipType::SimilarTopic, similarity)
-        })
-        .filter(|(_, _, sim)| *sim >= min_similarity)
-        .collect();
-
-    Ok(results)
+        .map(|(sid, sim)| (sid, RelationshipType::SimilarTopic, sim))
+        .collect())
 }
 
 /// Find sessions that use similar modes.
@@ -395,47 +344,80 @@ async fn find_temporal_neighbors(
 mod tests {
     use super::*;
     use crate::storage::{SqliteStorage, StoredThought};
-    use crate::test_utils::mock_anthropic_success;
+    use crate::traits::MockEmbeddingProvider;
+
+    /// An embedder that returns a fixed unit vector for every input, so any two
+    /// sessions with content are maximally similar (cosine 1.0).
+    fn constant_embedder() -> MockEmbeddingProvider {
+        let mut m = MockEmbeddingProvider::new();
+        m.expect_embed_documents()
+            .returning(|texts| Ok(texts.iter().map(|_| vec![1.0_f32, 0.0, 0.0]).collect()));
+        m
+    }
+
+    async fn add_session_with_thought(storage: &SqliteStorage, text: &str) -> String {
+        let session = storage.create_session().await.expect("create session");
+        storage
+            .save_stored_thought(&StoredThought::new(
+                uuid::Uuid::new_v4().to_string(),
+                &session.id,
+                "linear",
+                text,
+                0.8,
+            ))
+            .await
+            .expect("save thought");
+        session.id
+    }
 
     #[tokio::test]
     async fn test_relate_empty() {
         let storage = SqliteStorage::new_in_memory()
             .await
             .expect("create storage");
-        let client = mock_anthropic_success("", 0, 0);
-
-        let graph = relate_sessions(&storage, &client, None, 2, 0.5)
+        let graph = relate_sessions(&storage, &constant_embedder(), "voyage-4", None, 2, 0.5)
             .await
             .expect("relate sessions");
-
         assert_eq!(graph.nodes.len(), 0);
         assert_eq!(graph.edges.len(), 0);
     }
 
     #[tokio::test]
-    async fn test_relate_single_session() {
+    async fn test_relate_single_session_has_no_similar_edges() {
         let storage = SqliteStorage::new_in_memory()
             .await
             .expect("create storage");
-        let client = mock_anthropic_success("", 0, 0);
+        let id = add_session_with_thought(&storage, "Rust async patterns").await;
 
-        let session = storage.create_session().await.expect("create session");
-        let thought = StoredThought::new(
-            uuid::Uuid::new_v4().to_string(),
-            &session.id,
-            "linear",
-            "Test",
-            0.8,
-        );
-        storage
-            .save_stored_thought(&thought)
-            .await
-            .expect("save thought");
-
-        let graph = relate_sessions(&storage, &client, Some(session.id), 1, 0.5)
+        let graph = relate_sessions(&storage, &constant_embedder(), "voyage-4", Some(id), 1, 0.5)
             .await
             .expect("relate sessions");
 
         assert_eq!(graph.nodes.len(), 1);
+        // Nothing to be similar to.
+        assert!(!graph
+            .edges
+            .iter()
+            .any(|e| e.relationship_type == RelationshipType::SimilarTopic));
+    }
+
+    #[tokio::test]
+    async fn test_relate_links_semantically_similar_sessions() {
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
+        let a = add_session_with_thought(&storage, "Rust ownership and borrowing").await;
+        let b = add_session_with_thought(&storage, "Memory safety in systems languages").await;
+
+        let graph = relate_sessions(&storage, &constant_embedder(), "voyage-4", None, 1, 0.5)
+            .await
+            .expect("relate sessions");
+
+        // Both embeddings are identical → a SimilarTopic edge connects a and b.
+        assert!(graph.edges.iter().any(|e| {
+            e.relationship_type == RelationshipType::SimilarTopic
+                && ((e.from_session == a && e.to_session == b)
+                    || (e.from_session == b && e.to_session == a))
+        }));
     }
 }
