@@ -45,7 +45,14 @@ pub async fn search_sessions<E: EmbeddingProvider>(
         return Ok(vec![]);
     }
 
-    let query_vec = embedder.embed_query(query).await?;
+    // Embed the query with the same contextualized model used for sessions, so
+    // the vectors live in one space. A single chunk is fine for a query.
+    let query_vec = embedder
+        .embed_contextualized(&[query.to_string()], "query")
+        .await?;
+    if query_vec.is_empty() {
+        return Ok(vec![]);
+    }
 
     let session_ids: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
         .fetch_all(&storage.get_pool())
@@ -172,9 +179,9 @@ mod tests {
             }
         }
         let mut m = MockEmbeddingProvider::new();
-        m.expect_embed_query().returning(|q| Ok(vec_for(q)));
-        m.expect_embed_documents()
-            .returning(|texts| Ok(texts.iter().map(|t| vec_for(t)).collect()));
+        // Both query and session embeddings go through embed_contextualized now.
+        m.expect_embed_contextualized()
+            .returning(|chunks, _input_type| Ok(vec_for(&chunks.join(" "))));
         m.expect_rerank().returning(|_q, docs, _k| {
             Ok((0..docs.len())
                 .map(|i| (i, 1.0 - i as f64 * 0.01))

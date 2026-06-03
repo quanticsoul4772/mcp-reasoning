@@ -30,6 +30,29 @@ pub async fn get_session_content(
     Ok(combined.chars().take(2000).collect())
 }
 
+/// Get a session's first 10 thoughts as ordered chunks (each truncated), for
+/// contextualized embedding. Empty/blank thoughts are dropped.
+pub async fn get_session_chunks(
+    storage: &SqliteStorage,
+    session_id: &str,
+) -> Result<Vec<String>, ModeError> {
+    let thoughts: Vec<String> = sqlx::query_scalar(
+        "SELECT content FROM thoughts WHERE session_id = ? ORDER BY created_at LIMIT 10",
+    )
+    .bind(session_id)
+    .fetch_all(&storage.get_pool())
+    .await
+    .map_err(|e| ModeError::StorageError {
+        message: format!("Failed to get thoughts: {e}"),
+    })?;
+
+    Ok(thoughts
+        .into_iter()
+        .map(|t| t.chars().take(1000).collect::<String>())
+        .filter(|t| !t.trim().is_empty())
+        .collect())
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {

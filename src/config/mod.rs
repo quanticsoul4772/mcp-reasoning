@@ -24,6 +24,7 @@
 //!     model: DEFAULT_MODEL.to_string(),
 //!     voyage_api_key: None,
 //!     voyage_model: "voyage-4".to_string(),
+//!     voyage_context_model: "voyage-context-3".to_string(),
 //! };
 //!
 //! println!("Using model: {}", config.model);
@@ -106,6 +107,9 @@ pub struct Config {
     pub voyage_api_key: Option<SecretString>,
     /// Voyage embedding model to use (default `voyage-4`).
     pub voyage_model: String,
+    /// Voyage contextualized-chunk embedding model for session/query embeddings
+    /// (default `voyage-context-3`).
+    pub voyage_context_model: String,
 }
 
 impl Config {
@@ -163,6 +167,8 @@ impl Config {
         let voyage_api_key = std::env::var("VOYAGE_API_KEY").ok().map(SecretString::new);
         let voyage_model = std::env::var("VOYAGE_MODEL")
             .unwrap_or_else(|_| crate::voyage::DEFAULT_VOYAGE_MODEL.into());
+        let voyage_context_model = std::env::var("VOYAGE_CONTEXT_MODEL")
+            .unwrap_or_else(|_| crate::voyage::types::DEFAULT_CONTEXT_MODEL.into());
 
         let config = Self {
             api_key: SecretString::new(api_key),
@@ -176,6 +182,7 @@ impl Config {
             model,
             voyage_api_key,
             voyage_model,
+            voyage_context_model,
         };
 
         validate_config(&config)?;
@@ -205,6 +212,7 @@ impl Config {
     /// #     model: "claude-sonnet-4-20250514".into(),
     /// #     voyage_api_key: None,
     /// #     voyage_model: "voyage-4".into(),
+    /// #     voyage_context_model: "voyage-context-3".into(),
     /// # };
     ///
     /// assert_eq!(config.timeout_for_thinking_budget(None), 30_000);
@@ -466,6 +474,7 @@ mod tests {
             model: "test-model".to_string(),
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
+            voyage_context_model: "voyage-context-3".to_string(),
         };
 
         let cloned = config.clone();
@@ -486,6 +495,7 @@ mod tests {
             model: "test-model".to_string(),
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
+            voyage_context_model: "voyage-context-3".to_string(),
         };
 
         let debug = format!("{config:?}");

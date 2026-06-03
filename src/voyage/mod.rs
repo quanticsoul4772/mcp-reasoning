@@ -83,6 +83,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_embed_contextualized_mean_pools_chunk_vectors() {
+        let server = MockServer::start().await;
+        // Two chunk embeddings; the client returns their element-wise mean.
+        Mock::given(method("POST"))
+            .and(path("/contextualizedembeddings"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list",
+                "data": [
+                    {"object": "list", "index": 0, "data": [
+                        {"object": "embedding", "embedding": [1.0, 3.0], "index": 0},
+                        {"object": "embedding", "embedding": [3.0, 5.0], "index": 1}
+                    ]}
+                ],
+                "model": "voyage-context-3",
+                "usage": {"total_tokens": 6}
+            })))
+            .mount(&server)
+            .await;
+
+        let client = client_for(&server);
+        let v = client
+            .embed_contextualized(&["a".to_string(), "b".to_string()], "document")
+            .await
+            .expect("contextualized");
+        assert_eq!(v, vec![2.0, 4.0]);
+    }
+
+    #[tokio::test]
+    async fn test_embed_contextualized_empty_short_circuits() {
+        let server = MockServer::start().await;
+        let client = client_for(&server);
+        assert!(client
+            .embed_contextualized(&[], "document")
+            .await
+            .expect("ok")
+            .is_empty());
+    }
+
+    #[tokio::test]
     async fn test_rerank_returns_index_score_pairs() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))

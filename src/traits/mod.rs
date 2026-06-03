@@ -102,6 +102,19 @@ pub trait EmbeddingProvider: Send + Sync {
     /// Returns [`ModeError`] if the API call or parsing fails.
     async fn embed_documents(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, ModeError>;
 
+    /// Embed one document's ordered `chunks` with the contextualized model,
+    /// returning a single mean-pooled vector in which each chunk is aware of its
+    /// siblings. `input_type` is `"query"` or `"document"`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if the API call or parsing fails.
+    async fn embed_contextualized(
+        &self,
+        chunks: &[String],
+        input_type: &str,
+    ) -> Result<Vec<f32>, ModeError>;
+
     /// Rerank `documents` against `query`, returning `(original_index, score)`
     /// pairs sorted by descending relevance.
     ///
