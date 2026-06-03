@@ -405,6 +405,24 @@ async fn test_reasoning_relate_tool() {
     let _ = resp.nodes;
 }
 
+#[tokio::test]
+async fn test_reasoning_relate_requires_voyage_key() {
+    // The test server has no VOYAGE_API_KEY → relate returns a clear config
+    // error rather than a silent empty graph (no BM25 fallback).
+    let server = create_test_server().await;
+    let resp = server
+        .reasoning_relate(Parameters(RelateSessionsRequest {
+            session_id: None,
+            min_strength: Some(0.5),
+            depth: Some(2),
+        }))
+        .await;
+    assert!(resp.nodes.is_empty());
+    assert!(resp.edges.is_empty());
+    let err = resp.error.expect("missing-key error surfaced");
+    assert!(err.contains("VOYAGE_API_KEY"), "{err}");
+}
+
 // ============================================================================
 // Agent & Skill Tool Tests
 // ============================================================================
