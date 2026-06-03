@@ -7,7 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-03
+
 ### Added
+
+- **Semantic session memory (Voyage AI)** — `reasoning_search` and `reasoning_relate`
+  rank past sessions by meaning, not keywords, using `voyage-4` embeddings with
+  cosine recall and a `rerank-2.5` cross-encoder. Replaces the BM25/keyword path.
+  - Embedding cache (`session_embeddings`), keyed on content **and** model, treated
+    as derived data that self-heals on a miss.
+  - Background embedding worker drains an `embedding_queue` on an interval so the
+    first search/relate after a write is already warm.
+  - **Requires `VOYAGE_API_KEY`** — no keyword fallback; the tools return a clear
+    config error when it is unset.
+- **Embedding-grounded novelty for `reasoning_divergent`** — each perspective's
+  `novelty_score` is computed from embedding distance to the others instead of being
+  self-reported. `reasoning_divergent` now also requires `VOYAGE_API_KEY`.
+- Environment: `VOYAGE_API_KEY` (gates search/relate/divergent) and `VOYAGE_MODEL`
+  (default `voyage-4`).
+
+### Changed
+
+- **Relate graph hardened** — single-session traversal is depth-bounded and
+  edge-capped (`MAX_GRAPH_EDGES`) with no dangling edges; SharedMode and
+  TemporallyAdjacent edges now carry real strengths (mode-set Jaccard / temporal
+  decay), so `min_strength` actually filters them.
+- **voyage-4 similarity thresholds tuned to measured distributions** — search
+  `min_similarity` 0.5 → 0.35, relate `min_strength` 0.5 → 0.6, cluster threshold
+  0.8 → 0.72.
+- `reasoning_decision` responses omit perspectives-only fields
+  (`stakeholder_map`/`conflicts`/`alignments`) on non-perspectives operations.
+
+### Added (earlier, 2026-03-01)
 
 - **Performance Optimizations** (2026-03-01)
   - Added 38 SQL query constants across 7 storage modules
