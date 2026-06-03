@@ -54,7 +54,10 @@ pub async fn embed_session_cached<E: EmbeddingProvider>(
             message: e.to_string(),
         })?
     {
-        if cached.content_hash == hash {
+        // The cache is keyed on BOTH content and model: a vector from a
+        // different model lives in a different space and must not be compared
+        // against the current model's query, so a model change is a miss.
+        if cached.content_hash == hash && cached.model == model {
             return Ok(Some(cached.vector));
         }
     }
@@ -133,6 +136,49 @@ mod tests {
             .expect("embed")
             .expect("vector");
         assert_eq!(v1, v2);
+    }
+
+    #[tokio::test]
+    async fn test_embed_session_cached_recomputes_on_model_change() {
+        use crate::storage::{SqliteStorage, StoredThought};
+        use crate::traits::MockEmbeddingProvider;
+
+        let storage = SqliteStorage::new_in_memory().await.expect("storage");
+        let session = storage.create_session().await.expect("session");
+        storage
+            .save_stored_thought(&StoredThought::new(
+                uuid::Uuid::new_v4().to_string(),
+                &session.id,
+                "linear",
+                "same content, different model",
+                0.8,
+            ))
+            .await
+            .expect("thought");
+
+        let mut embedder = MockEmbeddingProvider::new();
+        // Same content, two different models → two API calls (no cross-model reuse).
+        embedder
+            .expect_embed_contextualized()
+            .times(2)
+            .returning(|_chunks, _input_type| Ok(vec![0.1_f32, 0.2]));
+
+        embed_session_cached(&storage, &embedder, "voyage-4", &session.id)
+            .await
+            .expect("embed")
+            .expect("vector");
+        // Different model: content_hash matches but model does not → recompute.
+        embed_session_cached(&storage, &embedder, "voyage-context-3", &session.id)
+            .await
+            .expect("embed")
+            .expect("vector");
+        // And the cache now records the latest model.
+        let cached = storage
+            .get_session_embedding(&session.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(cached.model, "voyage-context-3");
     }
 
     #[tokio::test]
