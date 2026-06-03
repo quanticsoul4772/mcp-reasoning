@@ -1,5 +1,6 @@
 //! Relationship mapping between reasoning sessions.
 
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::error::ModeError;
@@ -15,6 +16,12 @@ use sqlx::Row;
 
 /// Cap on similar-session edges emitted per source session.
 const MAX_SIMILAR_SESSIONS: usize = 50;
+
+/// Global cap on edges in a single relationship graph. A densely connected
+/// database can otherwise emit tens of thousands of edges, producing a response
+/// that exceeds MCP size limits and fails entirely. Keeping the strongest edges
+/// bounds the output while preserving the most meaningful relationships.
+const MAX_GRAPH_EDGES: usize = 200;
 
 /// Analyze relationships between reasoning sessions.
 ///
@@ -82,30 +89,37 @@ async fn analyze_session_relationships<E: EmbeddingProvider>(
             session_contents.insert(current_id.clone(), content);
         }
 
-        // Find related sessions
-        let related =
-            find_related_sessions(storage, embedder, model, &current_id, min_strength).await?;
+        // Expand only non-leaf nodes. A node at the maximum depth is a leaf: it
+        // is kept as a node (loaded above) but its own edges are not emitted, so
+        // the graph never references a session it did not also load as a node
+        // (no dangling edges), and the fan-out cannot blow past the depth bound.
+        if current_depth < depth {
+            let related =
+                find_related_sessions(storage, embedder, model, &current_id, min_strength).await?;
 
-        for (related_id, relationship_type, strength) in related {
-            // Add edge
-            edges.push(RelationshipEdge {
-                from_session: current_id.clone(),
-                to_session: related_id.clone(),
-                relationship_type,
-                strength: f64::from(strength),
-            });
-
-            // Queue for traversal
-            if current_depth < depth {
+            for (related_id, relationship_type, strength) in related {
+                edges.push(RelationshipEdge {
+                    from_session: current_id.clone(),
+                    to_session: related_id.clone(),
+                    relationship_type,
+                    strength: f64::from(strength),
+                });
+                // The edge target is queued (and thus loaded as a node when
+                // popped), keeping nodes and edges consistent.
                 queue.push_back((related_id, current_depth + 1));
             }
         }
     }
 
+    // Dedup symmetric edges (as the all-sessions path does) and bound the graph
+    // so the response stays within MCP limits on a densely connected database.
+    let edges = dedup_edges(edges);
+    let anchors: HashSet<String> = std::iter::once(session_id.to_string()).collect();
+    let (nodes, edges) = cap_and_prune_graph(nodes.into_values().collect(), edges, &anchors);
     let clusters = compute_clusters(&edges, &session_contents);
 
     Ok(RelationshipGraph {
-        nodes: nodes.into_values().collect(),
+        nodes,
         edges,
         clusters,
     })
@@ -152,6 +166,8 @@ async fn analyze_all_relationships<E: EmbeddingProvider>(
     // Deduplicate symmetric edges (SimilarTopic, SharedMode, TemporallyAdjacent are
     // undirected relationships; both A→B and B→A are generated — keep only canonical form).
     let edges = dedup_edges(edges);
+    // Bound the graph so the whole-database view also stays within MCP limits.
+    let (nodes, edges) = cap_and_prune_graph(nodes, edges, &HashSet::new());
     let clusters = compute_clusters(&edges, &session_contents);
 
     Ok(RelationshipGraph {
@@ -159,6 +175,38 @@ async fn analyze_all_relationships<E: EmbeddingProvider>(
         edges,
         clusters,
     })
+}
+
+/// Bound a relationship graph so the response stays within MCP size limits.
+///
+/// Keeps the strongest [`MAX_GRAPH_EDGES`] edges, then drops any node no longer
+/// referenced by a surviving edge — except `anchors` (e.g. the queried session),
+/// which are always retained so they appear even with no surviving relationships.
+fn cap_and_prune_graph(
+    nodes: Vec<SessionNode>,
+    mut edges: Vec<RelationshipEdge>,
+    anchors: &HashSet<String>,
+) -> (Vec<SessionNode>, Vec<RelationshipEdge>) {
+    if edges.len() > MAX_GRAPH_EDGES {
+        edges.sort_by(|a, b| {
+            b.strength
+                .partial_cmp(&a.strength)
+                .unwrap_or(Ordering::Equal)
+        });
+        edges.truncate(MAX_GRAPH_EDGES);
+    }
+
+    let mut kept: HashSet<String> = anchors.clone();
+    for edge in &edges {
+        kept.insert(edge.from_session.clone());
+        kept.insert(edge.to_session.clone());
+    }
+    let nodes = nodes
+        .into_iter()
+        .filter(|n| kept.contains(&n.session_id))
+        .collect();
+
+    (nodes, edges)
 }
 
 /// Load session node data.
@@ -399,6 +447,74 @@ mod tests {
             .edges
             .iter()
             .any(|e| e.relationship_type == RelationshipType::SimilarTopic));
+    }
+
+    #[test]
+    fn test_cap_and_prune_keeps_strongest_edges_and_drops_orphans() {
+        let nodes = vec![
+            SessionNode {
+                session_id: "a".to_string(),
+                preview: String::new(),
+                created_at: String::new(),
+            },
+            SessionNode {
+                session_id: "orphan".to_string(),
+                preview: String::new(),
+                created_at: String::new(),
+            },
+        ];
+        let edges = vec![
+            RelationshipEdge {
+                from_session: "a".to_string(),
+                to_session: "b".to_string(),
+                relationship_type: RelationshipType::SimilarTopic,
+                strength: 0.9,
+            },
+            RelationshipEdge {
+                from_session: "a".to_string(),
+                to_session: "c".to_string(),
+                relationship_type: RelationshipType::SimilarTopic,
+                strength: 0.6,
+            },
+        ];
+        let anchors: HashSet<String> = std::iter::once("a".to_string()).collect();
+        let (nodes, edges) = cap_and_prune_graph(nodes, edges, &anchors);
+
+        // "orphan" is referenced by no surviving edge and is not an anchor → dropped.
+        assert!(nodes.iter().all(|n| n.session_id != "orphan"));
+        // The anchor is retained even though no node entry exists for b/c.
+        assert!(nodes.iter().any(|n| n.session_id == "a"));
+        assert_eq!(edges.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_relate_emits_no_dangling_edges() {
+        // Every edge endpoint must resolve to a node in the graph: a max-depth
+        // node is a leaf, so the BFS never emits an edge to an unloaded session.
+        let storage = SqliteStorage::new_in_memory()
+            .await
+            .expect("create storage");
+        let a = add_session_with_thought(&storage, "Rust ownership and borrowing").await;
+        let _b = add_session_with_thought(&storage, "Memory safety in systems languages").await;
+        let _c = add_session_with_thought(&storage, "Borrow checker lifetimes").await;
+
+        let graph = relate_sessions(&storage, &constant_embedder(), "voyage-4", Some(a), 2, 0.5)
+            .await
+            .expect("relate sessions");
+
+        let node_ids: HashSet<&str> = graph.nodes.iter().map(|n| n.session_id.as_str()).collect();
+        for edge in &graph.edges {
+            assert!(
+                node_ids.contains(edge.from_session.as_str()),
+                "edge from_session has no node: {}",
+                edge.from_session
+            );
+            assert!(
+                node_ids.contains(edge.to_session.as_str()),
+                "edge to_session has no node: {}",
+                edge.to_session
+            );
+        }
     }
 
     #[tokio::test]
