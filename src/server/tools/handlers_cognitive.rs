@@ -119,20 +119,44 @@ impl super::ReasoningServer {
                     }
                 };
 
+                let mut perspectives: Vec<Perspective> = resp
+                    .perspectives
+                    .into_iter()
+                    .map(|p| Perspective {
+                        viewpoint: p.viewpoint,
+                        content: p.content,
+                        novelty_score: p.novelty_score,
+                        key_insight: p.key_insight,
+                        blind_spots: p.blind_spots,
+                    })
+                    .collect();
+
+                // Ground novelty objectively in the perspectives' embeddings when
+                // Voyage is configured, replacing the model's self-assessed score.
+                // Without the key the self-assessed score stands — divergent is a
+                // core tool and must not depend on the embedding backend.
+                if let Some(voyage) = self.state.voyage_client.as_deref() {
+                    let texts: Vec<String> =
+                        perspectives.iter().map(|p| p.content.clone()).collect();
+                    match crate::modes::memory::novelty_scores(voyage, &texts).await {
+                        Ok(scores) if scores.len() == perspectives.len() => {
+                            for (p, s) in perspectives.iter_mut().zip(scores) {
+                                p.novelty_score = s;
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(e) => tracing::warn!(
+                            tool = "reasoning_divergent",
+                            error = %e,
+                            "Novelty grounding failed; keeping self-assessed scores"
+                        ),
+                    }
+                }
+
                 DivergentResponse {
                     thought_id: resp.thought_id,
                     session_id: resp.session_id,
-                    perspectives: resp
-                        .perspectives
-                        .into_iter()
-                        .map(|p| Perspective {
-                            viewpoint: p.viewpoint,
-                            content: p.content,
-                            novelty_score: p.novelty_score,
-                            key_insight: p.key_insight,
-                            blind_spots: p.blind_spots,
-                        })
-                        .collect(),
+                    perspectives,
                     challenged_assumptions: resp.challenged_assumptions,
                     synthesis: resp.synthesis,
                     metadata,

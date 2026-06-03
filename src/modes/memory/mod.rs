@@ -21,6 +21,7 @@ pub use list::list_sessions;
 pub use relate::relate_sessions;
 pub use resume::resume_session;
 pub use search::search_sessions;
+pub use similarity::novelty_scores;
 pub use types::{
     RelationshipGraph, RelationshipType, SearchResult, SessionContext, SessionSummary,
 };
