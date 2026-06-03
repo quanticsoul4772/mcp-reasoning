@@ -314,36 +314,35 @@ async fn find_similar_sessions<E: EmbeddingProvider>(
         .collect())
 }
 
-/// Find sessions that use similar modes.
+/// Find sessions that use similar modes, scored by mode-set overlap.
+///
+/// Strength is the Jaccard overlap of the two sessions' distinct mode sets —
+/// `|A ∩ B| / |A ∪ B|` — so `min_strength` filters these edges the same way it
+/// filters semantic edges (identical mode sets score 1.0; one shared mode out
+/// of many scores low), rather than every shared-mode pair passing at the
+/// threshold value.
 async fn find_mode_related(
     storage: &SqliteStorage,
     session_id: &str,
     min_strength: f32,
 ) -> Result<Vec<(String, RelationshipType, f32)>, ModeError> {
-    let modes: Vec<String> =
+    let source_modes: HashSet<String> =
         sqlx::query_scalar("SELECT DISTINCT mode FROM thoughts WHERE session_id = ?")
             .bind(session_id)
             .fetch_all(&storage.get_pool())
             .await
             .map_err(|e| ModeError::StorageError {
                 message: format!("Failed to get modes: {e}"),
-            })?;
+            })?
+            .into_iter()
+            .collect();
 
-    if modes.is_empty() {
+    if source_modes.is_empty() {
         return Ok(Vec::new());
     }
 
-    let mut results = Vec::new();
-    for mode in modes {
-        let related: Vec<String> = sqlx::query_scalar(
-            r"
-            SELECT DISTINCT session_id
-            FROM thoughts
-            WHERE mode = ? AND session_id != ?
-            LIMIT 10
-            ",
-        )
-        .bind(&mode)
+    // Every other session's full distinct mode set, so edges can be scored.
+    let rows = sqlx::query("SELECT session_id, mode FROM thoughts WHERE session_id != ?")
         .bind(session_id)
         .fetch_all(&storage.get_pool())
         .await
@@ -351,28 +350,60 @@ async fn find_mode_related(
             message: format!("Failed to find mode related: {e}"),
         })?;
 
-        for related_id in related {
-            results.push((related_id, RelationshipType::SharedMode, min_strength));
-        }
+    let mut candidate_modes: HashMap<String, HashSet<String>> = HashMap::new();
+    for row in &rows {
+        candidate_modes
+            .entry(row.get::<String, _>("session_id"))
+            .or_default()
+            .insert(row.get::<String, _>("mode"));
     }
 
-    Ok(results)
+    let mut scored: Vec<(String, f32)> = candidate_modes
+        .into_iter()
+        .filter_map(|(sid, modes)| {
+            let inter = source_modes.intersection(&modes).count();
+            if inter == 0 {
+                return None;
+            }
+            let union = source_modes.union(&modes).count();
+            #[allow(clippy::cast_precision_loss)]
+            let strength = inter as f32 / union as f32;
+            (strength >= min_strength).then_some((sid, strength))
+        })
+        .collect();
+
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(MAX_SIMILAR_SESSIONS);
+
+    Ok(scored
+        .into_iter()
+        .map(|(sid, s)| (sid, RelationshipType::SharedMode, s))
+        .collect())
 }
 
-/// Find sessions created close in time.
+/// Find sessions created close in time, scored by temporal proximity.
+///
+/// Strength decays linearly with the gap inside the one-day window
+/// (`1 - days_apart`), so sessions created moments apart score ~1.0 and ones a
+/// day apart ~0.0 — and `min_strength` genuinely filters these edges instead of
+/// every in-window pair passing at the threshold value.
 async fn find_temporal_neighbors(
     storage: &SqliteStorage,
     session_id: &str,
     min_strength: f32,
 ) -> Result<Vec<(String, RelationshipType, f32)>, ModeError> {
-    let neighbors: Vec<String> = sqlx::query_scalar(
+    let rows = sqlx::query(
         r"
-        SELECT id FROM sessions
+        SELECT id,
+               ABS(julianday(created_at) - julianday((SELECT created_at FROM sessions WHERE id = ?))) AS days_apart
+        FROM sessions
         WHERE id != ?
         AND ABS(julianday(created_at) - julianday((SELECT created_at FROM sessions WHERE id = ?))) < 1
+        ORDER BY days_apart
         LIMIT 5
         ",
     )
+    .bind(session_id)
     .bind(session_id)
     .bind(session_id)
     .fetch_all(&storage.get_pool())
@@ -381,9 +412,20 @@ async fn find_temporal_neighbors(
         message: format!("Failed to find temporal: {e}"),
     })?;
 
-    Ok(neighbors
-        .into_iter()
-        .map(|id| (id, RelationshipType::TemporallyAdjacent, min_strength))
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            let days_apart: f64 = row.get("days_apart");
+            #[allow(clippy::cast_possible_truncation)]
+            let strength = (1.0 - days_apart as f32).clamp(0.0, 1.0);
+            (strength >= min_strength).then(|| {
+                (
+                    row.get::<String, _>("id"),
+                    RelationshipType::TemporallyAdjacent,
+                    strength,
+                )
+            })
+        })
         .collect())
 }
 
@@ -535,5 +577,74 @@ mod tests {
                 && ((e.from_session == a && e.to_session == b)
                     || (e.from_session == b && e.to_session == a))
         }));
+    }
+
+    async fn session_with_modes(storage: &SqliteStorage, modes: &[&str]) -> String {
+        let session = storage.create_session().await.expect("session");
+        for m in modes {
+            storage
+                .save_stored_thought(&StoredThought::new(
+                    uuid::Uuid::new_v4().to_string(),
+                    &session.id,
+                    *m,
+                    "content",
+                    0.8,
+                ))
+                .await
+                .expect("thought");
+        }
+        session.id
+    }
+
+    #[tokio::test]
+    async fn test_find_mode_related_scores_by_jaccard() {
+        let storage = SqliteStorage::new_in_memory().await.expect("storage");
+        let a = session_with_modes(&storage, &["linear", "tree"]).await;
+        let b = session_with_modes(&storage, &["linear", "tree"]).await; // identical → 1.0
+        let c = session_with_modes(&storage, &["linear"]).await; // 1/2 = 0.5
+
+        // min_strength 0.6 keeps the identical-mode session, drops the half-overlap one.
+        let rel = find_mode_related(&storage, &a, 0.6).await.expect("mode");
+        let by_id: HashMap<String, f32> = rel.into_iter().map(|(id, _, s)| (id, s)).collect();
+        assert!((by_id.get(&b).copied().expect("b present") - 1.0).abs() < 1e-6);
+        assert!(
+            !by_id.contains_key(&c),
+            "0.5 Jaccard must be filtered at 0.6"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_find_temporal_neighbors_decays_with_gap() {
+        let storage = SqliteStorage::new_in_memory().await.expect("storage");
+        let seed = |id: &'static str, at: &'static str| {
+            let pool = storage.get_pool();
+            async move {
+                sqlx::query("INSERT INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)")
+                    .bind(id)
+                    .bind(at)
+                    .bind(at)
+                    .execute(&pool)
+                    .await
+                    .expect("seed");
+            }
+        };
+        seed("a", "2026-01-01 00:00:00").await;
+        seed("b", "2026-01-01 00:00:00").await; // 0 gap → strength 1.0
+        seed("c", "2026-01-01 12:00:00").await; // 0.5 day → strength 0.5
+        seed("d", "2026-01-03 00:00:00").await; // 2 days → outside the 1-day window
+
+        let rel = find_temporal_neighbors(&storage, "a", 0.6)
+            .await
+            .expect("temporal");
+        let by_id: HashMap<String, f32> = rel.into_iter().map(|(id, _, s)| (id, s)).collect();
+        assert!((by_id.get("b").copied().expect("b present") - 1.0).abs() < 1e-6);
+        assert!(
+            !by_id.contains_key("c"),
+            "0.5 proximity must be filtered at 0.6"
+        );
+        assert!(
+            !by_id.contains_key("d"),
+            "out-of-window session must not appear"
+        );
     }
 }
