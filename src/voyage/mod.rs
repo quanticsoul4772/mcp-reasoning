@@ -17,7 +17,9 @@ pub use types::{DEFAULT_RERANK_MODEL, DEFAULT_VOYAGE_BASE_URL, DEFAULT_VOYAGE_MO
 mod tests {
     use super::*;
     use crate::anthropic::ClientConfig;
+    use crate::error::ModeError;
     use crate::traits::EmbeddingProvider;
+    use std::time::Duration;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -180,5 +182,96 @@ mod tests {
             .with_rerank_model("rerank-2.5-lite");
         // base_url was rewritten from the Anthropic default to Voyage's.
         let _ = client; // construction + builder cover the default-URL rewrite path
+    }
+
+    #[tokio::test]
+    async fn test_timeout_maps_to_timeout_error() {
+        let server = MockServer::start().await;
+        // Respond slower than the client timeout so the request aborts.
+        Mock::given(method("POST"))
+            .and(path("/embeddings"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_millis(500))
+                    .set_body_json(serde_json::json!({
+                        "object": "list", "data": [], "model": "voyage-4",
+                        "usage": {"total_tokens": 0}
+                    })),
+            )
+            .mount(&server)
+            .await;
+        let config = ClientConfig::default()
+            .with_base_url(server.uri())
+            .with_timeout_ms(50)
+            .with_max_retries(0);
+        let client = VoyageClient::new("k", "voyage-4", config).expect("client");
+        let err = client.embed_query("hi").await.unwrap_err();
+        assert!(matches!(err, ModeError::Timeout { .. }), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn test_connection_failure_is_api_unavailable() {
+        // Nothing listens on port 1, so the send fails (not a timeout).
+        let config = ClientConfig::default()
+            .with_base_url("http://127.0.0.1:1".to_string())
+            .with_max_retries(0);
+        let client = VoyageClient::new("k", "voyage-4", config).expect("client");
+        let err = client.embed_query("hi").await.unwrap_err();
+        assert!(
+            matches!(err, ModeError::ApiUnavailable { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_malformed_json_body_is_parse_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embeddings"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("definitely not json"))
+            .mount(&server)
+            .await;
+        let client = client_for(&server);
+        let err = client.embed_query("hi").await.unwrap_err();
+        assert!(matches!(err, ModeError::ParseError { .. }), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn test_embed_query_with_empty_data_is_parse_error() {
+        let server = MockServer::start().await;
+        // 200 OK but no embedding in the payload → query embed has nothing to pop.
+        Mock::given(method("POST"))
+            .and(path("/embeddings"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list", "data": [], "model": "voyage-4",
+                "usage": {"total_tokens": 0}
+            })))
+            .mount(&server)
+            .await;
+        let client = client_for(&server);
+        let err = client.embed_query("hi").await.unwrap_err();
+        assert!(matches!(err, ModeError::ParseError { .. }), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn test_rerank_through_trait_method() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/rerank"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "object": "list",
+                "data": [{"index": 0, "relevance_score": 0.7}],
+                "model": "rerank-2.5",
+                "usage": {"total_tokens": 3}
+            })))
+            .mount(&server)
+            .await;
+        let client = client_for(&server);
+        let docs = vec!["a".to_string()];
+        // Call via the trait method (the inherent rerank is covered elsewhere).
+        let ranked = <VoyageClient as EmbeddingProvider>::rerank(&client, "q", &docs, None)
+            .await
+            .expect("rerank");
+        assert_eq!(ranked, vec![(0, 0.7)]);
     }
 }
