@@ -61,14 +61,18 @@ fn uf_find(parent: &mut HashMap<String, String>, x: &str) -> String {
 
 /// Cluster sessions using union-find over strong SimilarTopic edges.
 ///
-/// Sessions with SimilarTopic strength ≥ 0.8 are grouped together.
-/// The common theme is derived from the most frequent keywords shared
+/// Sessions with SimilarTopic strength ≥ [`CLUSTER_THRESHOLD`] are grouped
+/// together. The common theme is derived from the most frequent keywords shared
 /// across all sessions in the cluster.
 pub fn compute_clusters(
     edges: &[RelationshipEdge],
     session_contents: &HashMap<String, String>,
 ) -> Vec<SessionCluster> {
-    const CLUSTER_THRESHOLD: f64 = 0.8;
+    // Tuned to the voyage-4 session→session cosine distribution (≈p95 = 0.717).
+    // Measured on the live cache: ≤0.65 collapses everything into one mega-cluster,
+    // while 0.80 over-fragments and leaves many sessions unclustered. 0.72 keeps
+    // coverage high with coherent, well-separated themes.
+    const CLUSTER_THRESHOLD: f64 = 0.72;
 
     // Collect all session IDs that appear in strong SimilarTopic edges
     let mut parent: HashMap<String, String> = HashMap::new();
@@ -265,5 +269,25 @@ mod tests {
         }];
         let clusters = compute_clusters(&edges, &HashMap::new());
         assert!(clusters.is_empty());
+    }
+
+    #[test]
+    fn test_compute_clusters_threshold_boundary_is_0_72() {
+        // Pins the tuned threshold: 0.72 clusters, just under does not.
+        let at = vec![RelationshipEdge {
+            from_session: "a".to_string(),
+            to_session: "b".to_string(),
+            relationship_type: RelationshipType::SimilarTopic,
+            strength: 0.72,
+        }];
+        assert_eq!(compute_clusters(&at, &HashMap::new()).len(), 1);
+
+        let below = vec![RelationshipEdge {
+            from_session: "a".to_string(),
+            to_session: "b".to_string(),
+            relationship_type: RelationshipType::SimilarTopic,
+            strength: 0.71,
+        }];
+        assert!(compute_clusters(&below, &HashMap::new()).is_empty());
     }
 }
