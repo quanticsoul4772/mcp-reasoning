@@ -191,7 +191,7 @@ impl super::ReasoningServer {
         let result = crate::modes::memory::search_sessions(
             &self.state.storage,
             voyage.as_ref(),
-            &self.state.config.voyage_context_model,
+            &self.state.config.voyage_model,
             &req.query,
             req.limit.unwrap_or(10),
             req.min_similarity.unwrap_or(0.5),
@@ -273,7 +273,7 @@ impl super::ReasoningServer {
         let result = crate::modes::memory::relate_sessions(
             &self.state.storage,
             voyage.as_ref(),
-            &self.state.config.voyage_context_model,
+            &self.state.config.voyage_model,
             req.session_id,
             req.depth.unwrap_or(2),
             req.min_strength.unwrap_or(0.5),

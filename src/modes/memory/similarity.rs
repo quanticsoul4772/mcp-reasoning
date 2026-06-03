@@ -5,7 +5,7 @@
 //! of keyword overlap.
 
 use crate::error::ModeError;
-use crate::modes::memory::embeddings::get_session_chunks;
+use crate::modes::memory::embeddings::get_session_content;
 use crate::storage::{content_hash, SqliteStorage, StoredEmbedding};
 use crate::traits::EmbeddingProvider;
 
@@ -40,12 +40,11 @@ pub async fn embed_session_cached<E: EmbeddingProvider>(
     model: &str,
     session_id: &str,
 ) -> Result<Option<Vec<f32>>, ModeError> {
-    let chunks = get_session_chunks(storage, session_id).await?;
-    if chunks.is_empty() {
+    let content = get_session_content(storage, session_id).await?;
+    if content.trim().is_empty() {
         return Ok(None);
     }
-    // Hash the ordered chunk contents so a change re-embeds.
-    let hash = content_hash(&chunks.join("\u{1f}"));
+    let hash = content_hash(&content);
 
     if let Some(cached) = storage
         .get_session_embedding(session_id)
@@ -54,17 +53,19 @@ pub async fn embed_session_cached<E: EmbeddingProvider>(
             message: e.to_string(),
         })?
     {
-        if cached.content_hash == hash {
+        // Keyed on BOTH content and model: vectors from a different model live
+        // in a different space, so a model change is a miss (recompute). This
+        // matters here because the cache may hold voyage-context-3 vectors from
+        // a previous build that must not be reused under voyage-4.
+        if cached.content_hash == hash && cached.model == model {
             return Ok(Some(cached.vector));
         }
     }
 
-    // Contextualized embedding: the session's thoughts are embedded together as
-    // ordered chunks, then mean-pooled into one session vector.
-    let vector = embedder.embed_contextualized(&chunks, "document").await?;
-    if vector.is_empty() {
-        return Ok(None);
-    }
+    let mut vectors = embedder.embed_documents(&[content]).await?;
+    let vector = vectors.pop().ok_or_else(|| ModeError::ParseError {
+        message: "embedding provider returned no vector".to_string(),
+    })?;
     let stored = StoredEmbedding::new(session_id, model, vector.clone(), hash);
     if let Err(e) = storage.upsert_session_embedding(&stored).await {
         tracing::warn!(error = %e, session_id, "Failed to cache session embedding");
@@ -120,9 +121,9 @@ mod tests {
         let mut embedder = MockEmbeddingProvider::new();
         // times(1): the second call must hit the content-hash cache, not the API.
         embedder
-            .expect_embed_contextualized()
+            .expect_embed_documents()
             .times(1)
-            .returning(|_chunks, _input_type| Ok(vec![0.5_f32, 0.5]));
+            .returning(|texts| Ok(texts.iter().map(|_| vec![0.5_f32, 0.5]).collect()));
 
         let v1 = embed_session_cached(&storage, &embedder, "voyage-4", &session.id)
             .await

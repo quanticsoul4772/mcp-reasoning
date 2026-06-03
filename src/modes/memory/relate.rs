@@ -350,8 +350,8 @@ mod tests {
     /// sessions with content are maximally similar (cosine 1.0).
     fn constant_embedder() -> MockEmbeddingProvider {
         let mut m = MockEmbeddingProvider::new();
-        m.expect_embed_contextualized()
-            .returning(|_chunks, _input_type| Ok(vec![1.0_f32, 0.0, 0.0]));
+        m.expect_embed_documents()
+            .returning(|texts| Ok(texts.iter().map(|_| vec![1.0_f32, 0.0, 0.0]).collect()));
         m
     }
 
