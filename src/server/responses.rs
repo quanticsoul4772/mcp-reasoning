@@ -579,15 +579,20 @@ pub struct DecisionValidationInfo {
 pub struct DecisionResponse {
     /// Best option or action.
     pub recommendation: String,
-    /// Ranked options.
+    /// Ranked options (weighted/topsis/pairwise).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rankings: Option<Vec<RankedOption>>,
-    /// Stakeholder mapping.
+    /// Stakeholder mapping (perspectives).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stakeholder_map: Option<StakeholderMap>,
-    /// Identified conflicts.
+    /// Identified conflicts (perspectives).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub conflicts: Option<Vec<String>>,
-    /// Identified alignments.
+    /// Identified alignments (perspectives).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub alignments: Option<Vec<String>>,
     /// Decision rationale.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
     /// Operation-specific scoring breakdown (criteria, weights, scores).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2386,6 +2391,56 @@ mod tests {
         };
         let json = serde_json::to_string(&d).unwrap();
         assert!(json.contains("bias"));
+    }
+
+    #[test]
+    fn test_decision_response_omits_irrelevant_null_fields() {
+        // A weighted-shape response carries no perspectives-only fields, so they
+        // must be absent from the JSON (not serialized as null noise).
+        let weighted = DecisionResponse {
+            recommendation: "Option A".to_string(),
+            rankings: Some(vec![RankedOption {
+                option: "Option A".to_string(),
+                score: 0.81,
+                rank: 1,
+            }]),
+            stakeholder_map: None,
+            conflicts: None,
+            alignments: None,
+            rationale: Some("highest weighted score".to_string()),
+            breakdown: None,
+            validation: None,
+            metadata: None,
+        };
+        let json = serde_json::to_value(&weighted).unwrap();
+        let obj = json.as_object().unwrap();
+        assert!(obj.contains_key("rankings"));
+        assert!(!obj.contains_key("stakeholder_map"));
+        assert!(!obj.contains_key("conflicts"));
+        assert!(!obj.contains_key("alignments"));
+
+        // A perspectives-shape response omits the ranking-only `rankings` field.
+        let perspectives = DecisionResponse {
+            recommendation: "Map".to_string(),
+            rankings: None,
+            stakeholder_map: Some(StakeholderMap {
+                key_players: vec!["CEO".to_string()],
+                keep_satisfied: vec![],
+                keep_informed: vec![],
+                minimal_effort: vec![],
+            }),
+            conflicts: Some(vec!["budget".to_string()]),
+            alignments: Some(vec!["ux".to_string()]),
+            rationale: None,
+            breakdown: None,
+            validation: None,
+            metadata: None,
+        };
+        let json = serde_json::to_value(&perspectives).unwrap();
+        let obj = json.as_object().unwrap();
+        assert!(!obj.contains_key("rankings"));
+        assert!(!obj.contains_key("rationale"));
+        assert!(obj.contains_key("stakeholder_map"));
     }
 
     #[test]
