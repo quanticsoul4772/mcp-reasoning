@@ -60,7 +60,12 @@ impl SqliteStorage {
         Ok(())
     }
 
-    /// Get the cached embedding for a session, if present.
+    /// Get the cached embedding for a session, if present and readable.
+    ///
+    /// The cache is derived data: a row whose `embedding_json` cannot be parsed
+    /// (e.g. written by an earlier format) is treated as a miss — `Ok(None)` —
+    /// so the caller recomputes and overwrites it, rather than failing. The
+    /// discard is logged.
     pub async fn get_session_embedding(
         &self,
         session_id: &str,
@@ -70,13 +75,25 @@ impl SqliteStorage {
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| Self::query_error("SELECT session_embeddings", format!("{e}")))?;
-        match row {
-            Some(row) => Ok(Some(Self::row_to_embedding(&row)?)),
-            None => Ok(None),
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        match Self::row_to_embedding(&row) {
+            Ok(emb) => Ok(Some(emb)),
+            Err(e) => {
+                tracing::warn!(
+                    session_id,
+                    error = %e,
+                    "Discarding unreadable cached embedding; it will be recomputed"
+                );
+                Ok(None)
+            }
         }
     }
 
-    /// Get every cached session embedding (for brute-force similarity ranking).
+    /// Get every readable cached session embedding (for brute-force similarity
+    /// ranking). Rows that cannot be parsed are skipped (and logged) rather than
+    /// failing the whole read.
     pub async fn all_session_embeddings(&self) -> Result<Vec<StoredEmbedding>, StorageError> {
         let rows = sqlx::query(SELECT_ALL_EMBEDDINGS)
             .fetch_all(&self.pool)
@@ -84,7 +101,12 @@ impl SqliteStorage {
             .map_err(|e| Self::query_error("SELECT session_embeddings", format!("{e}")))?;
         let mut out = Vec::with_capacity(rows.len());
         for row in &rows {
-            out.push(Self::row_to_embedding(row)?);
+            match Self::row_to_embedding(row) {
+                Ok(emb) => out.push(emb),
+                Err(e) => {
+                    tracing::warn!(error = %e, "Skipping unreadable cached embedding");
+                }
+            }
         }
         Ok(out)
     }
@@ -190,5 +212,39 @@ mod tests {
     fn test_content_hash_is_stable_and_distinguishes() {
         assert_eq!(content_hash("hello world"), content_hash("hello world"));
         assert_ne!(content_hash("hello world"), content_hash("hello  world"));
+    }
+
+    /// Regression: a row whose `embedding_json` is in an earlier/foreign format
+    /// (here a bare float array) must be treated as a cache miss, not crash the
+    /// read — and must be silently overwritten on the next upsert.
+    #[tokio::test]
+    async fn test_legacy_format_row_is_a_cache_miss_then_self_heals() {
+        let storage = storage_with_session("s1").await;
+        // Simulate a legacy bare-array embedding_json.
+        sqlx::query("INSERT INTO session_embeddings (session_id, embedding_json, content_hash) VALUES (?, ?, ?)")
+            .bind("s1")
+            .bind("[0.10788405, 0.2, 0.3]")
+            .bind("legacy")
+            .execute(&storage.get_pool())
+            .await
+            .expect("seed legacy row");
+
+        // Unreadable → miss, not error.
+        assert!(storage
+            .get_session_embedding("s1")
+            .await
+            .expect("get does not error")
+            .is_none());
+        // And it is skipped, not fatal, in the bulk read.
+        assert!(storage.all_session_embeddings().await.unwrap().is_empty());
+
+        // Recompute + overwrite heals the row.
+        storage
+            .upsert_session_embedding(&StoredEmbedding::new("s1", "voyage-4", vec![1.0, 2.0], "h"))
+            .await
+            .expect("upsert");
+        let healed = storage.get_session_embedding("s1").await.unwrap().unwrap();
+        assert_eq!(healed.vector, vec![1.0, 2.0]);
+        assert_eq!(storage.all_session_embeddings().await.unwrap().len(), 1);
     }
 }
