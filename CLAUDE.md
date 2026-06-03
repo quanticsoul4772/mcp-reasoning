@@ -72,14 +72,20 @@ LOG_LEVEL=info                        # error|warn|info|debug|trace
 REQUEST_TIMEOUT_MS=30000              # Default (30s)
 MAX_RETRIES=3                         # Default
 MCP_TRANSPORT=stdio                   # stdio (default) or http
+
+# Semantic memory (Voyage AI) — REQUIRED for the memory tools
+# (reasoning_search / reasoning_relate). Without VOYAGE_API_KEY those two
+# tools return a clear config error; the other 30 tools are unaffected.
+VOYAGE_API_KEY=pa-xxx                 # Enables embeddings + reranking
+VOYAGE_MODEL=voyage-4                 # Default embedding model
 ```
 
 ## Architecture
 
 ```
-┌─────────────┐     stdin      ┌─────────────────┐
-│ Claude Code │───────────────▶│   MCP Server    │──────▶ Anthropic API
-│ or Desktop  │◀───────────────│     (Rust)      │
+┌─────────────┐     stdin      ┌─────────────────┐──────▶ Anthropic API (reasoning)
+│ Claude Code │───────────────▶│   MCP Server    │
+│ or Desktop  │◀───────────────│     (Rust)      │──────▶ Voyage AI (memory: embed + rerank)
 └─────────────┘     stdout     └────────┬────────┘
                                         │
                                         ▼
@@ -107,19 +113,24 @@ src/
 │   ├── types.rs         # Request/Response types, Vision support, StreamEvent
 │   ├── config.rs        # ModelConfig, ThinkingConfig (standard/deep/maximum)
 │   └── streaming.rs     # SSE parsing, StreamAccumulator
+├── voyage/              # Voyage AI: semantic memory (embeddings + reranking)
+│   ├── client.rs        # VoyageClient (retry/backoff; /embeddings + /rerank)
+│   └── types.rs         # Request/response types; default model consts
 ├── storage/
 │   ├── mod.rs           # Storage trait + SqliteStorage struct
 │   ├── core.rs          # Connection pool + migrations
 │   ├── session.rs       # Session CRUD
-│   ├── thought.rs       # Thought CRUD
+│   ├── thought.rs       # Thought CRUD (enqueues background embedding on write)
 │   ├── branch.rs        # Branch CRUD
 │   ├── checkpoint.rs    # Checkpoint CRUD
 │   ├── graph.rs         # Graph node/edge CRUD
+│   ├── embeddings.rs    # session_embeddings cache CRUD (content-hash keyed)
+│   ├── embedding_queue.rs # Background embed queue CRUD (enqueue/dequeue/mark)
 │   ├── metrics.rs       # Metrics storage
 │   ├── actions.rs       # SI action storage
 │   ├── agent_metrics.rs # Agent performance storage
 │   ├── trait_impl.rs    # StorageTrait implementation
-│   └── types.rs         # Storage types
+│   └── types.rs         # Storage types (incl. StoredEmbedding)
 ├── prompts/
 │   ├── mod.rs           # ReasoningMode enum, Operation enum, get_prompt_for_mode() router
 │   ├── core.rs          # linear, tree, divergent, reflection, checkpoint, auto prompts
@@ -147,7 +158,9 @@ src/
 │   ├── evidence/        # Credibility + Bayesian updates
 │   ├── timeline/        # Temporal (create/branch/compare/merge)
 │   ├── mcts/            # UCB1 search + auto_backtrack
-│   └── memory/          # Session memory (list/resume/search/relate + embeddings)
+│   └── memory/          # Session memory: list/resume + semantic search/relate
+│                        #   (Voyage embeddings + cosine recall + rerank),
+│                        #   similarity.rs (cached embed), embed_worker.rs (queue drain)
 ├── server/
 │   ├── mod.rs           # McpServer + graceful shutdown
 │   ├── mcp.rs           # JSON-RPC protocol
@@ -261,6 +274,25 @@ const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message
 | Divergent, Graph | Standard (4096 tokens) |
 | Reflection, Decision, Evidence | Deep (8192 tokens) |
 | Counterfactual, MCTS | Maximum (16384 tokens) |
+
+### Semantic Memory (Voyage AI)
+
+`reasoning_search` and `reasoning_relate` rank sessions by meaning, not keywords.
+
+- **Key required, no fallback**: both tools require `VOYAGE_API_KEY` and return a
+  clear config error when it is unset — there is no BM25/keyword fallback (an
+  intentional decision; a silent keyword path would mask the missing backend).
+- **Embeddings on `voyage-4`**: a session's content is embedded and cached in
+  `session_embeddings` as a JSON object `{model, dtype, dim, vector}`, keyed on a
+  content hash **and** the model (a model change is a cache miss → recompute).
+  The cache is derived data: an unreadable row is treated as a miss and self-heals.
+- **Search** = cosine recall over cached vectors → top candidates reranked by the
+  Voyage cross-encoder (`rerank-2.5`). **Relate** = cosine session↔session edges
+  (plus shared-mode/temporal), as a depth-bounded BFS; the graph is capped at
+  `MAX_GRAPH_EDGES` (strongest first) with every edge endpoint guaranteed a node.
+- **Background warming**: a thought write enqueues its session (`embedding_queue`);
+  a worker (`modes/memory/embed_worker.rs`, started in `mcp.rs` when Voyage is
+  configured) drains the queue on an interval so first search/relate is warm.
 
 ## Code Quality Requirements
 
