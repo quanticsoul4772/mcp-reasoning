@@ -167,10 +167,31 @@ impl super::ReasoningServer {
             "Searching reasoning sessions"
         );
 
-        // Call memory::search function
+        // Semantic search requires the Voyage embedding backend. Without the
+        // key it is unavailable — return a clear config error, not a silent
+        // empty result set (no BM25 fallback).
+        let Some(voyage) = self.state.voyage_client.clone() else {
+            self.state.metrics.record(MetricEvent::new(
+                "search_sessions",
+                timer.elapsed_ms(),
+                false,
+            ));
+            return SearchSessionsResponse {
+                results: vec![],
+                count: 0,
+                error: Some(
+                    "reasoning_search requires VOYAGE_API_KEY to be set; semantic search \
+                     is unavailable without it."
+                        .to_string(),
+                ),
+                metadata: None,
+            };
+        };
+
         let result = crate::modes::memory::search_sessions(
             &self.state.storage,
-            &self.state.client,
+            voyage.as_ref(),
+            &self.state.config.voyage_model,
             &req.query,
             req.limit.unwrap_or(10),
             req.min_similarity.unwrap_or(0.5),
@@ -198,6 +219,7 @@ impl super::ReasoningServer {
                         primary_mode: r.primary_mode,
                     })
                     .collect(),
+                error: None,
                 metadata: None,
             },
             Err(e) => {
@@ -209,6 +231,7 @@ impl super::ReasoningServer {
                 SearchSessionsResponse {
                     results: vec![],
                     count: 0,
+                    error: Some(format!("search failed: {e}")),
                     metadata: None,
                 }
             }

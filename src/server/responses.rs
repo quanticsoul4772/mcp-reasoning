@@ -1623,6 +1623,10 @@ pub struct SearchSessionsResponse {
     pub results: Vec<SearchResult>,
     /// Number of results returned.
     pub count: u32,
+    /// Set when the search could not run — notably when the memory tools'
+    /// required `VOYAGE_API_KEY` is unset, or when the embedding backend failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     /// Response metadata for discoverability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ResponseMetadata>,
