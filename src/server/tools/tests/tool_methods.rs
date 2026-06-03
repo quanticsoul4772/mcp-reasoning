@@ -47,6 +47,27 @@ async fn test_reasoning_divergent_tool() {
 }
 
 #[tokio::test]
+async fn test_reasoning_divergent_requires_voyage_key() {
+    // Novelty is grounded in perspective embeddings, so divergent requires
+    // VOYAGE_API_KEY. The test server has none → it returns a config error
+    // (in synthesis) and no perspectives, rather than self-assessed scores.
+    let server = create_test_server().await;
+    let resp = server
+        .reasoning_divergent(Parameters(DivergentRequest {
+            content: "anything".to_string(),
+            session_id: None,
+            num_perspectives: Some(2),
+            challenge_assumptions: None,
+            force_rebellion: None,
+            progress_token: None,
+        }))
+        .await;
+    assert!(resp.perspectives.is_empty());
+    let synth = resp.synthesis.expect("config error surfaced");
+    assert!(synth.contains("VOYAGE_API_KEY"), "{synth}");
+}
+
+#[tokio::test]
 async fn test_reasoning_reflection_tool() {
     let server = create_test_server().await;
     let req = ReflectionRequest {

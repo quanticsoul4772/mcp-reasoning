@@ -43,12 +43,24 @@ impl super::ReasoningServer {
             "Tool invocation started (streaming)"
         );
 
+        let input_session_id = req.session_id.clone().unwrap_or_default();
+
+        // Novelty is grounded in perspective embeddings, so divergent requires the
+        // Voyage backend (like search/relate) — no self-assessed fallback.
+        let Some(voyage) = self.state.voyage_client.clone() else {
+            self.state
+                .metrics
+                .record(MetricEvent::new("divergent", timer.elapsed_ms(), false));
+            return Self::divergent_error(
+                input_session_id,
+                "reasoning_divergent requires VOYAGE_API_KEY to ground novelty scores",
+            );
+        };
+
         let mode = DivergentMode::new(
             Arc::clone(&self.state.storage),
             Arc::clone(&self.state.client),
         );
-
-        let input_session_id = req.session_id.clone().unwrap_or_default();
 
         // Create progress reporter (use progress_token or generate one)
         let progress_token = req.progress_token.unwrap_or_else(|| {
@@ -143,39 +155,32 @@ impl super::ReasoningServer {
                     })
                     .collect();
 
-                // Ground novelty objectively in the perspectives' embeddings when
-                // Voyage is configured, replacing the model's self-assessed score.
-                // The grounding MUST succeed: an embed error (or a mismatched
-                // score count) fails the call — it is never swallowed in favour
-                // of the unverified self-assessed value. When Voyage is not
-                // configured the self-assessed score stands; divergent is a core
-                // tool and does not require the embedding backend.
-                if let Some(voyage) = self.state.voyage_client.as_deref() {
-                    let texts: Vec<String> =
-                        perspectives.iter().map(|p| p.content.clone()).collect();
-                    let scores = crate::modes::memory::novelty_scores(voyage, &texts).await;
-                    match scores {
-                        Ok(scores) if scores.len() == perspectives.len() => {
-                            for (p, s) in perspectives.iter_mut().zip(scores) {
-                                p.novelty_score = s;
-                            }
+                // Ground novelty objectively in the perspectives' embeddings,
+                // replacing the model's self-assessed score. The grounding MUST
+                // succeed: an embed error (or a mismatched score count) fails the
+                // call — it is never swallowed in favour of the unverified value.
+                let texts: Vec<String> = perspectives.iter().map(|p| p.content.clone()).collect();
+                match crate::modes::memory::novelty_scores(voyage.as_ref(), &texts).await {
+                    Ok(scores) if scores.len() == perspectives.len() => {
+                        for (p, s) in perspectives.iter_mut().zip(scores) {
+                            p.novelty_score = s;
                         }
-                        Ok(scores) => {
-                            return Self::divergent_error(
-                                resp.session_id,
-                                &format!(
-                                    "novelty grounding returned {} scores for {} perspectives",
-                                    scores.len(),
-                                    perspectives.len()
-                                ),
-                            );
-                        }
-                        Err(e) => {
-                            return Self::divergent_error(
-                                resp.session_id,
-                                &format!("novelty grounding failed: {e}"),
-                            );
-                        }
+                    }
+                    Ok(scores) => {
+                        return Self::divergent_error(
+                            resp.session_id,
+                            &format!(
+                                "novelty grounding returned {} scores for {} perspectives",
+                                scores.len(),
+                                perspectives.len()
+                            ),
+                        );
+                    }
+                    Err(e) => {
+                        return Self::divergent_error(
+                            resp.session_id,
+                            &format!("novelty grounding failed: {e}"),
+                        );
                     }
                 }
 

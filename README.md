@@ -181,7 +181,7 @@ mcp-reasoning --health
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | **Yes** | - | Your Anthropic API key |
-| `VOYAGE_API_KEY` | For memory tools | - | Enables `reasoning_search` / `reasoning_relate` (embeddings + reranking). Without it those two tools return a config error; the other 30 are unaffected |
+| `VOYAGE_API_KEY` | For memory tools | - | Enables `reasoning_search` / `reasoning_relate` and grounds `reasoning_divergent`'s novelty scores. Without it those three tools return a config error; the other 29 are unaffected |
 | `VOYAGE_MODEL` | No | `voyage-4` | Voyage embedding model |
 | `DATABASE_PATH` | No | `./data/reasoning.db` | SQLite database location |
 | `LOG_LEVEL` | No | `info` | `error`, `warn`, `info`, `debug`, or `trace` |
@@ -251,7 +251,7 @@ Reasoning state is stored in SQLite. Sessions can be resumed across conversation
 `reasoning_search` and `reasoning_relate` rank past sessions by **meaning**, not keywords, using [Voyage AI](https://www.voyageai.com/):
 
 - Each session is embedded on `voyage-4` and cached (keyed on content **and** model). Search is cosine recall followed by a cross-encoder rerank (`rerank-2.5`); relate builds a depth-bounded, edge-capped session graph.
-- **Requires `VOYAGE_API_KEY`** — there is no keyword fallback. Without the key, the two memory tools return a clear config error and the other 30 tools work normally.
+- **Requires `VOYAGE_API_KEY`** — there is no keyword fallback. Without the key, `reasoning_search`, `reasoning_relate`, and `reasoning_divergent` (whose novelty scores are embedding-grounded) return a clear config error; the other 29 tools work normally.
 - A background worker warms embeddings off the request path, so the first search/relate after writing a session isn't slowed by embedding.
 
 ### Self-Improvement (4-Phase)
