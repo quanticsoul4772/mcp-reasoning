@@ -80,6 +80,42 @@ pub trait AnthropicClientTrait: Send + Sync {
     ) -> Result<mpsc::Receiver<Result<StreamEvent, ModeError>>, ModeError>;
 }
 
+/// Embedding + reranking provider trait for mocking.
+///
+/// Abstracts a semantic-similarity backend (Voyage AI) so the memory mode can
+/// be unit-tested with deterministic vectors instead of live API calls.
+#[cfg_attr(test, mockall::automock)]
+#[async_trait]
+pub trait EmbeddingProvider: Send + Sync {
+    /// Embed a single query string (retrieval role `query`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if the API call or parsing fails.
+    async fn embed_query(&self, text: &str) -> Result<Vec<f32>, ModeError>;
+
+    /// Embed a batch of documents (retrieval role `document`), returning one
+    /// vector per input in order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if the API call or parsing fails.
+    async fn embed_documents(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, ModeError>;
+
+    /// Rerank `documents` against `query`, returning `(original_index, score)`
+    /// pairs sorted by descending relevance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModeError`] if the API call or parsing fails.
+    async fn rerank(
+        &self,
+        query: &str,
+        documents: &[String],
+        top_k: Option<u32>,
+    ) -> Result<Vec<(usize, f64)>, ModeError>;
+}
+
 /// Storage trait for mocking.
 ///
 /// This trait abstracts database operations to allow for

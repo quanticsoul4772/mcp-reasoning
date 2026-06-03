@@ -40,6 +40,8 @@
 //!     factory_timeout_ms: 30000,
 //!     max_retries: 3,
 //!     model: DEFAULT_MODEL.to_string(),
+//!     voyage_api_key: None,
+//!     voyage_model: "voyage-4".to_string(),
 //! };
 //! let metrics = Arc::new(MetricsCollector::new());
 //! let si_handle = ManagerHandle::for_testing(); // In production, use SelfImprovementManager::new()
