@@ -73,9 +73,10 @@ REQUEST_TIMEOUT_MS=30000              # Default (30s)
 MAX_RETRIES=3                         # Default
 MCP_TRANSPORT=stdio                   # stdio (default) or http
 
-# Semantic memory (Voyage AI) — REQUIRED for the memory tools
-# (reasoning_search / reasoning_relate). Without VOYAGE_API_KEY those two
-# tools return a clear config error; the other 30 tools are unaffected.
+# Semantic memory (Voyage AI) — REQUIRED for reasoning_search,
+# reasoning_relate, and reasoning_divergent (which grounds its novelty
+# scores in embeddings). Without VOYAGE_API_KEY those three tools return a
+# clear config error; the other 29 tools are unaffected.
 VOYAGE_API_KEY=pa-xxx                 # Enables embeddings + reranking
 VOYAGE_MODEL=voyage-4                 # Default embedding model
 ```
