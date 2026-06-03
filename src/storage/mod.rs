@@ -47,6 +47,7 @@ mod agent_metrics;
 mod branch;
 mod checkpoint;
 mod core;
+mod embeddings;
 mod graph;
 mod metrics;
 mod session;
@@ -55,8 +56,10 @@ mod trait_impl;
 mod types;
 
 pub use self::core::SqliteStorage;
+pub use embeddings::content_hash;
 pub use types::{
     ActionStatus, BranchStatus, GraphEdgeType, GraphNodeType, StoredAgentInvocation,
-    StoredAgentMessage, StoredBranch, StoredCheckpoint, StoredDiscoveredSkill, StoredGraphEdge,
-    StoredGraphNode, StoredMetric, StoredSelfImprovementAction, StoredSession, StoredThought,
+    StoredAgentMessage, StoredBranch, StoredCheckpoint, StoredDiscoveredSkill, StoredEmbedding,
+    StoredGraphEdge, StoredGraphNode, StoredMetric, StoredSelfImprovementAction, StoredSession,
+    StoredThought,
 };

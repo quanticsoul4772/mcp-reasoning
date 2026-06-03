@@ -184,6 +184,48 @@ pub struct StoredBranch {
     pub created_at: DateTime<Utc>,
 }
 
+/// A cached semantic embedding for a session's content.
+///
+/// The vector and its metadata are persisted as a JSON object in the
+/// `session_embeddings.embedding_json` column; `content_hash` lets callers skip
+/// re-embedding when the session content is unchanged.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredEmbedding {
+    /// Session this embedding describes.
+    pub session_id: String,
+    /// Model that produced the vector (e.g. `voyage-4`).
+    pub model: String,
+    /// Output data type (`"float"`, `"int8"`, …) — `float` until quantization lands.
+    pub dtype: String,
+    /// Vector dimensionality.
+    pub dim: u32,
+    /// The embedding vector.
+    pub vector: Vec<f32>,
+    /// Hash of the session content the vector was computed from.
+    pub content_hash: String,
+}
+
+impl StoredEmbedding {
+    /// Create a float embedding for `session_id`, inferring `dtype`/`dim`.
+    #[must_use]
+    pub fn new(
+        session_id: impl Into<String>,
+        model: impl Into<String>,
+        vector: Vec<f32>,
+        content_hash: impl Into<String>,
+    ) -> Self {
+        let dim = vector.len() as u32;
+        Self {
+            session_id: session_id.into(),
+            model: model.into(),
+            dtype: "float".to_string(),
+            dim,
+            vector,
+            content_hash: content_hash.into(),
+        }
+    }
+}
+
 impl StoredBranch {
     /// Create a new stored branch.
     #[must_use]
