@@ -373,23 +373,6 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_apply_config_overrides_default_and_env() {
-        clear_si_env_vars();
-        // Default: advisory (off).
-        assert!(!SelfImprovementConfig::from_env().apply_config_overrides);
-
-        // Opt-in only on an explicit "true".
-        env::set_var("SELF_IMPROVEMENT_APPLY_OVERRIDES", "true");
-        assert!(SelfImprovementConfig::from_env().apply_config_overrides);
-
-        env::set_var("SELF_IMPROVEMENT_APPLY_OVERRIDES", "yes");
-        assert!(!SelfImprovementConfig::from_env().apply_config_overrides);
-
-        clear_si_env_vars();
-    }
-
-    #[test]
-    #[serial]
     fn test_cycle_interval_clamped_low() {
         clear_si_env_vars();
         env::set_var("SELF_IMPROVEMENT_CYCLE_INTERVAL_SECS", "10"); // Below minimum

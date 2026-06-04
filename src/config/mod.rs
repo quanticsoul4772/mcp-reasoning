@@ -35,8 +35,12 @@
 
 mod secret;
 mod validation;
+pub mod overrides;
 
 mod self_improvement;
+
+#[cfg(test)]
+mod self_improvement_tests;
 
 pub use secret::SecretString;
 pub use self_improvement::SelfImprovementConfig;
@@ -221,81 +225,6 @@ impl Config {
         }
     }
 
-    /// Apply persisted self-improvement config overrides over this config.
-    ///
-    /// This is the bridge that lets a recorded SI recommendation actually reach
-    /// the running server. Only the allowlisted numeric `Config` fields are
-    /// settable; any other key (including `threshold:*` recommendations, which
-    /// have no live `Config` target), non-integer value, or out-of-range value
-    /// is skipped and logged — never fatal. Bounds match [`validate_config`], so
-    /// the config stays valid after applying. Returns the keys actually applied.
-    pub fn apply_overrides(&mut self, overrides: &[(String, serde_json::Value)]) -> Vec<String> {
-        let mut applied = Vec::new();
-        for (key, value) in overrides {
-            let ok = match key.as_str() {
-                "request_timeout_ms" => apply_timeout(key, value, &mut self.request_timeout_ms),
-                "request_timeout_deep_ms" => {
-                    apply_timeout(key, value, &mut self.request_timeout_deep_ms)
-                }
-                "request_timeout_maximum_ms" => {
-                    apply_timeout(key, value, &mut self.request_timeout_maximum_ms)
-                }
-                "factory_timeout_ms" => apply_timeout(key, value, &mut self.factory_timeout_ms),
-                "max_retries" => apply_max_retries(value, &mut self.max_retries),
-                other => {
-                    tracing::warn!(
-                        key = %other,
-                        "Skipping config override: not an applyable Config field"
-                    );
-                    false
-                }
-            };
-            if ok {
-                applied.push(key.clone());
-            }
-        }
-        applied
-    }
-}
-
-/// Apply a timeout override to `field` if it is a non-negative integer within
-/// the allowed range. Returns whether it was applied.
-fn apply_timeout(key: &str, value: &serde_json::Value, field: &mut u64) -> bool {
-    let Some(n) = value.as_u64() else {
-        tracing::warn!(key = %key, value = %value, "Skipping config override: not a non-negative integer");
-        return false;
-    };
-    if !(MIN_TIMEOUT_MS..=MAX_TIMEOUT_MS).contains(&n) {
-        tracing::warn!(
-            key = %key, value = n, min = MIN_TIMEOUT_MS, max = MAX_TIMEOUT_MS,
-            "Skipping config override: timeout out of range"
-        );
-        return false;
-    }
-    *field = n;
-    true
-}
-
-/// Apply a `max_retries` override if it is an integer within the allowed range.
-fn apply_max_retries(value: &serde_json::Value, field: &mut u32) -> bool {
-    let Some(n) = value.as_u64() else {
-        tracing::warn!(value = %value, "Skipping max_retries override: not a non-negative integer");
-        return false;
-    };
-    match u32::try_from(n) {
-        Ok(n) if n <= MAX_RETRIES => {
-            *field = n;
-            true
-        }
-        _ => {
-            tracing::warn!(
-                value = n,
-                max = MAX_RETRIES,
-                "Skipping max_retries override: out of range"
-            );
-            false
-        }
-    }
 }
 
 /// Parse an environment variable as u64, using a default if not set.
@@ -546,85 +475,6 @@ mod tests {
 
         let cloned = config.clone();
         assert_eq!(config, cloned);
-    }
-
-    fn overridable_config() -> Config {
-        Config {
-            api_key: SecretString::new("test-key"),
-            database_path: "/db".to_string(),
-            log_level: "info".to_string(),
-            request_timeout_ms: 30_000,
-            request_timeout_deep_ms: 60_000,
-            request_timeout_maximum_ms: 120_000,
-            factory_timeout_ms: 30_000,
-            max_retries: 3,
-            model: "m".to_string(),
-            voyage_api_key: None,
-            voyage_model: "voyage-4".to_string(),
-        }
-    }
-
-    #[test]
-    fn test_apply_overrides_sets_allowlisted_fields() {
-        let mut config = overridable_config();
-        let applied = config.apply_overrides(&[
-            ("request_timeout_ms".to_string(), serde_json::json!(45_000)),
-            ("max_retries".to_string(), serde_json::json!(5)),
-        ]);
-
-        assert_eq!(config.request_timeout_ms, 45_000);
-        assert_eq!(config.max_retries, 5);
-        assert_eq!(applied.len(), 2);
-        // The result stays valid against the same bounds validation enforces.
-        assert!(validate_config(&config).is_ok());
-    }
-
-    #[test]
-    fn test_apply_overrides_skips_unknown_and_threshold_keys() {
-        let mut config = overridable_config();
-        let applied = config.apply_overrides(&[
-            ("threshold:quality".to_string(), serde_json::json!(0.7)),
-            ("nonexistent_field".to_string(), serde_json::json!(123)),
-        ]);
-
-        assert!(applied.is_empty());
-        // Untouched.
-        assert_eq!(config.request_timeout_ms, 30_000);
-        assert_eq!(config.max_retries, 3);
-    }
-
-    #[test]
-    fn test_apply_overrides_skips_out_of_range_and_non_integer() {
-        let mut config = overridable_config();
-        let applied = config.apply_overrides(&[
-            ("request_timeout_ms".to_string(), serde_json::json!(999)), // below MIN
-            (
-                "request_timeout_deep_ms".to_string(),
-                serde_json::json!(400_000),
-            ), // above MAX
-            ("factory_timeout_ms".to_string(), serde_json::json!("soon")), // not an integer
-            ("max_retries".to_string(), serde_json::json!(99)),         // above MAX_RETRIES
-        ]);
-
-        assert!(applied.is_empty());
-        assert_eq!(config.request_timeout_ms, 30_000);
-        assert_eq!(config.request_timeout_deep_ms, 60_000);
-        assert_eq!(config.factory_timeout_ms, 30_000);
-        assert_eq!(config.max_retries, 3);
-    }
-
-    #[test]
-    fn test_apply_overrides_partial_apply() {
-        let mut config = overridable_config();
-        // One valid, one invalid: only the valid one applies.
-        let applied = config.apply_overrides(&[
-            ("factory_timeout_ms".to_string(), serde_json::json!(45_000)),
-            ("max_retries".to_string(), serde_json::json!(99)),
-        ]);
-
-        assert_eq!(applied, vec!["factory_timeout_ms".to_string()]);
-        assert_eq!(config.factory_timeout_ms, 45_000);
-        assert_eq!(config.max_retries, 3);
     }
 
     #[test]

@@ -64,6 +64,7 @@ impl McpServer {
         if si_config.apply_config_overrides {
             match si_storage.get_all_config_overrides().await {
                 Ok(records) => {
+                    let loaded = records.len();
                     let overrides: Vec<(String, serde_json::Value)> = records
                         .into_iter()
                         .map(|r| {
@@ -74,7 +75,7 @@ impl McpServer {
                         .collect();
                     let applied = config.apply_overrides(&overrides);
                     if applied.is_empty() {
-                        tracing::info!("No applyable self-improvement config overrides found");
+                        tracing::info!(target: "stderr", loaded = loaded, applied = applied.len(), "No applicable self-improvement config overrides found");
                     } else {
                         tracing::info!(
                             applied = ?applied,
