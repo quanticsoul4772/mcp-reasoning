@@ -62,30 +62,14 @@ impl McpServer {
         // default — SI stays advisory unless SELF_IMPROVEMENT_APPLY_OVERRIDES.
         let mut config = self.config.clone();
         if si_config.apply_config_overrides {
-            match si_storage.get_all_config_overrides().await {
-                Ok(records) => {
-                    let loaded = records.len();
-                    let overrides: Vec<(String, serde_json::Value)> = records
-                        .into_iter()
-                        .map(|r| {
-                            let value = serde_json::from_str(&r.value_json)
-                                .unwrap_or(serde_json::Value::String(r.value_json));
-                            (r.key, value)
-                        })
-                        .collect();
-                    let applied = config.apply_overrides(&overrides);
-                    if applied.is_empty() {
-                        tracing::info!(target: "stderr", loaded = loaded, applied = applied.len(), "No applicable self-improvement config overrides found");
-                    } else {
-                        tracing::info!(
-                            applied = ?applied,
-                            "Applied self-improvement config overrides at startup"
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to load config overrides; using env config");
-                }
+            let applied = apply_stored_overrides(&mut config, &si_storage).await;
+            if applied.is_empty() {
+                tracing::info!("No applicable self-improvement config overrides found");
+            } else {
+                tracing::info!(
+                    applied = ?applied,
+                    "Applied self-improvement config overrides at startup"
+                );
             }
         }
 
@@ -190,6 +174,36 @@ impl McpServer {
     }
 }
 
+/// Load persisted self-improvement config overrides and apply them over
+/// `config`, returning the keys actually applied.
+///
+/// This is the startup bridge that lets a recorded SI recommendation reach the
+/// running server (bounded by the allowlist + `Config::apply_overrides`
+/// validation). A storage error is logged and treated as "nothing applied" so
+/// startup never fails on it.
+async fn apply_stored_overrides(
+    config: &mut Config,
+    si_storage: &SelfImprovementStorage,
+) -> Vec<String> {
+    match si_storage.get_all_config_overrides().await {
+        Ok(records) => {
+            let overrides: Vec<(String, serde_json::Value)> = records
+                .into_iter()
+                .map(|r| {
+                    let value = serde_json::from_str(&r.value_json)
+                        .unwrap_or(serde_json::Value::String(r.value_json));
+                    (r.key, value)
+                })
+                .collect();
+            config.apply_overrides(&overrides)
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to load config overrides; using env config");
+            Vec::new()
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -227,6 +241,52 @@ mod tests {
         let config = test_config();
         let server = McpServer::new(config);
         assert_eq!(server.config().max_retries, 3);
+    }
+
+    // End-to-end proof of the apply-overrides chain: a recommendation persisted
+    // to `config_overrides` (via the real storage layer) is loaded and applied
+    // over `Config` by the same helper the server runs at startup.
+    #[tokio::test]
+    async fn test_apply_stored_overrides_end_to_end() {
+        use crate::self_improvement::storage::ConfigOverrideRecord;
+        use crate::self_improvement::SelfImprovementStorage;
+        use crate::storage::SqliteStorage;
+        use chrono::Utc;
+
+        let sqlite = SqliteStorage::new_in_memory().await.expect("storage");
+        let si_storage = SelfImprovementStorage::new(sqlite.pool.clone());
+
+        // Persist overrides exactly as a successful SI cycle would: real Config
+        // keys (a timeout, a retry count, and a decision threshold) + one bogus
+        // key that must be ignored.
+        for (key, value_json) in [
+            ("request_timeout_ms", "45000"),
+            ("max_retries", "5"),
+            ("mcts_quality_threshold", "0.4"),
+            ("threshold:nonexistent", "0.9"),
+        ] {
+            si_storage
+                .upsert_config_override(&ConfigOverrideRecord {
+                    key: key.to_string(),
+                    value_json: value_json.to_string(),
+                    applied_by_action: None,
+                    updated_at: Utc::now(),
+                })
+                .await
+                .expect("seed override");
+        }
+
+        let mut config = test_config();
+        let applied = apply_stored_overrides(&mut config, &si_storage).await;
+
+        // The three real keys applied; the bogus one was skipped.
+        assert_eq!(applied.len(), 3);
+        assert!(!applied.iter().any(|k| k.starts_with("threshold:")));
+        assert_eq!(config.request_timeout_ms, 45_000);
+        assert_eq!(config.max_retries, 5);
+        assert!((config.mcts_quality_threshold - 0.4).abs() < f64::EPSILON);
+        // The recorded config stays valid against the same bounds.
+        assert!(crate::config::validate_config(&config).is_ok());
     }
 
     #[test]
