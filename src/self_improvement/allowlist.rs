@@ -60,12 +60,15 @@ impl Default for AllowlistConfig {
 
         let mut allowed_parameters = std::collections::HashMap::new();
 
-        // ConfigAdjust allowed parameters
+        // ConfigAdjust allowed parameters — the real, tunable `Config` fields
+        // (see `crate::config::Config`). Made-up keys here silently fail
+        // validation, so they must match the actual struct fields.
         let mut config_params = HashSet::new();
-        config_params.insert("timeout_ms".to_string());
+        config_params.insert("request_timeout_ms".to_string());
+        config_params.insert("request_timeout_deep_ms".to_string());
+        config_params.insert("request_timeout_maximum_ms".to_string());
+        config_params.insert("factory_timeout_ms".to_string());
         config_params.insert("max_retries".to_string());
-        config_params.insert("request_limit".to_string());
-        config_params.insert("batch_size".to_string());
         allowed_parameters.insert(ActionType::ConfigAdjust, config_params);
 
         // PromptTune allowed parameters
@@ -336,7 +339,7 @@ mod tests {
         let mut allowlist = Allowlist::with_defaults();
         let mut action = create_test_action(ActionType::ConfigAdjust);
         action = action.with_parameters(serde_json::json!({
-            "timeout_ms": 30000,
+            "request_timeout_ms": 30000,
             "max_retries": 5
         }));
 
@@ -349,7 +352,7 @@ mod tests {
         let mut allowlist = Allowlist::with_defaults();
         let mut action = create_test_action(ActionType::ConfigAdjust);
         action = action.with_parameters(serde_json::json!({
-            "timeout_ms": 30000,
+            "request_timeout_ms": 30000,
             "dangerous_param": "value"
         }));
 
