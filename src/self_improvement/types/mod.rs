@@ -17,7 +17,6 @@
 mod enums;
 mod legacy;
 mod metrics;
-mod rewards;
 
 #[cfg(test)]
 #[allow(
@@ -31,9 +30,8 @@ mod rewards;
 mod tests;
 
 // Re-export all public types from submodules
-pub use enums::{DiagnosisId, DiagnosisStatus, Severity, TriggerMetric};
+pub use enums::{DiagnosisId, DiagnosisStatus, Severity};
 pub use legacy::{
     ActionStatus, ActionType, LegacyTriggerMetric, Lesson, SelfImprovementAction, SystemMetrics,
 };
-pub use metrics::{Baselines, MetricsSnapshot, ToolMetrics};
-pub use rewards::{NormalizedReward, RewardBreakdown, RewardWeights};
+pub use metrics::Baselines;

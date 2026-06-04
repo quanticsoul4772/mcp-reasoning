@@ -6,12 +6,9 @@ use super::helpers::{
 use super::operations::SelfImprovementStorage;
 use super::records::{
     ActionRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord, InvocationStats,
-    LearningRecord,
 };
 use crate::error::StorageError;
-use crate::self_improvement::types::{
-    ActionStatus, DiagnosisStatus, NormalizedReward, RewardBreakdown, Severity,
-};
+use crate::self_improvement::types::{ActionStatus, DiagnosisStatus, Severity};
 use crate::storage::SqliteStorage;
 use chrono::{Datelike, Utc};
 use serial_test::serial;
@@ -144,39 +141,6 @@ fn test_parse_datetime_invalid() {
         _ => panic!("Expected QueryFailed error"),
     }
 }
-#[test]
-fn test_learning_record_from_reward() {
-    let reward = NormalizedReward::new(0.5, RewardBreakdown::new(0.3, 0.5, 0.7), 0.85);
-
-    let result = LearningRecord::from_reward(
-        "action-123",
-        &reward,
-        Some(vec!["lesson 1".to_string()]),
-        Some(vec!["recommendation 1".to_string()]),
-    );
-
-    assert!(result.is_ok());
-    let record = result.unwrap();
-    assert_eq!(record.action_id, "action-123");
-    assert_eq!(record.reward_value, 0.5);
-    assert_eq!(record.confidence, 0.85);
-    assert!(record.lessons_json.is_some());
-    assert!(record.recommendations_json.is_some());
-}
-
-#[test]
-fn test_learning_record_from_reward_no_optional() {
-    let reward = NormalizedReward::new(0.0, RewardBreakdown::default(), 0.5);
-
-    let result = LearningRecord::from_reward("action-456", &reward, None, None);
-
-    assert!(result.is_ok());
-    let record = result.unwrap();
-    assert_eq!(record.action_id, "action-456");
-    assert!(record.lessons_json.is_none());
-    assert!(record.recommendations_json.is_none());
-}
-
 #[test]
 fn test_invocation_stats_default() {
     let stats = InvocationStats::default();
@@ -521,60 +485,6 @@ async fn test_get_actions_by_outcome() {
         .unwrap();
     assert_eq!(failed.len(), 1);
 }
-
-#[tokio::test]
-#[serial]
-async fn test_insert_and_get_learning() {
-    let storage = test_storage().await;
-
-    // Setup diagnosis and action
-    let diagnosis = make_diagnosis("Test", None, None);
-    storage.insert_diagnosis(&diagnosis).await.unwrap();
-
-    let action_record = ActionRecord {
-        id: uuid::Uuid::new_v4().to_string(),
-        diagnosis_id: diagnosis.id.clone(),
-        action_type: "no_op".to_string(),
-        action_json: "{}".to_string(),
-        outcome: ActionStatus::Completed,
-        pre_metrics_json: "{}".to_string(),
-        post_metrics_json: Some("{}".to_string()),
-        execution_time_ms: 100,
-        error_message: None,
-        created_at: Utc::now(),
-    };
-    let action_id = action_record.id.clone();
-    storage.insert_action(&action_record).await.unwrap();
-
-    // Insert learning
-    let reward = NormalizedReward::new(0.6, RewardBreakdown::new(0.5, 0.6, 0.7), 0.9);
-    let learning = LearningRecord::from_reward(
-        &action_id,
-        &reward,
-        Some(vec!["Lesson learned".to_string()]),
-        Some(vec!["Try faster".to_string()]),
-    )
-    .unwrap();
-
-    storage.insert_learning(&learning).await.unwrap();
-
-    // Get by action ID
-    let retrieved = storage.get_learning_by_action(&action_id).await.unwrap();
-    assert!(retrieved.is_some());
-    let retrieved = retrieved.unwrap();
-    assert_eq!(retrieved.action_id, action_id);
-    assert_eq!(retrieved.reward_value, 0.6);
-    assert_eq!(retrieved.confidence, 0.9);
-}
-
-#[tokio::test]
-#[serial]
-async fn test_get_learning_not_found() {
-    let storage = test_storage().await;
-    let result = storage.get_learning_by_action("nonexistent").await.unwrap();
-    assert!(result.is_none());
-}
-
 #[tokio::test]
 #[serial]
 async fn test_config_override_crud() {
@@ -834,49 +744,4 @@ async fn test_batch_insert_invocations_exceeds_batch_size() {
 
     let retrieved = storage.get_recent_invocations(250).await.unwrap();
     assert_eq!(retrieved.len(), 200);
-}
-
-#[tokio::test]
-#[serial]
-async fn test_batch_insert_learnings_empty() {
-    let storage = test_storage().await;
-    let count = storage.batch_insert_learnings(&[]).await.unwrap();
-    assert_eq!(count, 0);
-}
-
-#[tokio::test]
-#[serial]
-async fn test_batch_insert_learnings_multiple() {
-    let storage = test_storage().await;
-
-    // Setup required foreign key references
-    let diagnosis = make_diagnosis("Test", None, None);
-    storage.insert_diagnosis(&diagnosis).await.unwrap();
-
-    let action_record = ActionRecord {
-        id: uuid::Uuid::new_v4().to_string(),
-        diagnosis_id: diagnosis.id.clone(),
-        action_type: "no_op".to_string(),
-        action_json: "{}".to_string(),
-        outcome: ActionStatus::Completed,
-        pre_metrics_json: "{}".to_string(),
-        post_metrics_json: None,
-        execution_time_ms: 100,
-        error_message: None,
-        created_at: Utc::now(),
-    };
-    let action_id = action_record.id.clone();
-    storage.insert_action(&action_record).await.unwrap();
-
-    // Create learning records
-    let reward = NormalizedReward::new(0.5, RewardBreakdown::new(0.3, 0.5, 0.7), 0.85);
-    let records: Vec<LearningRecord> = (0..10)
-        .map(|_| {
-            LearningRecord::from_reward(&action_id, &reward, Some(vec!["lesson".into()]), None)
-                .unwrap()
-        })
-        .collect();
-
-    let count = storage.batch_insert_learnings(&records).await.unwrap();
-    assert_eq!(count, 10);
 }

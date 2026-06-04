@@ -9,7 +9,6 @@ use sqlx::{Row, SqlitePool};
 use super::helpers::{parse_action_status, parse_datetime, parse_diagnosis_status, parse_severity};
 use super::records::{
     ActionRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord, InvocationStats,
-    LearningRecord,
 };
 use crate::error::StorageError;
 use crate::self_improvement::types::{ActionStatus, DiagnosisStatus};
@@ -453,128 +452,6 @@ impl SelfImprovementStorage {
         }
 
         Ok(records)
-    }
-
-    // ------------------------------------------------------------------------
-    // Learning Operations
-    // ------------------------------------------------------------------------
-
-    /// Insert a learning record.
-    pub async fn insert_learning(&self, record: &LearningRecord) -> Result<(), StorageError> {
-        sqlx::query(
-            r"
-            INSERT INTO learnings (
-                id, action_id, reward_value, reward_breakdown_json,
-                confidence, lessons_json, recommendations_json, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ",
-        )
-        .bind(&record.id)
-        .bind(&record.action_id)
-        .bind(record.reward_value)
-        .bind(&record.reward_breakdown_json)
-        .bind(record.confidence)
-        .bind(&record.lessons_json)
-        .bind(&record.recommendations_json)
-        .bind(record.created_at.to_rfc3339())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| query_error(e.to_string()))?;
-
-        Ok(())
-    }
-
-    /// Batch insert learning records.
-    ///
-    /// Uses chunked inserts to respect SQLite's 999 variable limit.
-    /// Returns the total number of records inserted.
-    pub async fn batch_insert_learnings(
-        &self,
-        records: &[LearningRecord],
-    ) -> Result<u64, StorageError> {
-        // Each record uses 8 bind variables
-        const VARS_PER_RECORD: usize = 8;
-        const MAX_VARS: usize = 999;
-        const BATCH_SIZE: usize = MAX_VARS / VARS_PER_RECORD; // 124
-
-        if records.is_empty() {
-            return Ok(0);
-        }
-
-        let mut total_inserted = 0u64;
-
-        for chunk in records.chunks(BATCH_SIZE) {
-            let placeholders: String = chunk
-                .iter()
-                .map(|_| "(?, ?, ?, ?, ?, ?, ?, ?)")
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            let sql = format!(
-                "INSERT INTO learnings (id, action_id, reward_value, reward_breakdown_json, confidence, lessons_json, recommendations_json, created_at) VALUES {placeholders}"
-            );
-
-            // Safe: only `?` placeholders are interpolated; values are bound below.
-            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
-            for record in chunk {
-                query = query
-                    .bind(&record.id)
-                    .bind(&record.action_id)
-                    .bind(record.reward_value)
-                    .bind(&record.reward_breakdown_json)
-                    .bind(record.confidence)
-                    .bind(&record.lessons_json)
-                    .bind(&record.recommendations_json)
-                    .bind(record.created_at.to_rfc3339());
-            }
-
-            let result = query
-                .execute(&self.pool)
-                .await
-                .map_err(|e| query_error(format!("Batch insert failed: {e}")))?;
-
-            total_inserted += result.rows_affected();
-        }
-
-        Ok(total_inserted)
-    }
-
-    /// Get learning by action ID.
-    pub async fn get_learning_by_action(
-        &self,
-        action_id: &str,
-    ) -> Result<Option<LearningRecord>, StorageError> {
-        let row = sqlx::query(
-            r"
-            SELECT id, action_id, reward_value, reward_breakdown_json,
-                   confidence, lessons_json, recommendations_json, created_at
-            FROM learnings
-            WHERE action_id = ?
-            ",
-        )
-        .bind(action_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| query_error(e.to_string()))?;
-
-        match row {
-            Some(row) => {
-                let created_at_str: String = row.get("created_at");
-
-                Ok(Some(LearningRecord {
-                    id: row.get("id"),
-                    action_id: row.get("action_id"),
-                    reward_value: row.get("reward_value"),
-                    reward_breakdown_json: row.get("reward_breakdown_json"),
-                    confidence: row.get("confidence"),
-                    lessons_json: row.get("lessons_json"),
-                    recommendations_json: row.get("recommendations_json"),
-                    created_at: parse_datetime(&created_at_str)?,
-                }))
-            }
-            None => Ok(None),
-        }
     }
 
     // ------------------------------------------------------------------------
