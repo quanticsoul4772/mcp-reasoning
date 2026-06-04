@@ -24,6 +24,7 @@
 //!     model: DEFAULT_MODEL.to_string(),
 //!     voyage_api_key: None,
 //!     voyage_model: "voyage-4".to_string(),
+//!     high_confidence_threshold: 0.75,
 //! };
 //!
 //! println!("Using model: {}", config.model);
@@ -65,6 +66,9 @@ pub const DEFAULT_FACTORY_TIMEOUT_MS: u64 = 30_000;
 /// Default maximum retry attempts.
 pub const DEFAULT_MAX_RETRIES: u32 = 3;
 
+/// Default high-confidence threshold for `reasoning_confidence_route`.
+pub const DEFAULT_HIGH_CONFIDENCE_THRESHOLD: f64 = 0.75;
+
 /// Default Anthropic model.
 pub const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 
@@ -81,7 +85,8 @@ pub const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 /// - Fast/Standard modes (no thinking or 4K tokens): `request_timeout_ms` (default: 30s)
 /// - Deep modes (8K tokens): `request_timeout_deep_ms` (default: 60s)
 /// - Maximum modes (16K tokens): `request_timeout_maximum_ms` (default: 120s)
-#[derive(Debug, Clone, PartialEq, Eq)]
+// `PartialEq` only (not `Eq`): `high_confidence_threshold` is an `f64`.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// Anthropic API key (protected from logging via [`SecretString`]).
     pub api_key: SecretString,
@@ -106,6 +111,11 @@ pub struct Config {
     pub voyage_api_key: Option<SecretString>,
     /// Voyage embedding model to use (default `voyage-4`).
     pub voyage_model: String,
+    /// Confidence threshold above which `reasoning_confidence_route` treats the
+    /// problem as high-confidence (and does not escalate to tree reasoning),
+    /// used when a caller does not pass `high_confidence_threshold`. A real,
+    /// tunable decision knob the self-improvement system can adjust. 0.0–1.0.
+    pub high_confidence_threshold: f64,
 }
 
 impl Config {
@@ -164,6 +174,11 @@ impl Config {
         let voyage_model = std::env::var("VOYAGE_MODEL")
             .unwrap_or_else(|_| crate::voyage::DEFAULT_VOYAGE_MODEL.into());
 
+        let high_confidence_threshold = parse_env_f64(
+            "HIGH_CONFIDENCE_THRESHOLD",
+            DEFAULT_HIGH_CONFIDENCE_THRESHOLD,
+        )?;
+
         let config = Self {
             api_key: SecretString::new(api_key),
             database_path,
@@ -176,6 +191,7 @@ impl Config {
             model,
             voyage_api_key,
             voyage_model,
+            high_confidence_threshold,
         };
 
         validate_config(&config)?;
@@ -205,6 +221,7 @@ impl Config {
     /// #     model: "claude-sonnet-4-20250514".into(),
     /// #     voyage_api_key: None,
     /// #     voyage_model: "voyage-4".into(),
+    /// #     high_confidence_threshold: 0.75,
     /// # };
     ///
     /// assert_eq!(config.timeout_for_thinking_budget(None), 30_000);
@@ -242,6 +259,9 @@ impl Config {
                 }
                 "factory_timeout_ms" => apply_timeout(key, value, &mut self.factory_timeout_ms),
                 "max_retries" => apply_max_retries(value, &mut self.max_retries),
+                "high_confidence_threshold" => {
+                    apply_unit_threshold(key, value, &mut self.high_confidence_threshold)
+                }
                 other => {
                     tracing::warn!(
                         key = %other,
@@ -270,6 +290,21 @@ fn apply_timeout(key: &str, value: &serde_json::Value, field: &mut u64) -> bool 
             key = %key, value = n, min = MIN_TIMEOUT_MS, max = MAX_TIMEOUT_MS,
             "Skipping config override: timeout out of range"
         );
+        return false;
+    }
+    *field = n;
+    true
+}
+
+/// Apply a unit-interval threshold override (`0.0..=1.0`) to `field` if the
+/// value is a number in range. Returns whether it was applied.
+fn apply_unit_threshold(key: &str, value: &serde_json::Value, field: &mut f64) -> bool {
+    let Some(n) = value.as_f64() else {
+        tracing::warn!(key = %key, value = %value, "Skipping config override: not a number");
+        return false;
+    };
+    if !(0.0..=1.0).contains(&n) {
+        tracing::warn!(key = %key, value = n, "Skipping config override: threshold out of [0,1]");
         return false;
     }
     *field = n;
@@ -314,6 +349,16 @@ fn parse_env_u32(name: &str, default: u32) -> Result<u32, ConfigError> {
         val.parse().map_err(|_| ConfigError::InvalidValue {
             var: name.into(),
             reason: "must be a positive integer".into(),
+        })
+    })
+}
+
+/// Parse an environment variable as f64, using a default if not set.
+fn parse_env_f64(name: &str, default: f64) -> Result<f64, ConfigError> {
+    std::env::var(name).map_or(Ok(default), |val| {
+        val.parse().map_err(|_| ConfigError::InvalidValue {
+            var: name.into(),
+            reason: "must be a number".into(),
         })
     })
 }
@@ -542,6 +587,7 @@ mod tests {
             model: "test-model".to_string(),
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
+            high_confidence_threshold: 0.75,
         };
 
         let cloned = config.clone();
@@ -561,6 +607,7 @@ mod tests {
             model: "m".to_string(),
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
+            high_confidence_threshold: 0.75,
         }
     }
 
@@ -590,6 +637,38 @@ mod tests {
         assert!(applied.is_empty());
         assert_eq!(config.request_timeout_ms, 30_000);
         assert_eq!(config.max_retries, 3);
+    }
+
+    #[test]
+    fn test_apply_overrides_sets_high_confidence_threshold() {
+        let mut config = overridable_config();
+        let applied = config.apply_overrides(&[(
+            "high_confidence_threshold".to_string(),
+            serde_json::json!(0.85),
+        )]);
+
+        assert_eq!(applied, vec!["high_confidence_threshold".to_string()]);
+        assert!((config.high_confidence_threshold - 0.85).abs() < f64::EPSILON);
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_apply_overrides_skips_threshold_out_of_unit_range() {
+        let mut config = overridable_config();
+        let applied = config.apply_overrides(&[
+            (
+                "high_confidence_threshold".to_string(),
+                serde_json::json!(1.5),
+            ),
+            (
+                "high_confidence_threshold".to_string(),
+                serde_json::json!(-0.1),
+            ),
+        ]);
+
+        assert!(applied.is_empty());
+        // Unchanged from the default.
+        assert!((config.high_confidence_threshold - 0.75).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -639,6 +718,7 @@ mod tests {
             model: "test-model".to_string(),
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
+            high_confidence_threshold: 0.75,
         };
 
         let debug = format!("{config:?}");

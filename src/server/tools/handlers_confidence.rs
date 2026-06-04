@@ -11,9 +11,6 @@ use crate::server::responses::{ConfidenceRouteResponse, NextCallHint};
 
 use super::NO_THINKING;
 
-/// Default confidence threshold above which we trust the auto selection.
-const DEFAULT_HIGH_CONFIDENCE: f64 = 0.75;
-
 impl super::ReasoningServer {
     pub(super) async fn handle_confidence_route(
         &self,
@@ -29,9 +26,11 @@ impl super::ReasoningServer {
             "Tool invocation started"
         );
 
+        // Caller-supplied threshold wins; otherwise fall back to the live
+        // Config default (which the self-improvement system can tune).
         let threshold = req
             .high_confidence_threshold
-            .unwrap_or(DEFAULT_HIGH_CONFIDENCE)
+            .unwrap_or(self.state.config.high_confidence_threshold)
             .clamp(0.0, 1.0);
 
         let budget = req.budget.as_deref().unwrap_or("auto");
