@@ -51,8 +51,13 @@ pub enum ActionStatus {
     Approved,
     /// Action is currently being executed.
     Executing,
-    /// Action completed successfully.
+    /// Action completed successfully — its effect reached the running system
+    /// (a logged observation, or a config change applied to the live `Config`).
     Completed,
+    /// Action ran and a recommendation was recorded, but nothing was applied to
+    /// the running server (advisory mode). Honest counterpart to `Completed` for
+    /// config/threshold/prompt actions that only persist a recommendation.
+    Recommended,
     /// Action failed during execution.
     Failed,
     /// Action was rolled back.
@@ -68,6 +73,7 @@ impl std::fmt::Display for ActionStatus {
             Self::Approved => write!(f, "approved"),
             Self::Executing => write!(f, "executing"),
             Self::Completed => write!(f, "completed"),
+            Self::Recommended => write!(f, "recommended"),
             Self::Failed => write!(f, "failed"),
             Self::RolledBack => write!(f, "rolled_back"),
             Self::Rejected => write!(f, "rejected"),
