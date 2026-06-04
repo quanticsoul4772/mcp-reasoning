@@ -180,6 +180,7 @@ mod tests {
             high_confidence_threshold: 0.75,
             reflection_quality_threshold: 0.8,
             mcts_quality_threshold: 0.5,
+            graph_prune_threshold: 0.3,
         }
     }
 

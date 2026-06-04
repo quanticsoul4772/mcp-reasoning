@@ -112,7 +112,8 @@ action to be REJECTED, so use only these:
   above which `reasoning_confidence_route` stops escalating to tree reasoning),
   `reflection_quality_threshold` (quality at which `reasoning_reflection` stops
   refining), `mcts_quality_threshold` (the `reasoning_mcts` auto-backtrack
-  floor) — each 0.0–1.0, e.g. `{{"mcts_quality_threshold": 0.6}}`.
+  floor), `graph_prune_threshold` (the `reasoning_graph` prune quality floor) —
+  each 0.0–1.0, e.g. `{{"mcts_quality_threshold": 0.6}}`.
 - `prompt_tune`: `prompt_key`, `template`, and optionally `mode`.
 `log_observation` needs no parameters. Also keep `expected_improvement` at or
 below 0.5. An action without a non-empty `parameters` object (for the three

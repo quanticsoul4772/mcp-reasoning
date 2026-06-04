@@ -447,13 +447,19 @@ where
         &self,
         content: &str,
         session_id: Option<String>,
+        quality_floor: f64,
     ) -> Result<PruneResponse, ModeError> {
         validate_content(content)?;
 
         let session = self.get_or_create_session(session_id).await?;
 
         let prompt = graph_prune_prompt();
-        let user_message = format!("{prompt}\n\nGraph state:\n{content}");
+        // Inject the (tunable) quality floor: nodes scoring below it are
+        // pruning candidates. Caller/Config-supplied via `quality_floor`.
+        let user_message = format!(
+            "{prompt}\n\nTreat a node as a pruning candidate when its quality \
+             score is below {quality_floor:.2}.\n\nGraph state:\n{content}"
+        );
 
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
@@ -1076,7 +1082,7 @@ mod tests {
             .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
-        let result = mode.prune("Graph", None).await;
+        let result = mode.prune("Graph", None, 0.3).await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -1468,7 +1474,7 @@ mod tests {
         let mock_client = MockAnthropicClientTrait::new();
 
         let mode = GraphMode::new(mock_storage, mock_client);
-        let result = mode.prune("", None).await;
+        let result = mode.prune("", None, 0.3).await;
 
         assert!(matches!(result, Err(ModeError::MissingField { field }) if field == "content"));
     }
@@ -1495,7 +1501,7 @@ mod tests {
             .returning(move |_, _| Ok(CompletionResponse::new(resp.clone(), Usage::new(100, 200))));
 
         let mode = GraphMode::new(mock_storage, mock_client);
-        let result = mode.prune("Graph", None).await;
+        let result = mode.prune("Graph", None, 0.3).await;
 
         assert!(result.is_ok());
     }
@@ -1960,7 +1966,7 @@ mod tests {
             .expect("seed node");
 
         let mode = GraphMode::new(Arc::clone(&storage), fixed_client(mock_prune_response()));
-        mode.prune("Graph", Some("sess-prune".to_string()))
+        mode.prune("Graph", Some("sess-prune".to_string()), 0.3)
             .await
             .expect("prune succeeds");
 

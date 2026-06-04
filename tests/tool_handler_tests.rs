@@ -60,6 +60,7 @@ async fn create_test_state(server: &MockServer) -> AppState {
         high_confidence_threshold: 0.75,
         reflection_quality_threshold: 0.8,
         mcts_quality_threshold: 0.5,
+        graph_prune_threshold: 0.3,
     };
 
     let metadata_builder = mcp_reasoning::metadata::MetadataBuilder::new(

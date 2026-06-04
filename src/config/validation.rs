@@ -60,6 +60,7 @@ pub fn validate_config(config: &Config) -> Result<(), ConfigError> {
             config.reflection_quality_threshold,
         ),
         ("MCTS_QUALITY_THRESHOLD", config.mcts_quality_threshold),
+        ("GRAPH_PRUNE_THRESHOLD", config.graph_prune_threshold),
     ] {
         if !(0.0..=1.0).contains(&value) {
             return Err(ConfigError::InvalidValue {
@@ -101,6 +102,7 @@ mod tests {
             high_confidence_threshold: 0.75,
             reflection_quality_threshold: 0.8,
             mcts_quality_threshold: 0.5,
+            graph_prune_threshold: 0.3,
         }
     }
 
@@ -127,6 +129,7 @@ mod tests {
             high_confidence_threshold: 0.75,
             reflection_quality_threshold: 0.8,
             mcts_quality_threshold: 0.5,
+            graph_prune_threshold: 0.3,
         };
         let result = validate_config(&config);
         assert!(result.is_err());

@@ -27,6 +27,7 @@
 //!     high_confidence_threshold: 0.75,
 //!     reflection_quality_threshold: 0.8,
 //!     mcts_quality_threshold: 0.5,
+//!     graph_prune_threshold: 0.3,
 //! };
 //!
 //! println!("Using model: {}", config.model);
@@ -78,6 +79,10 @@ pub const DEFAULT_REFLECTION_QUALITY_THRESHOLD: f64 = 0.8;
 /// Default quality threshold for `reasoning_mcts` auto-backtrack, used when a
 /// caller omits `quality_threshold`.
 pub const DEFAULT_MCTS_QUALITY_THRESHOLD: f64 = 0.5;
+
+/// Default quality floor for `reasoning_graph` prune (nodes scoring below this
+/// are pruning candidates), used when a caller omits `threshold`.
+pub const DEFAULT_GRAPH_PRUNE_THRESHOLD: f64 = 0.3;
 
 /// Default Anthropic model.
 pub const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
@@ -134,6 +139,10 @@ pub struct Config {
     /// caller omits it. A real, tunable knob the self-improvement system can
     /// adjust. 0.0–1.0.
     pub mcts_quality_threshold: f64,
+    /// Default quality floor for `reasoning_graph` prune (nodes scoring below it
+    /// are pruning candidates), used when a caller omits it. A real, tunable knob
+    /// the self-improvement system can adjust. 0.0–1.0.
+    pub graph_prune_threshold: f64,
 }
 
 impl Config {
@@ -202,6 +211,8 @@ impl Config {
         )?;
         let mcts_quality_threshold =
             parse_env_f64("MCTS_QUALITY_THRESHOLD", DEFAULT_MCTS_QUALITY_THRESHOLD)?;
+        let graph_prune_threshold =
+            parse_env_f64("GRAPH_PRUNE_THRESHOLD", DEFAULT_GRAPH_PRUNE_THRESHOLD)?;
 
         let config = Self {
             api_key: SecretString::new(api_key),
@@ -218,6 +229,7 @@ impl Config {
             high_confidence_threshold,
             reflection_quality_threshold,
             mcts_quality_threshold,
+            graph_prune_threshold,
         };
 
         validate_config(&config)?;
@@ -250,6 +262,7 @@ impl Config {
     /// #     high_confidence_threshold: 0.75,
     /// #     reflection_quality_threshold: 0.8,
     /// #     mcts_quality_threshold: 0.5,
+    /// #     graph_prune_threshold: 0.3,
     /// # };
     ///
     /// assert_eq!(config.timeout_for_thinking_budget(None), 30_000);
@@ -295,6 +308,9 @@ impl Config {
                 }
                 "mcts_quality_threshold" => {
                     apply_unit_threshold(key, value, &mut self.mcts_quality_threshold)
+                }
+                "graph_prune_threshold" => {
+                    apply_unit_threshold(key, value, &mut self.graph_prune_threshold)
                 }
                 other => {
                     tracing::warn!(
@@ -624,6 +640,7 @@ mod tests {
             high_confidence_threshold: 0.75,
             reflection_quality_threshold: 0.8,
             mcts_quality_threshold: 0.5,
+            graph_prune_threshold: 0.3,
         };
 
         let cloned = config.clone();
@@ -646,6 +663,7 @@ mod tests {
             high_confidence_threshold: 0.75,
             reflection_quality_threshold: 0.8,
             mcts_quality_threshold: 0.5,
+            graph_prune_threshold: 0.3,
         }
     }
 
@@ -704,6 +722,17 @@ mod tests {
         assert_eq!(applied.len(), 2);
         assert!((config.reflection_quality_threshold - 0.9).abs() < f64::EPSILON);
         assert!((config.mcts_quality_threshold - 0.4).abs() < f64::EPSILON);
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_apply_overrides_sets_graph_prune_threshold() {
+        let mut config = overridable_config();
+        let applied = config
+            .apply_overrides(&[("graph_prune_threshold".to_string(), serde_json::json!(0.25))]);
+
+        assert_eq!(applied, vec!["graph_prune_threshold".to_string()]);
+        assert!((config.graph_prune_threshold - 0.25).abs() < f64::EPSILON);
         assert!(validate_config(&config).is_ok());
     }
 
@@ -776,6 +805,7 @@ mod tests {
             high_confidence_threshold: 0.75,
             reflection_quality_threshold: 0.8,
             mcts_quality_threshold: 0.5,
+            graph_prune_threshold: 0.3,
         };
 
         let debug = format!("{config:?}");

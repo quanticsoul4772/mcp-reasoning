@@ -75,6 +75,7 @@ async fn create_mocked_server(mock_server: &MockServer) -> ReasoningServer {
         high_confidence_threshold: 0.75,
         reflection_quality_threshold: 0.8,
         mcts_quality_threshold: 0.5,
+        graph_prune_threshold: 0.3,
     };
 
     let storage = SqliteStorage::new_in_memory().await.unwrap();
