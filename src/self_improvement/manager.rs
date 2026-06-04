@@ -99,6 +99,13 @@ pub enum ManagerCommand {
         /// Response channel.
         response_tx: oneshot::Sender<Vec<PendingDiagnosis>>,
     },
+    /// Get persisted config-override recommendations.
+    GetConfigOverrides {
+        /// Maximum number to return.
+        limit: Option<u32>,
+        /// Response channel.
+        response_tx: oneshot::Sender<Vec<ConfigRecommendation>>,
+    },
 }
 
 /// Result of approving a diagnosis.
@@ -247,6 +254,40 @@ impl From<&SelfImprovementAction> for PendingDiagnosis {
     }
 }
 
+/// A persisted config-override recommendation produced by a successful
+/// self-improvement action.
+///
+/// These are advisory: SI records what it would change (keyed by the real
+/// `Config` field) but does not apply it to the running server. This type is
+/// the read side that surfaces them so the owner does not have to query the
+/// database directly.
+#[derive(Debug, Clone)]
+pub struct ConfigRecommendation {
+    /// Config key (a real `Config` field, or `threshold:<name>`).
+    pub key: String,
+    /// Recommended value (JSON).
+    pub value: serde_json::Value,
+    /// The `si_actions` row id that produced this recommendation, if any.
+    pub applied_by_action: Option<String>,
+    /// When the recommendation was last updated (RFC 3339).
+    pub updated_at: String,
+}
+
+impl From<ConfigOverrideRecord> for ConfigRecommendation {
+    fn from(record: ConfigOverrideRecord) -> Self {
+        // value_json is stored as serialized JSON; surface it parsed, falling
+        // back to the raw string if it is not valid JSON.
+        let value = serde_json::from_str(&record.value_json)
+            .unwrap_or(serde_json::Value::String(record.value_json));
+        Self {
+            key: record.key,
+            value,
+            applied_by_action: record.applied_by_action,
+            updated_at: record.updated_at.to_rfc3339(),
+        }
+    }
+}
+
 /// Handle for interacting with the manager from MCP tools.
 ///
 /// This handle is cheap to clone and can be shared across tasks.
@@ -344,6 +385,21 @@ impl ManagerHandle {
         if self
             .command_tx
             .send(ManagerCommand::GetPending { limit, response_tx })
+            .await
+            .is_err()
+        {
+            return Vec::new();
+        }
+
+        response_rx.await.unwrap_or_default()
+    }
+
+    /// Get persisted config-override recommendations.
+    pub async fn config_overrides(&self, limit: Option<u32>) -> Vec<ConfigRecommendation> {
+        let (response_tx, response_rx) = oneshot::channel();
+        if self
+            .command_tx
+            .send(ManagerCommand::GetConfigOverrides { limit, response_tx })
             .await
             .is_err()
         {
@@ -778,7 +834,35 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
                 let pending = self.get_pending_diagnoses(limit);
                 let _ = response_tx.send(pending);
             }
+            ManagerCommand::GetConfigOverrides { limit, response_tx } => {
+                let overrides = self.get_config_recommendations(limit).await;
+                let _ = response_tx.send(overrides);
+            }
         }
+    }
+
+    /// Read persisted config-override recommendations from storage.
+    ///
+    /// The read side of the advisory store written by
+    /// [`Self::persist_config_recommendations`]. Returns an empty list on a
+    /// storage error (logged) rather than failing the command — this is a
+    /// read-only inspection path. Newest first, capped by `limit`.
+    async fn get_config_recommendations(&self, limit: Option<u32>) -> Vec<ConfigRecommendation> {
+        let mut records = match self.storage.get_all_config_overrides().await {
+            Ok(records) => records,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to read config overrides");
+                return Vec::new();
+            }
+        };
+        records.sort_by_key(|r| std::cmp::Reverse(r.updated_at));
+        if let Some(limit) = limit {
+            records.truncate(limit as usize);
+        }
+        records
+            .into_iter()
+            .map(ConfigRecommendation::from)
+            .collect()
     }
 
     fn handle_approve(&mut self, diagnosis_id: &str) -> Result<ApproveResult, String> {
@@ -1259,6 +1343,77 @@ mod tests {
             .await
             .expect("query")
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_config_recommendations_reads_sorts_and_limits() {
+        use super::super::storage::ConfigOverrideRecord;
+
+        let storage = create_test_storage().await;
+        let (manager, _handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            Arc::clone(&storage),
+        );
+
+        let ts = |s: &str| {
+            chrono::DateTime::parse_from_rfc3339(s)
+                .expect("parse ts")
+                .with_timezone(&Utc)
+        };
+        // applied_by_action = None sidesteps the si_actions foreign key here;
+        // this test exercises the read/sort/limit path, not attribution.
+        storage
+            .upsert_config_override(&ConfigOverrideRecord {
+                key: "max_retries".to_string(),
+                value_json: "5".to_string(),
+                applied_by_action: None,
+                updated_at: ts("2026-06-01T00:00:00Z"),
+            })
+            .await
+            .expect("seed older");
+        storage
+            .upsert_config_override(&ConfigOverrideRecord {
+                key: "request_timeout_ms".to_string(),
+                value_json: "45000".to_string(),
+                applied_by_action: None,
+                updated_at: ts("2026-06-02T00:00:00Z"),
+            })
+            .await
+            .expect("seed newer");
+
+        // Newest first, JSON value parsed (not the raw string).
+        let recs = manager.get_config_recommendations(None).await;
+        assert_eq!(recs.len(), 2);
+        assert_eq!(recs[0].key, "request_timeout_ms");
+        assert_eq!(recs[0].value, serde_json::json!(45000));
+        assert_eq!(recs[1].key, "max_retries");
+
+        // Limit caps the result.
+        let limited = manager.get_config_recommendations(Some(1)).await;
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].key, "request_timeout_ms");
+    }
+
+    #[test]
+    fn test_config_recommendation_from_record_non_json_value() {
+        use super::super::storage::ConfigOverrideRecord;
+
+        // A value that is not valid JSON falls back to a string rather than
+        // being dropped.
+        let rec = ConfigOverrideRecord {
+            key: "k".to_string(),
+            value_json: "not json {".to_string(),
+            applied_by_action: Some("act-1".to_string()),
+            updated_at: Utc::now(),
+        };
+        let mapped = ConfigRecommendation::from(rec);
+        assert_eq!(
+            mapped.value,
+            serde_json::Value::String("not json {".to_string())
+        );
+        assert_eq!(mapped.applied_by_action.as_deref(), Some("act-1"));
     }
 
     #[tokio::test]
