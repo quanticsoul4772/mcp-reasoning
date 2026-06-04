@@ -1462,6 +1462,31 @@ pub struct SiDiagnosesResponse {
     pub total: usize,
 }
 
+/// A persisted config-override recommendation in the response.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiConfigOverride {
+    /// Config key (a real `Config` field, or `threshold:<name>`).
+    pub key: String,
+    /// Recommended value.
+    pub value: serde_json::Value,
+    /// The si_actions row id that produced this recommendation, if any.
+    pub applied_by_action: Option<String>,
+    /// When the recommendation was last updated (RFC 3339).
+    pub updated_at: String,
+}
+
+/// Response for persisted config-override recommendations.
+///
+/// Advisory: these are changes SI recommends, not changes applied to the
+/// running server. Apply any you want by hand.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiOverridesResponse {
+    /// List of recommendations (newest first).
+    pub overrides: Vec<SiConfigOverride>,
+    /// Total count returned.
+    pub total: usize,
+}
+
 /// Execution result summary in approve response.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SiExecutionSummary {
@@ -1823,6 +1848,7 @@ impl_into_contents!(
     MetricsResponse,
     SiStatusResponse,
     SiDiagnosesResponse,
+    SiOverridesResponse,
     SiApproveResponse,
     SiRejectResponse,
     SiTriggerResponse,

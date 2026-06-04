@@ -331,6 +331,15 @@ async fn test_reasoning_si_diagnoses_tool() {
 }
 
 #[tokio::test]
+async fn test_reasoning_si_overrides_tool() {
+    let server = create_test_server().await;
+    let req = SiOverridesRequest { limit: Some(5) };
+    let resp = server.reasoning_si_overrides(Parameters(req)).await;
+    // Advisory recommendations may or may not be present; the read must not fail.
+    assert_eq!(resp.total, resp.overrides.len());
+}
+
+#[tokio::test]
 async fn test_reasoning_si_approve_tool() {
     let server = create_test_server().await;
     let req = SiApproveRequest {

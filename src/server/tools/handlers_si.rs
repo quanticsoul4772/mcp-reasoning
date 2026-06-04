@@ -1,11 +1,12 @@
 use crate::metrics::{MetricEvent, Timer};
 use crate::server::requests::{
-    SiApproveRequest, SiDiagnosesRequest, SiRejectRequest, SiRollbackRequest, SiStatusRequest,
-    SiTriggerRequest,
+    SiApproveRequest, SiDiagnosesRequest, SiOverridesRequest, SiRejectRequest, SiRollbackRequest,
+    SiStatusRequest, SiTriggerRequest,
 };
 use crate::server::responses::{
-    SiApproveResponse, SiDiagnosesResponse, SiExecutionSummary, SiLearningSummary,
-    SiPendingDiagnosis, SiRejectResponse, SiRollbackResponse, SiStatusResponse, SiTriggerResponse,
+    SiApproveResponse, SiConfigOverride, SiDiagnosesResponse, SiExecutionSummary,
+    SiLearningSummary, SiOverridesResponse, SiPendingDiagnosis, SiRejectResponse,
+    SiRollbackResponse, SiStatusResponse, SiTriggerResponse,
 };
 
 impl super::ReasoningServer {
@@ -54,6 +55,33 @@ impl super::ReasoningServer {
                     rationale: d.rationale,
                     expected_improvement: d.expected_improvement,
                     created_at: d.created_at,
+                })
+                .collect(),
+            total,
+        }
+    }
+
+    pub(super) async fn handle_si_overrides(&self, req: SiOverridesRequest) -> SiOverridesResponse {
+        let timer = Timer::start();
+        let overrides = self
+            .state
+            .self_improvement
+            .config_overrides(req.limit)
+            .await;
+        let total = overrides.len();
+
+        self.state
+            .metrics
+            .record(MetricEvent::new("si_overrides", timer.elapsed_ms(), true));
+
+        SiOverridesResponse {
+            overrides: overrides
+                .into_iter()
+                .map(|o| SiConfigOverride {
+                    key: o.key,
+                    value: o.value,
+                    applied_by_action: o.applied_by_action,
+                    updated_at: o.updated_at,
                 })
                 .collect(),
             total,

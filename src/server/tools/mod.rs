@@ -23,9 +23,9 @@ use super::requests::{
     DetectRequest, DivergentRequest, EvidenceRequest, GraphRequest, LinearRequest,
     ListSessionsRequest, MctsRequest, MetaRequest, MetricsRequest, PresetRequest,
     ReflectionRequest, RelateSessionsRequest, ResumeSessionRequest, SearchSessionsRequest,
-    SiApproveRequest, SiDiagnosesRequest, SiRejectRequest, SiRollbackRequest, SiStatusRequest,
-    SiTriggerRequest, SkillRunRequest, TeamListRequest, TeamRunRequest, TimelineRequest,
-    TreeRequest,
+    SiApproveRequest, SiDiagnosesRequest, SiOverridesRequest, SiRejectRequest, SiRollbackRequest,
+    SiStatusRequest, SiTriggerRequest, SkillRunRequest, TeamListRequest, TeamRunRequest,
+    TimelineRequest, TreeRequest,
 };
 use super::responses::{
     AgentInvokeResponse, AgentListResponse, AgentMetricsResponse, AutoResponse, CheckpointResponse,
@@ -33,9 +33,9 @@ use super::responses::{
     DetectResponse, DivergentResponse, EvidenceResponse, GraphResponse, LinearResponse,
     ListSessionsResponse, MctsResponse, MetaResponse, MetricsResponse, PresetResponse,
     ReflectionResponse, RelateSessionsResponse, ResumeSessionResponse, SearchSessionsResponse,
-    SiApproveResponse, SiDiagnosesResponse, SiRejectResponse, SiRollbackResponse, SiStatusResponse,
-    SiTriggerResponse, SkillRunResponse, TeamListResponse, TeamRunResponse, TimelineResponse,
-    TreeResponse,
+    SiApproveResponse, SiDiagnosesResponse, SiOverridesResponse, SiRejectResponse,
+    SiRollbackResponse, SiStatusResponse, SiTriggerResponse, SkillRunResponse, TeamListResponse,
+    TeamRunResponse, TimelineResponse, TreeResponse,
 };
 use super::types::AppState;
 
@@ -337,6 +337,19 @@ impl ReasoningServer {
         req: Parameters<SiDiagnosesRequest>,
     ) -> SiDiagnosesResponse {
         self.handle_si_diagnoses(req.0).await
+    }
+
+    #[tool(
+        name = "reasoning_si_overrides",
+        description = "List the config-override recommendations the self-improvement system has recorded from successful cycles. \
+                       These are ADVISORY: each is a change SI would make (keyed by the real Config field, e.g. request_timeout_ms), recorded for review — they are NOT applied to the running server. \
+                       Apply any you want by hand. Read-only; makes no changes."
+    )]
+    async fn reasoning_si_overrides(
+        &self,
+        req: Parameters<SiOverridesRequest>,
+    ) -> SiOverridesResponse {
+        self.handle_si_overrides(req.0).await
     }
 
     #[tool(

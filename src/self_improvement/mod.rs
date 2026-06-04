@@ -88,8 +88,9 @@ pub use cli::{
 pub use executor::{ConfigState, ExecutionRecord, ExecutionResult, Executor};
 pub use learner::{ActionTypeStats, Learner, LearnerConfig, LearningResult, LearningSummary};
 pub use manager::{
-    ApproveResult, ExecutionResultSummary, LearningResultSummary, LearningSummaryData,
-    ManagerCommand, ManagerHandle, ManagerStatus, PendingDiagnosis, SelfImprovementManager,
+    ApproveResult, ConfigRecommendation, ExecutionResultSummary, LearningResultSummary,
+    LearningSummaryData, ManagerCommand, ManagerHandle, ManagerStatus, PendingDiagnosis,
+    SelfImprovementManager,
 };
 pub use monitor::{Baseline, Monitor, MonitorConfig, MonitorResult};
 pub use storage::{

@@ -422,6 +422,13 @@ pub struct SiDiagnosesRequest {
     pub limit: Option<u32>,
 }
 
+/// Request for persisted config-override recommendations.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SiOverridesRequest {
+    /// Maximum number of recommendations to return.
+    pub limit: Option<u32>,
+}
+
 /// Request to approve a diagnosis.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SiApproveRequest {

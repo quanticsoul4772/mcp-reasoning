@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 32 tools across reasoning (16), self-improvement (6), session management (4), and agent/team coordination (6).
+MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 33 tools across reasoning (16), self-improvement (7), session management (4), and agent/team coordination (6).
 
 **Status**: Complete. 38,000+ lines of Rust code and 2,620+ tests.
 
@@ -12,7 +12,7 @@ MCP Reasoning Server - A Rust-based MCP server providing structured reasoning ca
 
 - 119 source files, 38,000+ lines of code
 - 2,620+ tests (90%+ line coverage)
-- 16 core reasoning tools + 6 SI + 4 session + 6 agent/team = 32 tools total
+- 16 core reasoning tools + 7 SI + 4 session + 6 agent/team = 33 tools total
 - 6 workflow presets (code-review, debug-analysis, architecture-decision, strategic-decision, evidence-conclusion, brainstorming)
 - 4-phase self-improvement system with safety mechanisms
 - Tool chain tracking with pattern detection
@@ -181,7 +181,7 @@ src/
 │       ├── handlers_graph.rs    # graph
 │       ├── handlers_sessions.rs # list_sessions, resume, search, relate
 │       ├── handlers_agents.rs   # agent_invoke, agent_list, skill_run, team_run, team_list, agent_metrics
-│       ├── handlers_si.rs       # SI status/diagnoses/approve/reject/trigger/rollback
+│       ├── handlers_si.rs       # SI status/diagnoses/overrides/approve/reject/trigger/rollback
 │       └── handlers_infra.rs    # preset, metrics
 ├── agents/              # Agent coordination system (invoke/list/team)
 ├── skills/              # Composable skill system (run/discover/builtin)
