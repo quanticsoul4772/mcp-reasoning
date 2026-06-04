@@ -524,29 +524,36 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
     }
 
     async fn run_cycle(&mut self) {
+        let result = self.system.run_cycle(&self.metrics).await;
+        self.record_cycle_result(&result);
+    }
+
+    /// Fold a completed cycle's outcome into the aggregate counters and refresh
+    /// status. Shared by the scheduled loop and the manual `TriggerCycle`
+    /// command so both account outcomes identically — previously the trigger
+    /// path bumped only `total_cycles`, leaving `successful_cycles`,
+    /// `failed_cycles`, and `total_actions_executed` permanently at zero.
+    fn record_cycle_result(&mut self, result: &Result<CycleResult, ModeError>) {
         self.state.total_cycles += 1;
         self.state.last_cycle_at = Some(now_millis());
 
-        match self.system.run_cycle(&self.metrics).await {
-            Ok(result) => {
-                if result.blocked {
+        match result {
+            Ok(cycle) => {
+                if cycle.blocked {
                     tracing::warn!("Improvement cycle blocked by circuit breaker");
-                } else if result.error.is_some() {
+                } else if cycle.error.is_some() {
                     self.state.failed_cycles += 1;
-                    tracing::error!(error = ?result.error, "Improvement cycle failed");
+                    tracing::error!(error = ?cycle.error, "Improvement cycle failed");
                 } else {
                     self.state.successful_cycles += 1;
-                    self.state.total_actions_executed += result
-                        .execution_results
-                        .iter()
-                        .filter(|r| r.success)
-                        .count() as u64;
+                    self.state.total_actions_executed +=
+                        cycle.execution_results.iter().filter(|r| r.success).count() as u64;
                     tracing::info!(
-                        actions_proposed = result
+                        actions_proposed = cycle
                             .analysis_result
                             .as_ref()
                             .map_or(0, |a| a.actions.len()),
-                        actions_executed = result.execution_results.len(),
+                        actions_executed = cycle.execution_results.len(),
                         "Improvement cycle completed"
                     );
                 }
@@ -564,11 +571,7 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
         match command {
             ManagerCommand::TriggerCycle { response_tx } => {
                 let result = self.system.run_cycle(&self.metrics).await;
-                if result.is_ok() {
-                    self.state.total_cycles += 1;
-                    self.state.last_cycle_at = Some(now_millis());
-                    self.update_status();
-                }
+                self.record_cycle_result(&result);
                 let _ = response_tx.send(result);
             }
             ManagerCommand::Approve {
@@ -820,6 +823,51 @@ mod tests {
 
         // No invocations yet
         assert!(!manager.should_run_cycle());
+    }
+
+    #[tokio::test]
+    async fn test_record_cycle_result_updates_outcome_counters() {
+        use super::super::monitor::MonitorResult;
+        use super::super::types::SystemMetrics;
+
+        let (mut manager, _handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            create_test_storage().await,
+        );
+
+        let cycle = |error: Option<String>| -> Result<CycleResult, ModeError> {
+            Ok(CycleResult {
+                monitor_result: MonitorResult {
+                    metrics: SystemMetrics::new(1.0, 0.0, 0, std::collections::HashMap::new()),
+                    triggers: vec![],
+                    action_recommended: false,
+                },
+                analysis_result: None,
+                execution_results: vec![],
+                learning_results: vec![],
+                blocked: false,
+                error,
+            })
+        };
+
+        // A clean cycle is a success and advances total_cycles — the manual
+        // trigger path previously left these at zero.
+        manager.record_cycle_result(&cycle(None));
+        assert_eq!(manager.state.total_cycles, 1);
+        assert_eq!(manager.state.successful_cycles, 1);
+        assert_eq!(manager.state.failed_cycles, 0);
+
+        // A cycle carrying an error is counted as a failure.
+        manager.record_cycle_result(&cycle(Some("boom".to_string())));
+        assert_eq!(manager.state.total_cycles, 2);
+        assert_eq!(manager.state.failed_cycles, 1);
+
+        let status = manager.build_status();
+        assert_eq!(status.total_cycles, 2);
+        assert_eq!(status.successful_cycles, 1);
+        assert_eq!(status.failed_cycles, 1);
     }
 
     #[tokio::test]
