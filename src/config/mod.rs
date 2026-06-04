@@ -25,6 +25,8 @@
 //!     voyage_api_key: None,
 //!     voyage_model: "voyage-4".to_string(),
 //!     high_confidence_threshold: 0.75,
+//!     reflection_quality_threshold: 0.8,
+//!     mcts_quality_threshold: 0.5,
 //! };
 //!
 //! println!("Using model: {}", config.model);
@@ -68,6 +70,14 @@ pub const DEFAULT_MAX_RETRIES: u32 = 3;
 
 /// Default high-confidence threshold for `reasoning_confidence_route`.
 pub const DEFAULT_HIGH_CONFIDENCE_THRESHOLD: f64 = 0.75;
+
+/// Default quality threshold for `reasoning_reflection` (stops refinement once a
+/// pass reaches this quality), used when a caller omits `quality_threshold`.
+pub const DEFAULT_REFLECTION_QUALITY_THRESHOLD: f64 = 0.8;
+
+/// Default quality threshold for `reasoning_mcts` auto-backtrack, used when a
+/// caller omits `quality_threshold`.
+pub const DEFAULT_MCTS_QUALITY_THRESHOLD: f64 = 0.5;
 
 /// Default Anthropic model.
 pub const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
@@ -116,6 +126,14 @@ pub struct Config {
     /// used when a caller does not pass `high_confidence_threshold`. A real,
     /// tunable decision knob the self-improvement system can adjust. 0.0–1.0.
     pub high_confidence_threshold: f64,
+    /// Default quality threshold for `reasoning_reflection` refinement (the
+    /// quality at which refinement stops), used when a caller omits it. A real,
+    /// tunable knob the self-improvement system can adjust. 0.0–1.0.
+    pub reflection_quality_threshold: f64,
+    /// Default quality threshold for `reasoning_mcts` auto-backtrack, used when a
+    /// caller omits it. A real, tunable knob the self-improvement system can
+    /// adjust. 0.0–1.0.
+    pub mcts_quality_threshold: f64,
 }
 
 impl Config {
@@ -178,6 +196,12 @@ impl Config {
             "HIGH_CONFIDENCE_THRESHOLD",
             DEFAULT_HIGH_CONFIDENCE_THRESHOLD,
         )?;
+        let reflection_quality_threshold = parse_env_f64(
+            "REFLECTION_QUALITY_THRESHOLD",
+            DEFAULT_REFLECTION_QUALITY_THRESHOLD,
+        )?;
+        let mcts_quality_threshold =
+            parse_env_f64("MCTS_QUALITY_THRESHOLD", DEFAULT_MCTS_QUALITY_THRESHOLD)?;
 
         let config = Self {
             api_key: SecretString::new(api_key),
@@ -192,6 +216,8 @@ impl Config {
             voyage_api_key,
             voyage_model,
             high_confidence_threshold,
+            reflection_quality_threshold,
+            mcts_quality_threshold,
         };
 
         validate_config(&config)?;
@@ -222,6 +248,8 @@ impl Config {
     /// #     voyage_api_key: None,
     /// #     voyage_model: "voyage-4".into(),
     /// #     high_confidence_threshold: 0.75,
+    /// #     reflection_quality_threshold: 0.8,
+    /// #     mcts_quality_threshold: 0.5,
     /// # };
     ///
     /// assert_eq!(config.timeout_for_thinking_budget(None), 30_000);
@@ -261,6 +289,12 @@ impl Config {
                 "max_retries" => apply_max_retries(value, &mut self.max_retries),
                 "high_confidence_threshold" => {
                     apply_unit_threshold(key, value, &mut self.high_confidence_threshold)
+                }
+                "reflection_quality_threshold" => {
+                    apply_unit_threshold(key, value, &mut self.reflection_quality_threshold)
+                }
+                "mcts_quality_threshold" => {
+                    apply_unit_threshold(key, value, &mut self.mcts_quality_threshold)
                 }
                 other => {
                     tracing::warn!(
@@ -588,6 +622,8 @@ mod tests {
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
             high_confidence_threshold: 0.75,
+            reflection_quality_threshold: 0.8,
+            mcts_quality_threshold: 0.5,
         };
 
         let cloned = config.clone();
@@ -608,6 +644,8 @@ mod tests {
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
             high_confidence_threshold: 0.75,
+            reflection_quality_threshold: 0.8,
+            mcts_quality_threshold: 0.5,
         }
     }
 
@@ -649,6 +687,23 @@ mod tests {
 
         assert_eq!(applied, vec!["high_confidence_threshold".to_string()]);
         assert!((config.high_confidence_threshold - 0.85).abs() < f64::EPSILON);
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_apply_overrides_sets_reflection_and_mcts_thresholds() {
+        let mut config = overridable_config();
+        let applied = config.apply_overrides(&[
+            (
+                "reflection_quality_threshold".to_string(),
+                serde_json::json!(0.9),
+            ),
+            ("mcts_quality_threshold".to_string(), serde_json::json!(0.4)),
+        ]);
+
+        assert_eq!(applied.len(), 2);
+        assert!((config.reflection_quality_threshold - 0.9).abs() < f64::EPSILON);
+        assert!((config.mcts_quality_threshold - 0.4).abs() < f64::EPSILON);
         assert!(validate_config(&config).is_ok());
     }
 
@@ -719,6 +774,8 @@ mod tests {
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
             high_confidence_threshold: 0.75,
+            reflection_quality_threshold: 0.8,
+            mcts_quality_threshold: 0.5,
         };
 
         let debug = format!("{config:?}");

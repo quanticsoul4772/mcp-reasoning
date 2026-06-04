@@ -243,7 +243,11 @@ impl super::ReasoningServer {
                         content,
                         req.session_id,
                         req.max_iterations,
-                        req.quality_threshold,
+                        // Caller value wins; otherwise the tunable Config default.
+                        Some(
+                            req.quality_threshold
+                                .unwrap_or(self.state.config.reflection_quality_threshold),
+                        ),
                         Some(&progress),
                     ),
                 )

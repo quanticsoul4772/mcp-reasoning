@@ -73,6 +73,8 @@ async fn create_mocked_server(mock_server: &MockServer) -> ReasoningServer {
         voyage_api_key: None,
         voyage_model: "voyage-4".to_string(),
         high_confidence_threshold: 0.75,
+        reflection_quality_threshold: 0.8,
+        mcts_quality_threshold: 0.5,
     };
 
     let storage = SqliteStorage::new_in_memory().await.unwrap();

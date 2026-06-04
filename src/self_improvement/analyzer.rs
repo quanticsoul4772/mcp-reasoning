@@ -108,9 +108,11 @@ action to be REJECTED, so use only these:
 - `config_adjust`: one or more of `request_timeout_ms`,
   `request_timeout_deep_ms`, `request_timeout_maximum_ms`, `factory_timeout_ms`,
   `max_retries` mapped to a new value, e.g. `{{"request_timeout_ms": 45000}}`.
-- `threshold_adjust`: `high_confidence_threshold` (0.0–1.0) — the confidence
-  above which `reasoning_confidence_route` stops escalating to tree reasoning,
-  e.g. `{{"high_confidence_threshold": 0.8}}`.
+- `threshold_adjust`: one or more of `high_confidence_threshold` (confidence
+  above which `reasoning_confidence_route` stops escalating to tree reasoning),
+  `reflection_quality_threshold` (quality at which `reasoning_reflection` stops
+  refining), `mcts_quality_threshold` (the `reasoning_mcts` auto-backtrack
+  floor) — each 0.0–1.0, e.g. `{{"mcts_quality_threshold": 0.6}}`.
 - `prompt_tune`: `prompt_key`, `template`, and optionally `mode`.
 `log_observation` needs no parameters. Also keep `expected_improvement` at or
 below 0.5. An action without a non-empty `parameters` object (for the three
