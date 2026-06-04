@@ -285,34 +285,40 @@ impl Executor {
             }
         };
 
-        let threshold_key = params
-            .get("threshold_key")
-            .and_then(|v| v.as_str())
-            .unwrap_or("default");
+        // Threshold params are real Config field keys (e.g.
+        // `high_confidence_threshold`), set directly like a config adjustment so
+        // the change maps to an applyable field.
+        let mut changes_made = Vec::new();
+        let mut previous_values = serde_json::Map::new();
 
-        let Some(new_value) = params.get("value") else {
+        if let Some(obj) = params.as_object() {
+            for (key, value) in obj {
+                if let Some(prev) = self.config_state.get(key) {
+                    previous_values.insert(key.clone(), prev.clone());
+                }
+                self.config_state.set(key, value.clone());
+                changes_made.push(key.clone());
+            }
+        }
+
+        if changes_made.is_empty() {
             return InternalExecutionResult {
                 success: false,
-                message: "No value provided for threshold adjustment".to_string(),
+                message: "No threshold parameters provided".to_string(),
                 measured_improvement: None,
             };
-        };
-
-        let config_key = format!("threshold:{threshold_key}");
-        let previous = self.config_state.get(&config_key).cloned();
-
-        self.config_state.set(&config_key, new_value.clone());
+        }
 
         self.record_execution(
             &action.id,
             action.action_type.clone(),
-            previous.map(|p| serde_json::json!({"key": config_key, "value": p})),
+            Some(serde_json::json!({ "previous": previous_values })),
             action.parameters.clone(),
         );
 
         InternalExecutionResult {
             success: true,
-            message: format!("Threshold '{threshold_key}' adjusted"),
+            message: format!("Threshold adjusted: {}", changes_made.join(", ")),
             measured_improvement: Some(action.expected_improvement * 0.75),
         }
     }
@@ -487,15 +493,15 @@ mod tests {
         let mut executor = Executor::new();
         let mut action = create_test_action(ActionType::ThresholdAdjust);
         action = action.with_parameters(serde_json::json!({
-            "threshold_key": "confidence",
-            "value": 0.85
+            "high_confidence_threshold": 0.85
         }));
 
         let result = executor.execute(action);
 
         assert!(result.success);
+        // Set under the real Config field key (not a threshold:* prefix).
         assert_eq!(
-            executor.config().get("threshold:confidence"),
+            executor.config().get("high_confidence_threshold"),
             Some(&serde_json::json!(0.85))
         );
     }
@@ -643,18 +649,15 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_threshold_adjust_no_value() {
+    fn test_execute_threshold_adjust_empty_params() {
         let mut executor = Executor::new();
         let mut action = create_test_action(ActionType::ThresholdAdjust);
-        action = action.with_parameters(serde_json::json!({
-            "threshold_key": "confidence"
-            // Missing "value"
-        }));
+        action = action.with_parameters(serde_json::json!({}));
 
         let result = executor.execute(action);
 
         assert!(!result.success);
-        assert!(result.message.contains("No value provided"));
+        assert!(result.message.contains("No threshold parameters"));
     }
 
     #[test]
@@ -695,10 +698,10 @@ mod tests {
     fn test_rollback_threshold_adjust() {
         let mut executor = Executor::new();
 
-        // Set up a previous threshold value
+        // Set up a previous threshold value under the real Config field key.
         executor
             .config_mut()
-            .set("threshold:test_threshold", serde_json::json!(0.7));
+            .set("high_confidence_threshold", serde_json::json!(0.7));
 
         let mut action = SelfImprovementAction::new(
             "threshold-rollback-test",
@@ -708,15 +711,14 @@ mod tests {
             0.1,
         );
         action = action.with_parameters(serde_json::json!({
-            "threshold_key": "test_threshold",
-            "value": 0.9
+            "high_confidence_threshold": 0.9
         }));
 
         executor.execute(action);
 
         // Verify new value
         assert_eq!(
-            executor.config().get("threshold:test_threshold"),
+            executor.config().get("high_confidence_threshold"),
             Some(&serde_json::json!(0.9))
         );
 

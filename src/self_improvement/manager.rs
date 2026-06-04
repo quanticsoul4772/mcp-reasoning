@@ -844,23 +844,12 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             return Ok(());
         };
 
-        // (override key, value) pairs to record for this action.
+        // (override key, value) pairs to record for this action. ConfigAdjust
+        // and ThresholdAdjust both carry real, applyable `Config` field keys, so
+        // their parameters are recorded directly.
         let overrides: Vec<(String, serde_json::Value)> = match action.action_type {
-            ActionType::ConfigAdjust => {
+            ActionType::ConfigAdjust | ActionType::ThresholdAdjust => {
                 params.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-            }
-            ActionType::ThresholdAdjust => {
-                match (
-                    params
-                        .get("threshold_key")
-                        .and_then(serde_json::Value::as_str),
-                    params.get("value"),
-                ) {
-                    (Some(key), Some(value)) => {
-                        vec![(format!("threshold:{key}"), value.clone())]
-                    }
-                    _ => Vec::new(),
-                }
             }
             ActionType::PromptTune | ActionType::LogObservation => Vec::new(),
         };

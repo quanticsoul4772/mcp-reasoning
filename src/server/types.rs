@@ -177,6 +177,7 @@ mod tests {
             model: "claude-sonnet-4-20250514".to_string(),
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
+            high_confidence_threshold: 0.75,
         }
     }
 
