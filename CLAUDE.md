@@ -201,9 +201,8 @@ src/
     ├── baseline.rs      # Performance baseline tracking
     ├── circuit_breaker.rs # Safety: halt on consecutive failures
     ├── allowlist.rs     # Safety: validate action bounds
-    ├── types/           # Severity, TriggerMetric, SuggestedAction, etc.
+    ├── types/           # Severity, DiagnosisStatus, legacy runtime types
     ├── storage/         # SI-specific storage layer
-    ├── anthropic_calls/ # LLM interaction wrappers
     └── cli/             # CLI commands for SI management
 ```
 

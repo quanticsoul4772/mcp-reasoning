@@ -7,8 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::self_improvement::types::{
-    ActionStatus, DiagnosisId, DiagnosisStatus, NormalizedReward, Severity, SuggestedAction,
-    TriggerMetric,
+    ActionStatus, DiagnosisId, DiagnosisStatus, NormalizedReward, Severity,
 };
 
 // ============================================================================
@@ -79,30 +78,6 @@ pub struct DiagnosisRecord {
     pub status: DiagnosisStatus,
     /// When the diagnosis was created.
     pub created_at: DateTime<Utc>,
-}
-
-impl DiagnosisRecord {
-    /// Create from a trigger metric and suggested action.
-    pub fn from_diagnosis(
-        trigger: &TriggerMetric,
-        description: impl Into<String>,
-        suspected_cause: Option<String>,
-        suggested_action: &SuggestedAction,
-        action_rationale: Option<String>,
-    ) -> Result<Self, serde_json::Error> {
-        Ok(Self {
-            id: uuid::Uuid::new_v4().to_string(),
-            trigger_type: trigger.metric_type().to_string(),
-            trigger_json: serde_json::to_string(trigger)?,
-            severity: trigger.severity(),
-            description: description.into(),
-            suspected_cause,
-            suggested_action_json: serde_json::to_string(suggested_action)?,
-            action_rationale,
-            status: DiagnosisStatus::Pending,
-            created_at: Utc::now(),
-        })
-    }
 }
 
 // ============================================================================
