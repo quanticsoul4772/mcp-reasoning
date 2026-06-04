@@ -621,8 +621,8 @@ async fn test_in_memory_storage() {
 // ============================================================================
 
 use mcp_reasoning::self_improvement::{
-    ActionRecord, ActionStatus, DiagnosisRecord, DiagnosisStatus, InvocationRecord, LearningRecord,
-    NormalizedReward, RewardBreakdown, SelfImprovementStorage, Severity,
+    ActionRecord, ActionStatus, DiagnosisRecord, DiagnosisStatus, InvocationRecord,
+    SelfImprovementStorage, Severity,
 };
 
 // Build a DiagnosisRecord directly (the old `from_diagnosis` convenience
@@ -705,29 +705,6 @@ async fn test_self_improvement_full_cycle() {
         .expect("Failed to get action");
     assert!(retrieved_action.is_some());
     assert_eq!(retrieved_action.unwrap().outcome, ActionStatus::Completed);
-
-    // Phase 4: Record learning (Learner phase)
-    let reward = NormalizedReward::new(0.7, RewardBreakdown::new(0.6, 0.8, 0.7), 0.9);
-    let learning = LearningRecord::from_reward(
-        &action.id,
-        &reward,
-        Some(vec!["Action was effective".to_string()]),
-        Some(vec!["Continue monitoring".to_string()]),
-    )
-    .expect("Failed to create learning");
-
-    si_storage
-        .insert_learning(&learning)
-        .await
-        .expect("Failed to insert learning");
-
-    // Verify learning recorded
-    let retrieved_learning = si_storage
-        .get_learning_by_action(&action.id)
-        .await
-        .expect("Failed to get learning");
-    assert!(retrieved_learning.is_some());
-    assert!((retrieved_learning.unwrap().reward_value - 0.7).abs() < f64::EPSILON);
 }
 
 #[tokio::test]

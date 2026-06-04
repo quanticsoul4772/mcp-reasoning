@@ -26,5 +26,4 @@ mod tests;
 pub use operations::SelfImprovementStorage;
 pub use records::{
     ActionRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord, InvocationStats,
-    LearningRecord,
 };

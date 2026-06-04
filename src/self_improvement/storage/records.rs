@@ -6,9 +6,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::self_improvement::types::{
-    ActionStatus, DiagnosisId, DiagnosisStatus, NormalizedReward, Severity,
-};
+use crate::self_improvement::types::{ActionStatus, DiagnosisId, DiagnosisStatus, Severity};
 
 // ============================================================================
 // Invocation Records
@@ -107,54 +105,6 @@ pub struct ActionRecord {
     pub error_message: Option<String>,
     /// When the action was executed.
     pub created_at: DateTime<Utc>,
-}
-
-// ============================================================================
-// Learning Records
-// ============================================================================
-
-/// Learning record for database storage.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LearningRecord {
-    /// Unique identifier.
-    pub id: String,
-    /// Associated action ID.
-    pub action_id: String,
-    /// Reward value (-1.0 to 1.0).
-    pub reward_value: f64,
-    /// JSON-serialized reward breakdown.
-    pub reward_breakdown_json: String,
-    /// Confidence level (0.0 to 1.0).
-    pub confidence: f64,
-    /// JSON-serialized lessons learned.
-    pub lessons_json: Option<String>,
-    /// JSON-serialized future recommendations.
-    pub recommendations_json: Option<String>,
-    /// When the learning was recorded.
-    pub created_at: DateTime<Utc>,
-}
-
-impl LearningRecord {
-    /// Create from a normalized reward.
-    pub fn from_reward(
-        action_id: impl Into<String>,
-        reward: &NormalizedReward,
-        lessons: Option<Vec<String>>,
-        recommendations: Option<Vec<String>>,
-    ) -> Result<Self, serde_json::Error> {
-        Ok(Self {
-            id: uuid::Uuid::new_v4().to_string(),
-            action_id: action_id.into(),
-            reward_value: reward.value,
-            reward_breakdown_json: serde_json::to_string(&reward.breakdown)?,
-            confidence: reward.confidence,
-            lessons_json: lessons.map(|l| serde_json::to_string(&l)).transpose()?,
-            recommendations_json: recommendations
-                .map(|r| serde_json::to_string(&r))
-                .transpose()?,
-            created_at: Utc::now(),
-        })
-    }
 }
 
 // ============================================================================

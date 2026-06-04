@@ -90,13 +90,12 @@ pub use manager::{
 pub use monitor::{Baseline, Monitor, MonitorConfig, MonitorResult};
 pub use storage::{
     ActionRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord, InvocationStats,
-    LearningRecord, SelfImprovementStorage,
+    SelfImprovementStorage,
 };
 pub use system::{CycleResult, SelfImprovementSystem, SystemConfig};
 pub use types::{
     ActionStatus, ActionType, Baselines, DiagnosisStatus, LegacyTriggerMetric, Lesson,
-    MetricsSnapshot, NormalizedReward, RewardBreakdown, RewardWeights, SelfImprovementAction,
-    Severity, SystemMetrics, ToolMetrics, TriggerMetric,
+    SelfImprovementAction, Severity, SystemMetrics,
 };
 
 #[cfg(test)]
