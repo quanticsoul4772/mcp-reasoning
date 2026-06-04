@@ -58,7 +58,6 @@
 
 mod allowlist;
 mod analyzer;
-pub mod anthropic_calls;
 pub mod baseline;
 mod circuit_breaker;
 pub mod cli;
@@ -73,10 +72,6 @@ mod types;
 // Re-export main types
 pub use allowlist::{Allowlist, AllowlistConfig, ValidationError, ValidationErrorCode};
 pub use analyzer::{AnalysisResult, Analyzer};
-pub use anthropic_calls::{
-    AnthropicCalls, DiagnosisContent, HealthContext, LearningContext, LearningSynthesis,
-    MetricsContext, TriggerContext, ValidationResult,
-};
 pub use baseline::{Baseline as BaselineTracker, BaselineCollection, BaselineConfig, ToolBaseline};
 pub use circuit_breaker::{
     CircuitBreaker, CircuitBreakerConfig, CircuitBreakerStats, CircuitState,
@@ -99,10 +94,9 @@ pub use storage::{
 };
 pub use system::{CycleResult, SelfImprovementSystem, SystemConfig};
 pub use types::{
-    ActionStatus, ActionType, Baselines, ConfigScope, DiagnosisStatus, LegacyTriggerMetric, Lesson,
-    MetricsSnapshot, NewActionStatus, NewActionType, NormalizedReward, ParamValue, ResourceType,
-    RewardBreakdown, RewardWeights, SelfDiagnosis, SelfImprovementAction, Severity,
-    SuggestedAction, SystemMetrics, ToolMetrics, TriggerMetric,
+    ActionStatus, ActionType, Baselines, DiagnosisStatus, LegacyTriggerMetric, Lesson,
+    MetricsSnapshot, NormalizedReward, RewardBreakdown, RewardWeights, SelfImprovementAction,
+    Severity, SystemMetrics, ToolMetrics, TriggerMetric,
 };
 
 #[cfg(test)]

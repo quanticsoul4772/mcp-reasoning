@@ -14,7 +14,6 @@
 //! - `metrics`: Metrics snapshot types (MetricsSnapshot, ToolMetrics, Baselines)
 //! - `legacy`: Legacy types for backward compatibility
 
-mod diagnosis;
 mod enums;
 mod legacy;
 mod metrics;
@@ -32,17 +31,9 @@ mod rewards;
 mod tests;
 
 // Re-export all public types from submodules
-pub use diagnosis::{SelfDiagnosis, SuggestedAction};
-pub use enums::{
-    ConfigScope, DiagnosisId, DiagnosisStatus, ParamValue, ResourceType, Severity, TriggerMetric,
-};
-// Export legacy types as the primary types (for backward compatibility)
-// The new ActionType/ActionStatus from enums are for future DESIGN.md 14.2 use
+pub use enums::{DiagnosisId, DiagnosisStatus, Severity, TriggerMetric};
 pub use legacy::{
     ActionStatus, ActionType, LegacyTriggerMetric, Lesson, SelfImprovementAction, SystemMetrics,
 };
 pub use metrics::{Baselines, MetricsSnapshot, ToolMetrics};
 pub use rewards::{NormalizedReward, RewardBreakdown, RewardWeights};
-
-// Re-export new enum types with explicit names for future use
-pub use enums::{ActionStatus as NewActionStatus, ActionType as NewActionType};

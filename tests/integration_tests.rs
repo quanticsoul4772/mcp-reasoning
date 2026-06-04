@@ -621,10 +621,27 @@ async fn test_in_memory_storage() {
 // ============================================================================
 
 use mcp_reasoning::self_improvement::{
-    ActionRecord, ActionStatus, DiagnosisRecord, InvocationRecord, LearningRecord,
-    NormalizedReward, RewardBreakdown, SelfImprovementStorage, SuggestedAction, TriggerMetric,
+    ActionRecord, ActionStatus, DiagnosisRecord, DiagnosisStatus, InvocationRecord, LearningRecord,
+    NormalizedReward, RewardBreakdown, SelfImprovementStorage, Severity,
 };
-use std::time::Duration;
+
+// Build a DiagnosisRecord directly (the old `from_diagnosis` convenience
+// constructor and its `SuggestedAction` input were removed with the dead
+// parallel type system).
+fn integration_diagnosis(description: &str) -> DiagnosisRecord {
+    DiagnosisRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        trigger_type: "error_rate".to_string(),
+        trigger_json: "{}".to_string(),
+        severity: Severity::High,
+        description: description.to_string(),
+        suspected_cause: None,
+        suggested_action_json: "{}".to_string(),
+        action_rationale: None,
+        status: DiagnosisStatus::Pending,
+        created_at: chrono::Utc::now(),
+    }
+}
 
 #[tokio::test]
 #[serial]
@@ -648,20 +665,7 @@ async fn test_self_improvement_full_cycle() {
     assert_eq!(invocations[0].tool_name, "reasoning_linear");
 
     // Phase 2: Create diagnosis (Analyzer phase)
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.12,
-        baseline: 0.05,
-        threshold: 0.10,
-    };
-    let suggested_action = SuggestedAction::no_op("Monitor situation", Duration::from_secs(300));
-    let diagnosis = DiagnosisRecord::from_diagnosis(
-        &trigger,
-        "Elevated error rate",
-        None,
-        &suggested_action,
-        None,
-    )
-    .expect("Failed to create diagnosis");
+    let diagnosis = integration_diagnosis("Elevated error rate");
 
     si_storage
         .insert_diagnosis(&diagnosis)
@@ -680,7 +684,7 @@ async fn test_self_improvement_full_cycle() {
         id: uuid::Uuid::new_v4().to_string(),
         diagnosis_id: diagnosis.id.clone(),
         action_type: "no_op".to_string(),
-        action_json: serde_json::to_string(&suggested_action).unwrap(),
+        action_json: r#"{"action":"no_op"}"#.to_string(),
         outcome: ActionStatus::Completed,
         pre_metrics_json: r#"{"error_rate":0.12}"#.to_string(),
         post_metrics_json: Some(r#"{"error_rate":0.08}"#.to_string()),
@@ -775,15 +779,7 @@ async fn test_unique_diagnosis_action_constraint() {
     let si_storage = SelfImprovementStorage::new(storage.get_pool());
 
     // Create diagnosis
-    let trigger = TriggerMetric::Latency {
-        observed_p95_ms: 500,
-        baseline_ms: 200,
-        threshold_ms: 400,
-    };
-    let suggested_action = SuggestedAction::no_op("Wait", Duration::from_secs(60));
-    let diagnosis =
-        DiagnosisRecord::from_diagnosis(&trigger, "High latency", None, &suggested_action, None)
-            .expect("Failed to create diagnosis");
+    let diagnosis = integration_diagnosis("High latency");
 
     si_storage
         .insert_diagnosis(&diagnosis)

@@ -10,13 +10,31 @@ use super::records::{
 };
 use crate::error::StorageError;
 use crate::self_improvement::types::{
-    ActionStatus, DiagnosisStatus, NormalizedReward, RewardBreakdown, Severity, SuggestedAction,
-    TriggerMetric,
+    ActionStatus, DiagnosisStatus, NormalizedReward, RewardBreakdown, Severity,
 };
 use crate::storage::SqliteStorage;
 use chrono::{Datelike, Utc};
 use serial_test::serial;
-use std::time::Duration;
+
+#[allow(clippy::unnecessary_wraps)]
+fn make_diagnosis(
+    description: &str,
+    suspected_cause: Option<String>,
+    action_rationale: Option<String>,
+) -> DiagnosisRecord {
+    DiagnosisRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        trigger_type: "error_rate".to_string(),
+        trigger_json: "{}".to_string(),
+        severity: Severity::High,
+        description: description.to_string(),
+        suspected_cause,
+        suggested_action_json: "{}".to_string(),
+        action_rationale,
+        status: DiagnosisStatus::Pending,
+        created_at: Utc::now(),
+    }
+}
 
 // Helper to create test storage with self-improvement tables
 async fn test_storage() -> SelfImprovementStorage {
@@ -126,37 +144,6 @@ fn test_parse_datetime_invalid() {
         _ => panic!("Expected QueryFailed error"),
     }
 }
-
-#[test]
-fn test_diagnosis_record_from_diagnosis() {
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.15,
-        baseline: 0.05,
-        threshold: 0.10,
-    };
-    let action = SuggestedAction::no_op("wait and see", Duration::from_secs(300));
-
-    let result = DiagnosisRecord::from_diagnosis(
-        &trigger,
-        "High error rate detected",
-        Some("API overload".to_string()),
-        &action,
-        Some("Monitor and wait".to_string()),
-    );
-
-    assert!(result.is_ok());
-    let record = result.unwrap();
-    assert_eq!(record.trigger_type, "error_rate");
-    assert_eq!(record.description, "High error rate detected");
-    assert_eq!(record.suspected_cause, Some("API overload".to_string()));
-    assert_eq!(
-        record.action_rationale,
-        Some("Monitor and wait".to_string())
-    );
-    assert_eq!(record.status, DiagnosisStatus::Pending);
-    assert!(!record.id.is_empty());
-}
-
 #[test]
 fn test_learning_record_from_reward() {
     let reward = NormalizedReward::new(0.5, RewardBreakdown::new(0.3, 0.5, 0.7), 0.85);
@@ -253,21 +240,11 @@ async fn test_get_invocations_by_tool() {
 async fn test_insert_and_get_diagnosis() {
     let storage = test_storage().await;
 
-    let trigger = TriggerMetric::Latency {
-        observed_p95_ms: 500,
-        baseline_ms: 200,
-        threshold_ms: 400,
-    };
-    let action = SuggestedAction::no_op("wait", Duration::from_secs(60));
-
-    let record = DiagnosisRecord::from_diagnosis(
-        &trigger,
+    let record = make_diagnosis(
         "High latency detected",
         Some("Network congestion".to_string()),
-        &action,
         Some("Monitor traffic".to_string()),
-    )
-    .unwrap();
+    );
 
     let record_id = record.id.clone();
 
@@ -279,7 +256,7 @@ async fn test_insert_and_get_diagnosis() {
     assert!(retrieved.is_some());
     let retrieved = retrieved.unwrap();
     assert_eq!(retrieved.id, record_id);
-    assert_eq!(retrieved.trigger_type, "latency");
+    assert_eq!(retrieved.trigger_type, "error_rate");
     assert_eq!(retrieved.description, "High latency detected");
     assert_eq!(retrieved.status, DiagnosisStatus::Pending);
 }
@@ -297,15 +274,7 @@ async fn test_get_diagnosis_not_found() {
 async fn test_update_diagnosis_status() {
     let storage = test_storage().await;
 
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.2,
-        baseline: 0.05,
-        threshold: 0.1,
-    };
-    let action = SuggestedAction::no_op("retry", Duration::from_secs(30));
-
-    let record =
-        DiagnosisRecord::from_diagnosis(&trigger, "Error spike", None, &action, None).unwrap();
+    let record = make_diagnosis("Error spike", None, None);
     let record_id = record.id.clone();
 
     storage.insert_diagnosis(&record).await.unwrap();
@@ -326,17 +295,8 @@ async fn test_update_diagnosis_status() {
 async fn test_get_pending_diagnoses() {
     let storage = test_storage().await;
 
-    let trigger = TriggerMetric::QualityScore {
-        observed: 0.5,
-        baseline: 0.8,
-        minimum: 0.7,
-    };
-    let action = SuggestedAction::no_op("review", Duration::from_secs(120));
-
-    let record1 =
-        DiagnosisRecord::from_diagnosis(&trigger, "Quality drop 1", None, &action, None).unwrap();
-    let record2 =
-        DiagnosisRecord::from_diagnosis(&trigger, "Quality drop 2", None, &action, None).unwrap();
+    let record1 = make_diagnosis("Quality drop 1", None, None);
+    let record2 = make_diagnosis("Quality drop 2", None, None);
 
     storage.insert_diagnosis(&record1).await.unwrap();
     storage.insert_diagnosis(&record2).await.unwrap();
@@ -358,17 +318,8 @@ async fn test_get_pending_diagnoses() {
 async fn test_get_diagnoses_by_status() {
     let storage = test_storage().await;
 
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.3,
-        baseline: 0.1,
-        threshold: 0.2,
-    };
-    let action = SuggestedAction::no_op("wait", Duration::from_secs(60));
-
-    let record1 =
-        DiagnosisRecord::from_diagnosis(&trigger, "Error 1", None, &action, None).unwrap();
-    let record2 =
-        DiagnosisRecord::from_diagnosis(&trigger, "Error 2", None, &action, None).unwrap();
+    let record1 = make_diagnosis("Error 1", None, None);
+    let record2 = make_diagnosis("Error 2", None, None);
 
     storage.insert_diagnosis(&record1).await.unwrap();
     storage.insert_diagnosis(&record2).await.unwrap();
@@ -393,15 +344,7 @@ async fn test_insert_and_get_action() {
     let storage = test_storage().await;
 
     // First insert a diagnosis (foreign key constraint)
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.15,
-        baseline: 0.05,
-        threshold: 0.1,
-    };
-    let suggested_action = SuggestedAction::no_op("wait", Duration::from_secs(60));
-    let diagnosis =
-        DiagnosisRecord::from_diagnosis(&trigger, "Test diagnosis", None, &suggested_action, None)
-            .unwrap();
+    let diagnosis = make_diagnosis("Test diagnosis", None, None);
     storage.insert_diagnosis(&diagnosis).await.unwrap();
 
     // Now insert action
@@ -444,14 +387,7 @@ async fn test_update_action_outcome() {
     let storage = test_storage().await;
 
     // Setup diagnosis and action
-    let trigger = TriggerMetric::Latency {
-        observed_p95_ms: 600,
-        baseline_ms: 200,
-        threshold_ms: 400,
-    };
-    let suggested_action = SuggestedAction::no_op("wait", Duration::from_secs(60));
-    let diagnosis =
-        DiagnosisRecord::from_diagnosis(&trigger, "Test", None, &suggested_action, None).unwrap();
+    let diagnosis = make_diagnosis("Test", None, None);
     storage.insert_diagnosis(&diagnosis).await.unwrap();
 
     let action_record = ActionRecord {
@@ -493,14 +429,7 @@ async fn test_update_action_outcome_with_error() {
     let storage = test_storage().await;
 
     // Setup
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.2,
-        baseline: 0.05,
-        threshold: 0.1,
-    };
-    let suggested_action = SuggestedAction::no_op("wait", Duration::from_secs(30));
-    let diagnosis =
-        DiagnosisRecord::from_diagnosis(&trigger, "Test", None, &suggested_action, None).unwrap();
+    let diagnosis = make_diagnosis("Test", None, None);
     storage.insert_diagnosis(&diagnosis).await.unwrap();
 
     let action_record = ActionRecord {
@@ -544,16 +473,8 @@ async fn test_get_actions_by_outcome() {
     let storage = test_storage().await;
 
     // Setup two diagnoses (each action needs unique diagnosis due to unique constraint)
-    let trigger = TriggerMetric::QualityScore {
-        observed: 0.6,
-        baseline: 0.8,
-        minimum: 0.7,
-    };
-    let suggested_action = SuggestedAction::no_op("wait", Duration::from_secs(60));
-    let diagnosis1 =
-        DiagnosisRecord::from_diagnosis(&trigger, "Test 1", None, &suggested_action, None).unwrap();
-    let diagnosis2 =
-        DiagnosisRecord::from_diagnosis(&trigger, "Test 2", None, &suggested_action, None).unwrap();
+    let diagnosis1 = make_diagnosis("Test 1", None, None);
+    let diagnosis2 = make_diagnosis("Test 2", None, None);
     storage.insert_diagnosis(&diagnosis1).await.unwrap();
     storage.insert_diagnosis(&diagnosis2).await.unwrap();
 
@@ -607,14 +528,7 @@ async fn test_insert_and_get_learning() {
     let storage = test_storage().await;
 
     // Setup diagnosis and action
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.1,
-        baseline: 0.05,
-        threshold: 0.08,
-    };
-    let suggested_action = SuggestedAction::no_op("wait", Duration::from_secs(60));
-    let diagnosis =
-        DiagnosisRecord::from_diagnosis(&trigger, "Test", None, &suggested_action, None).unwrap();
+    let diagnosis = make_diagnosis("Test", None, None);
     storage.insert_diagnosis(&diagnosis).await.unwrap();
 
     let action_record = ActionRecord {
@@ -716,14 +630,7 @@ async fn test_config_override_with_action_reference() {
     let storage = test_storage().await;
 
     // Setup a valid action first
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.1,
-        baseline: 0.05,
-        threshold: 0.08,
-    };
-    let suggested_action = SuggestedAction::no_op("wait", Duration::from_secs(60));
-    let diagnosis =
-        DiagnosisRecord::from_diagnosis(&trigger, "Test", None, &suggested_action, None).unwrap();
+    let diagnosis = make_diagnosis("Test", None, None);
     storage.insert_diagnosis(&diagnosis).await.unwrap();
 
     let action_record = ActionRecord {
@@ -943,14 +850,7 @@ async fn test_batch_insert_learnings_multiple() {
     let storage = test_storage().await;
 
     // Setup required foreign key references
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.1,
-        baseline: 0.05,
-        threshold: 0.08,
-    };
-    let suggested_action = SuggestedAction::no_op("wait", Duration::from_secs(60));
-    let diagnosis =
-        DiagnosisRecord::from_diagnosis(&trigger, "Test", None, &suggested_action, None).unwrap();
+    let diagnosis = make_diagnosis("Test", None, None);
     storage.insert_diagnosis(&diagnosis).await.unwrap();
 
     let action_record = ActionRecord {

@@ -2,7 +2,6 @@
 
 use super::*;
 use std::collections::HashMap;
-use std::time::Duration;
 
 // Severity tests
 #[test]
@@ -81,90 +80,9 @@ fn test_trigger_metric_zero_baseline() {
 }
 
 // ParamValue tests
-#[test]
-fn test_param_value_display() {
-    assert_eq!(ParamValue::integer(42).to_string(), "42");
-    assert_eq!(ParamValue::boolean(true).to_string(), "true");
-    assert_eq!(ParamValue::duration_ms(1000).to_string(), "1000ms");
-}
-
-#[test]
-fn test_param_value_serialize() {
-    let value = ParamValue::Integer(42);
-    let json = serde_json::to_string(&value).unwrap();
-    assert!(json.contains("integer"));
-    assert!(json.contains("42"));
-}
-
 // ResourceType tests
-#[test]
-fn test_resource_type_display() {
-    assert_eq!(ResourceType::TimeoutMs.to_string(), "timeout_ms");
-    assert_eq!(ResourceType::MaxRetries.to_string(), "max_retries");
-}
-
 // SuggestedAction tests
-#[test]
-fn test_suggested_action_adjust_param() {
-    let action = SuggestedAction::adjust_param(
-        "timeout",
-        ParamValue::duration_ms(30000),
-        ParamValue::duration_ms(60000),
-        ConfigScope::Global,
-    );
-    assert!(!action.is_no_op());
-    assert_eq!(action.action_type(), "adjust_param");
-}
-
-#[test]
-fn test_suggested_action_scale_resource() {
-    let action = SuggestedAction::scale_resource(ResourceType::MaxRetries, 3, 5);
-    assert!(!action.is_no_op());
-    assert_eq!(action.action_type(), "scale_resource");
-}
-
-#[test]
-fn test_suggested_action_no_op() {
-    let action = SuggestedAction::no_op("Within acceptable range", Duration::from_secs(3600));
-    assert!(action.is_no_op());
-    assert_eq!(action.action_type(), "no_op");
-}
-
 // SelfDiagnosis tests
-#[test]
-fn test_self_diagnosis_new() {
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.2,
-        baseline: 0.1,
-        threshold: 0.15,
-    };
-    let action = SuggestedAction::scale_resource(ResourceType::MaxRetries, 3, 5);
-    let diagnosis = SelfDiagnosis::new("diag-1", trigger, "High error rate", action);
-
-    assert_eq!(diagnosis.id, "diag-1");
-    assert_eq!(diagnosis.status, DiagnosisStatus::Pending);
-    assert_eq!(diagnosis.severity, Severity::Critical);
-}
-
-#[test]
-fn test_self_diagnosis_lifecycle() {
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.15,
-        baseline: 0.1,
-        threshold: 0.12,
-    };
-    let action = SuggestedAction::no_op("Test", Duration::from_secs(60));
-    let mut diagnosis = SelfDiagnosis::new("d", trigger, "test", action);
-
-    assert_eq!(diagnosis.status, DiagnosisStatus::Pending);
-
-    diagnosis.approve();
-    assert_eq!(diagnosis.status, DiagnosisStatus::Approved);
-
-    diagnosis.mark_executed();
-    assert_eq!(diagnosis.status, DiagnosisStatus::Executed);
-}
-
 // NormalizedReward tests
 #[test]
 fn test_normalized_reward_new() {
@@ -277,102 +195,6 @@ fn test_lesson_new() {
 }
 
 // ConfigScope tests
-#[test]
-fn test_config_scope_display() {
-    assert_eq!(ConfigScope::Global.to_string(), "global");
-    assert_eq!(
-        ConfigScope::Mode("linear".into()).to_string(),
-        "mode:linear"
-    );
-    assert_eq!(
-        ConfigScope::Tool("reasoning_linear".into()).to_string(),
-        "tool:reasoning_linear"
-    );
-}
-
-#[test]
-fn test_config_scope_validate_global() {
-    assert!(ConfigScope::Global.validate().is_ok());
-}
-
-#[test]
-fn test_config_scope_validate_known_modes() {
-    let valid_modes = [
-        "linear",
-        "tree",
-        "divergent",
-        "reflection",
-        "checkpoint",
-        "auto",
-        "graph",
-        "detect",
-        "decision",
-        "evidence",
-        "timeline",
-        "mcts",
-        "counterfactual",
-    ];
-    for mode in valid_modes {
-        let scope = ConfigScope::Mode(mode.to_string());
-        assert!(scope.validate().is_ok(), "Mode '{mode}' should be valid");
-    }
-}
-
-#[test]
-fn test_config_scope_validate_mode_case_insensitive() {
-    assert!(ConfigScope::Mode("LINEAR".into()).validate().is_ok());
-    assert!(ConfigScope::Mode("Linear".into()).validate().is_ok());
-    assert!(ConfigScope::Mode("tree".into()).validate().is_ok());
-}
-
-#[test]
-fn test_config_scope_validate_unknown_mode() {
-    let result = ConfigScope::Mode("unknown".into()).validate();
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Unknown mode"));
-}
-
-#[test]
-fn test_config_scope_validate_known_tools() {
-    let valid_modes = [
-        "linear",
-        "tree",
-        "divergent",
-        "reflection",
-        "checkpoint",
-        "auto",
-        "graph",
-        "detect",
-        "decision",
-        "evidence",
-        "timeline",
-        "mcts",
-        "counterfactual",
-    ];
-    for mode in valid_modes {
-        let tool_name = format!("reasoning_{mode}");
-        let scope = ConfigScope::Tool(tool_name.clone());
-        assert!(
-            scope.validate().is_ok(),
-            "Tool '{tool_name}' should be valid"
-        );
-    }
-}
-
-#[test]
-fn test_config_scope_validate_invalid_tool_format() {
-    let result = ConfigScope::Tool("invalid_tool".into()).validate();
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid tool format"));
-}
-
-#[test]
-fn test_config_scope_validate_unknown_tool_mode() {
-    let result = ConfigScope::Tool("reasoning_unknown".into()).validate();
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Unknown tool"));
-}
-
 // DiagnosisStatus tests
 #[test]
 fn test_diagnosis_status_display() {
@@ -495,104 +317,7 @@ fn test_trigger_metric_error_rate_zero_baseline_zero_observed() {
 }
 
 // ParamValue constructor tests
-#[test]
-fn test_param_value_float() {
-    let val = ParamValue::float(3.14);
-    assert_eq!(val.to_string(), "3.14");
-}
-
-#[test]
-fn test_param_value_string() {
-    let val = ParamValue::string("hello");
-    assert_eq!(val.to_string(), "hello");
-}
-
-#[test]
-fn test_param_value_float_display() {
-    let val = ParamValue::Float(2.5);
-    assert_eq!(val.to_string(), "2.5");
-}
-
-#[test]
-fn test_param_value_string_display() {
-    let val = ParamValue::String("test".into());
-    assert_eq!(val.to_string(), "test");
-}
-
 // SelfDiagnosis builder methods
-#[test]
-fn test_self_diagnosis_with_suspected_cause() {
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.2,
-        baseline: 0.1,
-        threshold: 0.15,
-    };
-    let action = SuggestedAction::no_op("Test", Duration::from_secs(60));
-    let diagnosis =
-        SelfDiagnosis::new("d", trigger, "test", action).with_suspected_cause("API timeout");
-
-    assert_eq!(diagnosis.suspected_cause, Some("API timeout".to_string()));
-}
-
-#[test]
-fn test_self_diagnosis_with_action_rationale() {
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.2,
-        baseline: 0.1,
-        threshold: 0.15,
-    };
-    let action = SuggestedAction::no_op("Test", Duration::from_secs(60));
-    let diagnosis =
-        SelfDiagnosis::new("d", trigger, "test", action).with_action_rationale("Increase retries");
-
-    assert_eq!(
-        diagnosis.action_rationale,
-        Some("Increase retries".to_string())
-    );
-}
-
-#[test]
-fn test_self_diagnosis_reject() {
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.2,
-        baseline: 0.1,
-        threshold: 0.15,
-    };
-    let action = SuggestedAction::no_op("Test", Duration::from_secs(60));
-    let mut diagnosis = SelfDiagnosis::new("d", trigger, "test", action);
-
-    diagnosis.reject();
-    assert_eq!(diagnosis.status, DiagnosisStatus::Rejected);
-}
-
-#[test]
-fn test_self_diagnosis_mark_failed() {
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.2,
-        baseline: 0.1,
-        threshold: 0.15,
-    };
-    let action = SuggestedAction::no_op("Test", Duration::from_secs(60));
-    let mut diagnosis = SelfDiagnosis::new("d", trigger, "test", action);
-
-    diagnosis.mark_failed();
-    assert_eq!(diagnosis.status, DiagnosisStatus::Failed);
-}
-
-#[test]
-fn test_self_diagnosis_mark_rolled_back() {
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.2,
-        baseline: 0.1,
-        threshold: 0.15,
-    };
-    let action = SuggestedAction::no_op("Test", Duration::from_secs(60));
-    let mut diagnosis = SelfDiagnosis::new("d", trigger, "test", action);
-
-    diagnosis.mark_rolled_back();
-    assert_eq!(diagnosis.status, DiagnosisStatus::RolledBack);
-}
-
 // NormalizedReward::is_significant tests
 #[test]
 fn test_normalized_reward_is_significant() {
@@ -759,22 +484,6 @@ fn test_legacy_action_type_display_all() {
 }
 
 // ResourceType display all variants
-#[test]
-fn test_resource_type_display_all() {
-    assert_eq!(
-        ResourceType::MaxConcurrentRequests.to_string(),
-        "max_concurrent_requests"
-    );
-    assert_eq!(
-        ResourceType::ConnectionPoolSize.to_string(),
-        "connection_pool_size"
-    );
-    assert_eq!(ResourceType::CacheSize.to_string(), "cache_size");
-    assert_eq!(ResourceType::TimeoutMs.to_string(), "timeout_ms");
-    assert_eq!(ResourceType::MaxRetries.to_string(), "max_retries");
-    assert_eq!(ResourceType::RetryDelayMs.to_string(), "retry_delay_ms");
-}
-
 // DiagnosisStatus display all variants
 #[test]
 fn test_diagnosis_status_display_all() {
@@ -787,52 +496,6 @@ fn test_diagnosis_status_display_all() {
 }
 
 // SuggestedAction serialization tests (for duration_serde coverage)
-#[test]
-fn test_suggested_action_no_op_serialization() {
-    let action = SuggestedAction::no_op("Within acceptable range", Duration::from_secs(3600));
-    let json = serde_json::to_string(&action).unwrap();
-
-    assert!(json.contains("no_op"));
-    assert!(json.contains("3600"));
-
-    // Round-trip deserialization
-    let deserialized: SuggestedAction = serde_json::from_str(&json).unwrap();
-    assert!(deserialized.is_no_op());
-}
-
-#[test]
-fn test_suggested_action_adjust_param_serialization() {
-    let action = SuggestedAction::adjust_param(
-        "timeout",
-        ParamValue::duration_ms(30000),
-        ParamValue::duration_ms(60000),
-        ConfigScope::Mode("linear".into()),
-    );
-    let json = serde_json::to_string(&action).unwrap();
-
-    assert!(json.contains("adjust_param"));
-    assert!(json.contains("timeout"));
-
-    // Round-trip deserialization
-    let deserialized: SuggestedAction = serde_json::from_str(&json).unwrap();
-    assert!(!deserialized.is_no_op());
-    assert_eq!(deserialized.action_type(), "adjust_param");
-}
-
-#[test]
-fn test_suggested_action_scale_resource_serialization() {
-    let action = SuggestedAction::scale_resource(ResourceType::MaxRetries, 3, 5);
-    let json = serde_json::to_string(&action).unwrap();
-
-    assert!(json.contains("scale_resource"));
-    assert!(json.contains("max_retries"));
-
-    // Round-trip deserialization
-    let deserialized: SuggestedAction = serde_json::from_str(&json).unwrap();
-    assert!(!deserialized.is_no_op());
-    assert_eq!(deserialized.action_type(), "scale_resource");
-}
-
 // NormalizedReward::calculate edge cases
 #[test]
 fn test_normalized_reward_calculate_zero_pre_error() {
@@ -911,23 +574,6 @@ fn test_metrics_snapshot_negative_error_rate() {
 }
 
 // ConfigScope serialization
-#[test]
-fn test_config_scope_serialization() {
-    let global = ConfigScope::Global;
-    let json = serde_json::to_string(&global).unwrap();
-    assert!(json.contains("global"));
-
-    let mode = ConfigScope::Mode("linear".into());
-    let json = serde_json::to_string(&mode).unwrap();
-    assert!(json.contains("mode"));
-    assert!(json.contains("linear"));
-
-    let tool = ConfigScope::Tool("reasoning_linear".into());
-    let json = serde_json::to_string(&tool).unwrap();
-    assert!(json.contains("tool"));
-    assert!(json.contains("reasoning_linear"));
-}
-
 // TriggerMetric serialization
 #[test]
 fn test_trigger_metric_serialization() {
@@ -957,22 +603,6 @@ fn test_trigger_metric_serialization() {
 }
 
 // SelfDiagnosis serialization
-#[test]
-fn test_self_diagnosis_serialization() {
-    let trigger = TriggerMetric::ErrorRate {
-        observed: 0.2,
-        baseline: 0.1,
-        threshold: 0.15,
-    };
-    let action = SuggestedAction::scale_resource(ResourceType::MaxRetries, 3, 5);
-    let diagnosis = SelfDiagnosis::new("diag-1", trigger, "High error rate", action);
-
-    let json = serde_json::to_string(&diagnosis).unwrap();
-    assert!(json.contains("diag-1"));
-    assert!(json.contains("High error rate"));
-    assert!(json.contains("pending"));
-}
-
 // Legacy types serialization
 #[test]
 fn test_system_metrics_serialization() {
@@ -1025,22 +655,4 @@ fn test_lesson_reward_clamping() {
 
     let lesson2 = Lesson::new("l", "a", "i", -1.5);
     assert!((lesson2.reward - (-1.0)).abs() < f64::EPSILON);
-}
-
-// NewActionType display tests (DESIGN.md 14.2 enums)
-#[test]
-fn test_new_action_type_display() {
-    assert_eq!(NewActionType::ConfigAdjust.to_string(), "config_adjust");
-    assert_eq!(NewActionType::ResourceScale.to_string(), "resource_scale");
-    assert_eq!(NewActionType::NoOp.to_string(), "no_op");
-}
-
-// NewActionStatus display tests (DESIGN.md 14.2 enums)
-#[test]
-fn test_new_action_status_display() {
-    assert_eq!(NewActionStatus::Proposed.to_string(), "proposed");
-    assert_eq!(NewActionStatus::Approved.to_string(), "approved");
-    assert_eq!(NewActionStatus::Executed.to_string(), "executed");
-    assert_eq!(NewActionStatus::Failed.to_string(), "failed");
-    assert_eq!(NewActionStatus::RolledBack.to_string(), "rolled_back");
 }
