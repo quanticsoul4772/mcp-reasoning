@@ -49,12 +49,24 @@ pub fn validate_config(config: &Config) -> Result<(), ConfigError> {
         });
     }
 
-    // High-confidence threshold must be a probability in [0, 1].
-    if !(0.0..=1.0).contains(&config.high_confidence_threshold) {
-        return Err(ConfigError::InvalidValue {
-            var: "HIGH_CONFIDENCE_THRESHOLD".into(),
-            reason: "must be between 0.0 and 1.0".into(),
-        });
+    // Decision thresholds must be probabilities in [0, 1].
+    for (name, value) in [
+        (
+            "HIGH_CONFIDENCE_THRESHOLD",
+            config.high_confidence_threshold,
+        ),
+        (
+            "REFLECTION_QUALITY_THRESHOLD",
+            config.reflection_quality_threshold,
+        ),
+        ("MCTS_QUALITY_THRESHOLD", config.mcts_quality_threshold),
+    ] {
+        if !(0.0..=1.0).contains(&value) {
+            return Err(ConfigError::InvalidValue {
+                var: name.into(),
+                reason: "must be between 0.0 and 1.0".into(),
+            });
+        }
     }
 
     Ok(())
@@ -87,6 +99,8 @@ mod tests {
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
             high_confidence_threshold: 0.75,
+            reflection_quality_threshold: 0.8,
+            mcts_quality_threshold: 0.5,
         }
     }
 
@@ -111,6 +125,8 @@ mod tests {
             voyage_api_key: None,
             voyage_model: "voyage-4".to_string(),
             high_confidence_threshold: 0.75,
+            reflection_quality_threshold: 0.8,
+            mcts_quality_threshold: 0.5,
         };
         let result = validate_config(&config);
         assert!(result.is_err());

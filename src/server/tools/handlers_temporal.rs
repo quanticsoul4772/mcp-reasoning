@@ -1064,9 +1064,14 @@ impl super::ReasoningServer {
                 }
             }
             "auto_backtrack" => {
+                // Caller value wins; otherwise the tunable Config default.
+                let quality_threshold = Some(
+                    req.quality_threshold
+                        .unwrap_or(self.state.config.mcts_quality_threshold),
+                );
                 let backtrack_content = with_mcts_params(
                     content,
-                    &backtrack_param_lines(req.quality_threshold, req.lookback_depth),
+                    &backtrack_param_lines(quality_threshold, req.lookback_depth),
                 );
                 let backtrack_result = match tokio::time::timeout(
                     timeout_duration,
@@ -1096,7 +1101,7 @@ impl super::ReasoningServer {
                     Ok(resp) => {
                         let validation = verify_backtrack(
                             &resp.quality_assessment,
-                            req.quality_threshold,
+                            quality_threshold,
                             resp.backtrack_decision.should_backtrack,
                         );
                         let alternatives = resp

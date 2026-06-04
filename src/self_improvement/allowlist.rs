@@ -83,6 +83,8 @@ impl Default for AllowlistConfig {
         // actual `Config` fields so the change can be applied.
         let mut threshold_params = HashSet::new();
         threshold_params.insert("high_confidence_threshold".to_string());
+        threshold_params.insert("reflection_quality_threshold".to_string());
+        threshold_params.insert("mcts_quality_threshold".to_string());
         allowed_parameters.insert(ActionType::ThresholdAdjust, threshold_params);
 
         Self {
@@ -468,7 +470,9 @@ mod tests {
         let mut allowlist = Allowlist::with_defaults();
         let mut action = create_test_action(ActionType::ThresholdAdjust);
         action = action.with_parameters(serde_json::json!({
-            "high_confidence_threshold": 0.85
+            "high_confidence_threshold": 0.85,
+            "reflection_quality_threshold": 0.9,
+            "mcts_quality_threshold": 0.4
         }));
 
         let result = allowlist.validate(&action);
