@@ -704,14 +704,12 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             .map(|t| t.severity)
             .max()
             .unwrap_or(Severity::Info);
-        let succeeded = cycle.execution_results.iter().filter(|r| r.success).count();
-        let status = if cycle.execution_results.is_empty() {
-            DiagnosisStatus::Pending
-        } else if succeeded > 0 {
-            DiagnosisStatus::Executed
-        } else {
-            DiagnosisStatus::Failed
-        };
+        let outcomes: Vec<ActionStatus> = cycle
+            .execution_results
+            .iter()
+            .map(|exec| self.action_outcome(exec))
+            .collect();
+        let status = Self::diagnosis_status_from(&outcomes);
 
         let diagnosis_id = uuid::Uuid::new_v4().to_string();
         let diagnosis = DiagnosisRecord {
@@ -758,11 +756,7 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             diagnosis_id: diagnosis_id.to_string(),
             action_type: format!("{:?}", exec.action.action_type),
             action_json: serde_json::to_string(&exec.action).unwrap_or_else(|_| "{}".to_string()),
-            outcome: if exec.success {
-                ActionStatus::Completed
-            } else {
-                ActionStatus::Failed
-            },
+            outcome: self.action_outcome(exec),
             pre_metrics_json: "{}".to_string(),
             post_metrics_json: None,
             execution_time_ms: 0,
@@ -782,6 +776,46 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
         }
 
         Ok(action_record_id)
+    }
+
+    /// The honest recorded outcome for an executed action.
+    ///
+    /// A failed action is `Failed`. A successful action is `Completed` only when
+    /// its effect actually reaches the running system — a `LogObservation`
+    /// (which logs), or a `ConfigAdjust`/`ThresholdAdjust` when override
+    /// application is enabled (so the change is applied at the next startup).
+    /// Otherwise the action only recorded an advisory recommendation that never
+    /// touches the live server, so it is `Recommended` — not `Completed`.
+    fn action_outcome(&self, exec: &ExecutionResult) -> ActionStatus {
+        if !exec.success {
+            return ActionStatus::Failed;
+        }
+        match exec.action.action_type {
+            ActionType::LogObservation => ActionStatus::Completed,
+            ActionType::ConfigAdjust | ActionType::ThresholdAdjust
+                if self.config.apply_config_overrides =>
+            {
+                ActionStatus::Completed
+            }
+            _ => ActionStatus::Recommended,
+        }
+    }
+
+    /// Derive a diagnosis (cycle) status from its actions' recorded outcomes.
+    ///
+    /// `Executed` if any action's effect reached the running system; otherwise
+    /// `Recommended` if any action recorded a recommendation; `Failed` if every
+    /// action failed; `Pending` when there were no executed actions.
+    fn diagnosis_status_from(outcomes: &[ActionStatus]) -> DiagnosisStatus {
+        if outcomes.is_empty() {
+            DiagnosisStatus::Pending
+        } else if outcomes.contains(&ActionStatus::Completed) {
+            DiagnosisStatus::Executed
+        } else if outcomes.contains(&ActionStatus::Recommended) {
+            DiagnosisStatus::Recommended
+        } else {
+            DiagnosisStatus::Failed
+        }
     }
 
     /// Persist a successful config/threshold action's concrete parameters to the
@@ -943,11 +977,11 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
         }
 
         let succeeded = exec_results.iter().filter(|r| r.success).count();
-        let new_status = if exec_results.is_empty() || succeeded == 0 {
-            DiagnosisStatus::Failed
-        } else {
-            DiagnosisStatus::Executed
-        };
+        let outcomes: Vec<ActionStatus> = exec_results
+            .iter()
+            .map(|exec| self.action_outcome(exec))
+            .collect();
+        let new_status = Self::diagnosis_status_from(&outcomes);
         if let Err(e) = self
             .storage
             .update_diagnosis_status(diagnosis_id, new_status)
@@ -1358,17 +1392,18 @@ mod tests {
 
         manager.persist_cycle_audit(&cycle).await.expect("persist");
 
-        // The diagnosis (Executed, since the action succeeded) and the action are
-        // now in the audit tables that the cycle path previously never wrote.
+        // Advisory default: a successful config_adjust only recorded a
+        // recommendation (nothing applied), so the honest status is Recommended,
+        // not Executed/Completed.
         let diags = storage
-            .get_diagnoses_by_status(DiagnosisStatus::Executed)
+            .get_diagnoses_by_status(DiagnosisStatus::Recommended)
             .await
             .expect("diagnoses");
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].description, "cycle summary");
 
         let actions = storage
-            .get_actions_by_outcome(ActionStatus::Completed, 10)
+            .get_actions_by_outcome(ActionStatus::Recommended, 10)
             .await
             .expect("actions");
         assert_eq!(actions.len(), 1);
@@ -1430,8 +1465,9 @@ mod tests {
         let action_id = override_row
             .applied_by_action
             .expect("override attributed to an action");
+        // Advisory default: the action's recorded outcome is Recommended.
         let actions = storage
-            .get_actions_by_outcome(ActionStatus::Completed, 10)
+            .get_actions_by_outcome(ActionStatus::Recommended, 10)
             .await
             .expect("actions");
         assert!(actions.iter().any(|a| a.id == action_id));
@@ -1484,6 +1520,111 @@ mod tests {
             .await
             .expect("query")
             .is_none());
+    }
+
+    // Build a single-successful-action cycle for outcome tests.
+    fn cycle_with_one_success(action: SelfImprovementAction) -> Result<CycleResult, ModeError> {
+        use super::super::analyzer::AnalysisResult;
+        use super::super::executor::ExecutionResult;
+        use super::super::monitor::MonitorResult;
+        use super::super::types::SystemMetrics;
+        Ok(CycleResult {
+            monitor_result: MonitorResult {
+                metrics: SystemMetrics::new(0.9, 50.0, 12, std::collections::HashMap::new()),
+                triggers: vec![],
+                action_recommended: true,
+            },
+            analysis_result: Some(AnalysisResult {
+                actions: vec![action.clone()],
+                summary: "s".to_string(),
+                confidence: 0.8,
+            }),
+            execution_results: vec![ExecutionResult {
+                action,
+                success: true,
+                message: "ok".to_string(),
+                measured_improvement: None,
+            }],
+            learning_results: vec![],
+            blocked: false,
+            error: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn test_apply_mode_config_action_is_completed() {
+        // With override application enabled, a successful config_adjust reaches
+        // the live server (at restart), so it is honestly Completed / Executed.
+        let storage = create_test_storage().await;
+        let config = SelfImprovementConfig {
+            apply_config_overrides: true,
+            ..Default::default()
+        };
+        let (manager, _handle) = SelfImprovementManager::new(
+            config,
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            Arc::clone(&storage),
+        );
+
+        let action = SelfImprovementAction::new("a1", ActionType::ConfigAdjust, "d", "r", 0.1)
+            .with_parameters(serde_json::json!({ "request_timeout_ms": 45000 }));
+        manager
+            .persist_cycle_audit(&cycle_with_one_success(action))
+            .await
+            .expect("persist");
+
+        assert_eq!(
+            storage
+                .get_diagnoses_by_status(DiagnosisStatus::Executed)
+                .await
+                .expect("diags")
+                .len(),
+            1
+        );
+        assert_eq!(
+            storage
+                .get_actions_by_outcome(ActionStatus::Completed, 10)
+                .await
+                .expect("actions")
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn test_log_observation_is_completed_in_advisory_mode() {
+        // LogObservation genuinely completes (it logs) regardless of apply mode.
+        let storage = create_test_storage().await;
+        let (manager, _handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            Arc::clone(&storage),
+        );
+
+        let action = SelfImprovementAction::new("a1", ActionType::LogObservation, "d", "r", 0.1);
+        manager
+            .persist_cycle_audit(&cycle_with_one_success(action))
+            .await
+            .expect("persist");
+
+        assert_eq!(
+            storage
+                .get_actions_by_outcome(ActionStatus::Completed, 10)
+                .await
+                .expect("actions")
+                .len(),
+            1
+        );
+        assert_eq!(
+            storage
+                .get_diagnoses_by_status(DiagnosisStatus::Executed)
+                .await
+                .expect("diags")
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -1836,14 +1977,15 @@ mod tests {
         assert_eq!(result.execution_results.len(), 1);
         assert!(result.execution_results[0].success);
 
-        // Diagnosis is now Executed and no longer pending; the override and
-        // action outcome were persisted; the cached count refreshed to 0.
+        // No longer pending; the override and action outcome were persisted; the
+        // cached count refreshed to 0. Advisory default: nothing was applied to
+        // live config, so the honest status is Recommended, not Executed.
         let diag = storage
             .get_diagnosis("diag-1")
             .await
             .expect("get")
             .expect("exists");
-        assert_eq!(diag.status, DiagnosisStatus::Executed);
+        assert_eq!(diag.status, DiagnosisStatus::Recommended);
         assert!(manager.get_pending_diagnoses(None).await.is_empty());
         assert!(storage
             .get_config_override("request_timeout_ms")

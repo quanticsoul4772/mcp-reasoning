@@ -378,8 +378,11 @@ pub enum DiagnosisStatus {
     Approved,
     /// Diagnosis rejected, will not execute.
     Rejected,
-    /// Action executed successfully.
+    /// Action executed successfully and its effect reached the running system.
     Executed,
+    /// Action ran but only a recommendation was recorded — nothing was applied
+    /// to the running server (advisory mode).
+    Recommended,
     /// Action execution failed.
     Failed,
     /// Action was rolled back.
@@ -393,6 +396,7 @@ impl std::fmt::Display for DiagnosisStatus {
             Self::Approved => write!(f, "approved"),
             Self::Rejected => write!(f, "rejected"),
             Self::Executed => write!(f, "executed"),
+            Self::Recommended => write!(f, "recommended"),
             Self::Failed => write!(f, "failed"),
             Self::RolledBack => write!(f, "rolled_back"),
         }
