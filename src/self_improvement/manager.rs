@@ -52,9 +52,9 @@ use crate::traits::AnthropicClientTrait;
 use super::circuit_breaker::CircuitState;
 use super::executor::ExecutionResult;
 use super::learner::{LearningResult, LearningSummary};
-use super::storage::{ActionRecord, DiagnosisRecord, SelfImprovementStorage};
+use super::storage::{ActionRecord, ConfigOverrideRecord, DiagnosisRecord, SelfImprovementStorage};
 use super::system::{CycleResult, SelfImprovementSystem, SystemConfig};
-use super::types::{ActionStatus, DiagnosisStatus, SelfImprovementAction, Severity};
+use super::types::{ActionStatus, ActionType, DiagnosisStatus, SelfImprovementAction, Severity};
 
 /// Commands that can be sent to the manager.
 #[derive(Debug)]
@@ -640,8 +640,9 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             })?;
 
         for exec in &cycle.execution_results {
+            let action_record_id = uuid::Uuid::new_v4().to_string();
             let record = ActionRecord {
-                id: uuid::Uuid::new_v4().to_string(),
+                id: action_record_id.clone(),
                 diagnosis_id: diagnosis_id.clone(),
                 action_type: format!("{:?}", exec.action.action_type),
                 action_json: serde_json::to_string(&exec.action)
@@ -659,6 +660,76 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             };
             self.storage
                 .insert_action(&record)
+                .await
+                .map_err(|e| ModeError::StorageError {
+                    message: e.to_string(),
+                })?;
+
+            if exec.success {
+                self.persist_config_recommendations(&action_record_id, &exec.action)
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Persist a successful config/threshold action's concrete parameters to the
+    /// `config_overrides` table as advisory recommendations.
+    ///
+    /// Advisory only: these rows are a durable, attributable record of what SI
+    /// proposes — they are NOT read back into the live `Config`, so the running
+    /// server's settings do not change on their own. The owner reviews them (the
+    /// table is keyed by the real `Config` field, with `applied_by_action`
+    /// pointing at the producing action) and applies any they want by hand.
+    /// Other action types (`prompt_tune`, `log_observation`) carry no
+    /// `Config`-field change and are skipped.
+    ///
+    /// `action_record_id` is the id of the just-inserted `si_actions` row;
+    /// `config_overrides.applied_by_action` is a foreign key onto it.
+    async fn persist_config_recommendations(
+        &self,
+        action_record_id: &str,
+        action: &SelfImprovementAction,
+    ) -> Result<(), ModeError> {
+        let Some(params) = action
+            .parameters
+            .as_ref()
+            .and_then(serde_json::Value::as_object)
+        else {
+            return Ok(());
+        };
+
+        // (override key, value) pairs to record for this action.
+        let overrides: Vec<(String, serde_json::Value)> = match action.action_type {
+            ActionType::ConfigAdjust => {
+                params.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+            }
+            ActionType::ThresholdAdjust => {
+                match (
+                    params
+                        .get("threshold_key")
+                        .and_then(serde_json::Value::as_str),
+                    params.get("value"),
+                ) {
+                    (Some(key), Some(value)) => {
+                        vec![(format!("threshold:{key}"), value.clone())]
+                    }
+                    _ => Vec::new(),
+                }
+            }
+            ActionType::PromptTune | ActionType::LogObservation => Vec::new(),
+        };
+
+        for (key, value) in overrides {
+            let record = ConfigOverrideRecord {
+                key,
+                value_json: value.to_string(),
+                applied_by_action: Some(action_record_id.to_string()),
+                updated_at: Utc::now(),
+            };
+            self.storage
+                .upsert_config_override(&record)
                 .await
                 .map_err(|e| ModeError::StorageError {
                     message: e.to_string(),
@@ -1077,6 +1148,117 @@ mod tests {
             .expect("actions");
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].diagnosis_id, diags[0].id);
+    }
+
+    #[tokio::test]
+    async fn test_persist_cycle_audit_records_config_recommendations() {
+        use super::super::analyzer::AnalysisResult;
+        use super::super::executor::ExecutionResult;
+        use super::super::monitor::MonitorResult;
+        use super::super::types::SystemMetrics;
+
+        let storage = create_test_storage().await;
+        let (manager, _handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            Arc::clone(&storage),
+        );
+
+        // A successful config_adjust carrying a real Config field.
+        let action = SelfImprovementAction::new("a1", ActionType::ConfigAdjust, "d", "r", 0.1)
+            .with_parameters(serde_json::json!({ "request_timeout_ms": 45000 }));
+        let cycle: Result<CycleResult, ModeError> = Ok(CycleResult {
+            monitor_result: MonitorResult {
+                metrics: SystemMetrics::new(0.9, 50.0, 12, std::collections::HashMap::new()),
+                triggers: vec![],
+                action_recommended: true,
+            },
+            analysis_result: Some(AnalysisResult {
+                actions: vec![action.clone()],
+                summary: "s".to_string(),
+                confidence: 0.8,
+            }),
+            execution_results: vec![ExecutionResult {
+                action,
+                success: true,
+                message: "applied".to_string(),
+                measured_improvement: None,
+            }],
+            learning_results: vec![],
+            blocked: false,
+            error: None,
+        });
+
+        manager.persist_cycle_audit(&cycle).await.expect("persist");
+
+        // The successful action's concrete change is recorded as an advisory
+        // override keyed by the real Config field — attributed to the action,
+        // and NOT applied to the live server.
+        let override_row = storage
+            .get_config_override("request_timeout_ms")
+            .await
+            .expect("query")
+            .expect("override recorded");
+        assert_eq!(override_row.value_json, "45000");
+        // Attributed to the si_actions row that produced it (FK target).
+        let action_id = override_row
+            .applied_by_action
+            .expect("override attributed to an action");
+        let actions = storage
+            .get_actions_by_outcome(ActionStatus::Completed, 10)
+            .await
+            .expect("actions");
+        assert!(actions.iter().any(|a| a.id == action_id));
+    }
+
+    #[tokio::test]
+    async fn test_failed_action_records_no_config_recommendation() {
+        use super::super::analyzer::AnalysisResult;
+        use super::super::executor::ExecutionResult;
+        use super::super::monitor::MonitorResult;
+        use super::super::types::SystemMetrics;
+
+        let storage = create_test_storage().await;
+        let (manager, _handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            Arc::clone(&storage),
+        );
+
+        let action = SelfImprovementAction::new("a1", ActionType::ConfigAdjust, "d", "r", 0.1)
+            .with_parameters(serde_json::json!({ "request_timeout_ms": 45000 }));
+        let cycle: Result<CycleResult, ModeError> = Ok(CycleResult {
+            monitor_result: MonitorResult {
+                metrics: SystemMetrics::new(0.9, 50.0, 12, std::collections::HashMap::new()),
+                triggers: vec![],
+                action_recommended: true,
+            },
+            analysis_result: Some(AnalysisResult {
+                actions: vec![action.clone()],
+                summary: "s".to_string(),
+                confidence: 0.8,
+            }),
+            execution_results: vec![ExecutionResult {
+                action,
+                success: false,
+                message: "boom".to_string(),
+                measured_improvement: None,
+            }],
+            learning_results: vec![],
+            blocked: false,
+            error: None,
+        });
+
+        manager.persist_cycle_audit(&cycle).await.expect("persist");
+
+        // A failed action leaves no recommendation behind.
+        assert!(storage
+            .get_config_override("request_timeout_ms")
+            .await
+            .expect("query")
+            .is_none());
     }
 
     #[tokio::test]

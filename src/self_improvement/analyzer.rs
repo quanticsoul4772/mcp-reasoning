@@ -105,8 +105,9 @@ Propose up to {max_actions} improvement actions. For each action:
 `parameters` is REQUIRED for `config_adjust`, `threshold_adjust`, and
 `prompt_tune`. ONLY these exact keys are accepted — any other key causes the
 action to be REJECTED, so use only these:
-- `config_adjust`: one or more of `timeout_ms`, `max_retries`, `request_limit`,
-  `batch_size` mapped to a new value, e.g. `{{"timeout_ms": 45000}}`.
+- `config_adjust`: one or more of `request_timeout_ms`,
+  `request_timeout_deep_ms`, `request_timeout_maximum_ms`, `factory_timeout_ms`,
+  `max_retries` mapped to a new value, e.g. `{{"request_timeout_ms": 45000}}`.
 - `threshold_adjust`: `threshold_key` (the threshold to change) and `value`
   (the new value); optionally `min` and `max`, e.g.
   `{{"threshold_key": "quality", "value": 0.7}}`.
@@ -126,7 +127,7 @@ Respond in JSON format:
       "description": "What to change",
       "rationale": "Why this helps",
       "expected_improvement": 0.15,
-      "parameters": {{"timeout_ms": 45000}}
+      "parameters": {{"request_timeout_ms": 45000}}
     }}
   ]
 }}
