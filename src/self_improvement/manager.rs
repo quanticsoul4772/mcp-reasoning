@@ -545,17 +545,29 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
                     self.state.failed_cycles += 1;
                     tracing::error!(error = ?cycle.error, "Improvement cycle failed");
                 } else {
-                    self.state.successful_cycles += 1;
-                    self.state.total_actions_executed +=
-                        cycle.execution_results.iter().filter(|r| r.success).count() as u64;
-                    tracing::info!(
-                        actions_proposed = cycle
-                            .analysis_result
-                            .as_ref()
-                            .map_or(0, |a| a.actions.len()),
-                        actions_executed = cycle.execution_results.len(),
-                        "Improvement cycle completed"
-                    );
+                    let succeeded = cycle.execution_results.iter().filter(|r| r.success).count();
+                    self.state.total_actions_executed += succeeded as u64;
+                    if !cycle.execution_results.is_empty() && succeeded == 0 {
+                        // Every proposed action failed to execute. The circuit
+                        // breaker records these failures, so the cycle must not
+                        // read as a success (which is what let the breaker open
+                        // while successful_cycles still climbed).
+                        self.state.failed_cycles += 1;
+                        tracing::warn!(
+                            attempted = cycle.execution_results.len(),
+                            "Improvement cycle executed but every action failed"
+                        );
+                    } else {
+                        self.state.successful_cycles += 1;
+                        tracing::info!(
+                            actions_proposed = cycle
+                                .analysis_result
+                                .as_ref()
+                                .map_or(0, |a| a.actions.len()),
+                            actions_executed = succeeded,
+                            "Improvement cycle completed"
+                        );
+                    }
                 }
             }
             Err(e) => {
@@ -868,6 +880,54 @@ mod tests {
         assert_eq!(status.total_cycles, 2);
         assert_eq!(status.successful_cycles, 1);
         assert_eq!(status.failed_cycles, 1);
+    }
+
+    #[tokio::test]
+    async fn test_cycle_with_all_failed_actions_counts_as_failed() {
+        use super::super::executor::ExecutionResult;
+        use super::super::monitor::MonitorResult;
+        use super::super::types::{ActionType, SelfImprovementAction, SystemMetrics};
+
+        let (mut manager, _handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            create_test_storage().await,
+        );
+
+        let cycle: Result<CycleResult, ModeError> = Ok(CycleResult {
+            monitor_result: MonitorResult {
+                metrics: SystemMetrics::new(1.0, 0.0, 0, std::collections::HashMap::new()),
+                triggers: vec![],
+                action_recommended: true,
+            },
+            analysis_result: None,
+            // One proposed action that failed to execute.
+            execution_results: vec![ExecutionResult {
+                action: SelfImprovementAction::new(
+                    "a1",
+                    ActionType::ConfigAdjust,
+                    "desc",
+                    "rationale",
+                    0.1,
+                ),
+                success: false,
+                message: "No parameters provided".to_string(),
+                measured_improvement: None,
+            }],
+            learning_results: vec![],
+            blocked: false,
+            error: None,
+        });
+
+        manager.record_cycle_result(&cycle);
+
+        // A cycle whose every action failed is a failure, not a success — this
+        // is what previously let the circuit breaker open while the manager
+        // still reported a successful cycle.
+        assert_eq!(manager.state.failed_cycles, 1);
+        assert_eq!(manager.state.successful_cycles, 0);
+        assert_eq!(manager.state.total_actions_executed, 0);
     }
 
     #[tokio::test]
