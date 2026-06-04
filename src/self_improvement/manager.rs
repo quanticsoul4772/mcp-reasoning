@@ -42,6 +42,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot, watch};
 
+use chrono::Utc;
+
 use crate::config::SelfImprovementConfig;
 use crate::error::ModeError;
 use crate::metrics::MetricsCollector;
@@ -50,9 +52,9 @@ use crate::traits::AnthropicClientTrait;
 use super::circuit_breaker::CircuitState;
 use super::executor::ExecutionResult;
 use super::learner::{LearningResult, LearningSummary};
-use super::storage::SelfImprovementStorage;
+use super::storage::{ActionRecord, DiagnosisRecord, SelfImprovementStorage};
 use super::system::{CycleResult, SelfImprovementSystem, SystemConfig};
-use super::types::SelfImprovementAction;
+use super::types::{ActionStatus, DiagnosisStatus, SelfImprovementAction, Severity};
 
 /// Commands that can be sent to the manager.
 #[derive(Debug)]
@@ -526,6 +528,9 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
     async fn run_cycle(&mut self) {
         let result = self.system.run_cycle(&self.metrics).await;
         self.record_cycle_result(&result);
+        if let Err(e) = self.persist_cycle_audit(&result).await {
+            tracing::error!(error = %e, "Failed to persist self-improvement cycle audit");
+        }
     }
 
     /// Fold a completed cycle's outcome into the aggregate counters and refresh
@@ -579,11 +584,98 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
         self.update_status();
     }
 
+    /// Write a cycle's diagnosis and per-action outcomes to the audit tables so
+    /// self-modification attempts leave a record.
+    ///
+    /// Audit only: the in-memory approve/reject runtime is unchanged; these rows
+    /// are not read back (the previously-empty `diagnoses` / `si_actions` tables
+    /// are the inspectable trail). A no-op for skipped/blocked cycles that
+    /// produced no analysis. Errors are returned so the caller can surface them;
+    /// they do not undo the already-completed cycle.
+    async fn persist_cycle_audit(
+        &self,
+        result: &Result<CycleResult, ModeError>,
+    ) -> Result<(), ModeError> {
+        let Ok(cycle) = result else { return Ok(()) };
+        let Some(analysis) = &cycle.analysis_result else {
+            return Ok(());
+        };
+
+        let severity = cycle
+            .monitor_result
+            .triggers
+            .iter()
+            .map(|t| t.severity)
+            .max()
+            .unwrap_or(Severity::Info);
+        let succeeded = cycle.execution_results.iter().filter(|r| r.success).count();
+        let status = if cycle.execution_results.is_empty() {
+            DiagnosisStatus::Pending
+        } else if succeeded > 0 {
+            DiagnosisStatus::Executed
+        } else {
+            DiagnosisStatus::Failed
+        };
+
+        let diagnosis_id = uuid::Uuid::new_v4().to_string();
+        let diagnosis = DiagnosisRecord {
+            id: diagnosis_id.clone(),
+            trigger_type: "cycle".to_string(),
+            trigger_json: serde_json::to_string(&cycle.monitor_result.metrics)
+                .unwrap_or_else(|_| "{}".to_string()),
+            severity,
+            description: analysis.summary.clone(),
+            suspected_cause: None,
+            suggested_action_json: serde_json::to_string(&analysis.actions)
+                .unwrap_or_else(|_| "[]".to_string()),
+            action_rationale: None,
+            status,
+            created_at: Utc::now(),
+        };
+        self.storage
+            .insert_diagnosis(&diagnosis)
+            .await
+            .map_err(|e| ModeError::StorageError {
+                message: e.to_string(),
+            })?;
+
+        for exec in &cycle.execution_results {
+            let record = ActionRecord {
+                id: uuid::Uuid::new_v4().to_string(),
+                diagnosis_id: diagnosis_id.clone(),
+                action_type: format!("{:?}", exec.action.action_type),
+                action_json: serde_json::to_string(&exec.action)
+                    .unwrap_or_else(|_| "{}".to_string()),
+                outcome: if exec.success {
+                    ActionStatus::Completed
+                } else {
+                    ActionStatus::Failed
+                },
+                pre_metrics_json: "{}".to_string(),
+                post_metrics_json: None,
+                execution_time_ms: 0,
+                error_message: (!exec.success).then(|| exec.message.clone()),
+                created_at: Utc::now(),
+            };
+            self.storage
+                .insert_action(&record)
+                .await
+                .map_err(|e| ModeError::StorageError {
+                    message: e.to_string(),
+                })?;
+        }
+
+        Ok(())
+    }
+
     async fn handle_command(&mut self, command: ManagerCommand) {
         match command {
             ManagerCommand::TriggerCycle { response_tx } => {
                 let result = self.system.run_cycle(&self.metrics).await;
                 self.record_cycle_result(&result);
+                if let Err(e) = self.persist_cycle_audit(&result).await {
+                    tracing::error!(error = %e, "Failed to persist self-improvement cycle audit");
+                }
                 let _ = response_tx.send(result);
             }
             ManagerCommand::Approve {
@@ -928,6 +1020,63 @@ mod tests {
         assert_eq!(manager.state.failed_cycles, 1);
         assert_eq!(manager.state.successful_cycles, 0);
         assert_eq!(manager.state.total_actions_executed, 0);
+    }
+
+    #[tokio::test]
+    async fn test_persist_cycle_audit_writes_diagnosis_and_actions() {
+        use super::super::analyzer::AnalysisResult;
+        use super::super::executor::ExecutionResult;
+        use super::super::monitor::MonitorResult;
+        use super::super::types::{ActionType, SystemMetrics};
+
+        let storage = create_test_storage().await;
+        let (manager, _handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            Arc::clone(&storage),
+        );
+
+        let action = SelfImprovementAction::new("a1", ActionType::ConfigAdjust, "d", "r", 0.1);
+        let cycle: Result<CycleResult, ModeError> = Ok(CycleResult {
+            monitor_result: MonitorResult {
+                metrics: SystemMetrics::new(0.9, 50.0, 12, std::collections::HashMap::new()),
+                triggers: vec![],
+                action_recommended: true,
+            },
+            analysis_result: Some(AnalysisResult {
+                actions: vec![action.clone()],
+                summary: "cycle summary".to_string(),
+                confidence: 0.8,
+            }),
+            execution_results: vec![ExecutionResult {
+                action,
+                success: true,
+                message: "applied".to_string(),
+                measured_improvement: None,
+            }],
+            learning_results: vec![],
+            blocked: false,
+            error: None,
+        });
+
+        manager.persist_cycle_audit(&cycle).await.expect("persist");
+
+        // The diagnosis (Executed, since the action succeeded) and the action are
+        // now in the audit tables that the cycle path previously never wrote.
+        let diags = storage
+            .get_diagnoses_by_status(DiagnosisStatus::Executed)
+            .await
+            .expect("diagnoses");
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].description, "cycle summary");
+
+        let actions = storage
+            .get_actions_by_outcome(ActionStatus::Completed, 10)
+            .await
+            .expect("actions");
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].diagnosis_id, diags[0].id);
     }
 
     #[tokio::test]
