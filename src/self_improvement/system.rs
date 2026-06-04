@@ -191,6 +191,46 @@ impl<C: AnthropicClientTrait> SelfImprovementSystem<C> {
         self.execute_and_learn(actions)
     }
 
+    /// Execute an explicit set of approved actions.
+    ///
+    /// Unlike [`Self::approve_actions`], this does not look the actions up in
+    /// the in-memory `pending_actions` list — the caller supplies them (e.g.
+    /// reconstructed from a persisted diagnosis). Runs the same
+    /// validate → execute → learn path, so the circuit breaker and learner see
+    /// these actions identically.
+    pub fn execute_approved(
+        &mut self,
+        actions: Vec<SelfImprovementAction>,
+    ) -> (Vec<ExecutionResult>, Vec<LearningResult>) {
+        self.execute_and_learn(actions)
+    }
+
+    /// Record a rejection lesson for an action that was rejected from a
+    /// persisted diagnosis (not present in the in-memory pending list).
+    ///
+    /// Mirrors the learning signal in [`Self::reject_action`] without requiring
+    /// the action to be in `pending_actions`.
+    pub fn record_rejection(&mut self, action: &SelfImprovementAction, reason: Option<&str>) {
+        let rejection_reason = reason.unwrap_or("No reason provided");
+        let insight = format!(
+            "Rejected {}: {}. Action type: {}, expected improvement: {:.3}",
+            action.id, rejection_reason, action.action_type, action.expected_improvement
+        );
+
+        let lesson = Lesson::new(
+            format!("rejection-{}", action.id),
+            &action.id,
+            insight,
+            -0.3,
+        )
+        .with_contexts(vec![
+            format!("action_type:{}", action.action_type),
+            "outcome:rejected".to_string(),
+        ]);
+
+        self.learner.record_lesson(lesson);
+    }
+
     /// Reject all pending actions.
     pub fn reject_pending(&mut self) {
         self.pending_actions.clear();
