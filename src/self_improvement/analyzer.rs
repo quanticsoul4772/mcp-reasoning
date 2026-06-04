@@ -103,13 +103,17 @@ Propose up to {max_actions} improvement actions. For each action:
 5. Provide concrete `parameters` (see below)
 
 `parameters` is REQUIRED for `config_adjust`, `threshold_adjust`, and
-`prompt_tune` — an action of these types without a non-empty `parameters`
-object is discarded, not executed:
-- `config_adjust` / `threshold_adjust`: map each config key to its new value,
-  e.g. `{{"request_timeout_ms": 45000}}` or `{{"quality_threshold": 0.7}}`.
-- `prompt_tune`: include `prompt_key` and the new `template`.
-`log_observation` needs no parameters. Do not emit placeholder parameters like
-`{{"key": "value"}}` — use real keys and values or pick `log_observation`.
+`prompt_tune`. ONLY these exact keys are accepted — any other key causes the
+action to be REJECTED, so use only these:
+- `config_adjust`: one or more of `timeout_ms`, `max_retries`, `request_limit`,
+  `batch_size` mapped to a new value, e.g. `{{"timeout_ms": 45000}}`.
+- `threshold_adjust`: `threshold_key` (the threshold to change) and `value`
+  (the new value); optionally `min` and `max`, e.g.
+  `{{"threshold_key": "quality", "value": 0.7}}`.
+- `prompt_tune`: `prompt_key`, `template`, and optionally `mode`.
+`log_observation` needs no parameters. Also keep `expected_improvement` at or
+below 0.5. An action without a non-empty `parameters` object (for the three
+types above) is discarded.
 
 Respond in JSON format:
 ```json
@@ -122,7 +126,7 @@ Respond in JSON format:
       "description": "What to change",
       "rationale": "Why this helps",
       "expected_improvement": 0.15,
-      "parameters": {{"request_timeout_ms": 45000}}
+      "parameters": {{"timeout_ms": 45000}}
     }}
   ]
 }}
