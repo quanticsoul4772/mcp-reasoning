@@ -1,6 +1,6 @@
 [package]
 name = "mcp-reasoning"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["quanticsoul4772"]
 description = "MCP server providing structured reasoning capabilities via direct Anthropic Claude API"
