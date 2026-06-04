@@ -23,6 +23,12 @@ use std::env;
 /// Default: auto-approve actions (no human approval required).
 pub const DEFAULT_REQUIRE_APPROVAL: bool = false;
 
+/// Default: do NOT apply recorded config overrides to the live server.
+///
+/// Advisory by default — recorded recommendations never change the running
+/// server's `Config` unless the operator explicitly opts in.
+pub const DEFAULT_APPLY_CONFIG_OVERRIDES: bool = false;
+
 /// Default: minimum invocations before analysis runs.
 pub const DEFAULT_MIN_INVOCATIONS: u64 = 10;
 
@@ -82,6 +88,15 @@ pub struct SelfImprovementConfig {
     /// After this many consecutive failures, the system halts until reset.
     /// Default: 3.
     pub circuit_breaker_threshold: u32,
+
+    /// Apply recorded `config_overrides` to the live `Config` at startup.
+    ///
+    /// When `false` (default), SI is purely advisory: successful config actions
+    /// are recorded to `config_overrides` for review but never change the
+    /// running server. When `true`, those overrides are applied over `Config`
+    /// at startup (bounded to allowlisted, validated fields), so an approved or
+    /// auto-executed config change actually takes effect on the next restart.
+    pub apply_config_overrides: bool,
 }
 
 impl Default for SelfImprovementConfig {
@@ -93,6 +108,7 @@ impl Default for SelfImprovementConfig {
             cycle_interval_secs: DEFAULT_CYCLE_INTERVAL_SECS,
             max_actions_per_cycle: DEFAULT_MAX_ACTIONS_PER_CYCLE,
             circuit_breaker_threshold: DEFAULT_CIRCUIT_BREAKER_THRESHOLD,
+            apply_config_overrides: DEFAULT_APPLY_CONFIG_OVERRIDES,
         }
     }
 }
@@ -106,6 +122,8 @@ impl SelfImprovementConfig {
     /// - `SELF_IMPROVEMENT_CYCLE_INTERVAL_SECS`: cycle interval (default: 300)
     /// - `SELF_IMPROVEMENT_MAX_ACTIONS`: max actions per cycle (default: 3)
     /// - `SELF_IMPROVEMENT_CIRCUIT_BREAKER_THRESHOLD`: failure threshold (default: 3)
+    /// - `SELF_IMPROVEMENT_APPLY_OVERRIDES`: `true` to apply recorded config
+    ///   overrides to the live `Config` at startup (default: `false`, advisory)
     #[must_use]
     pub fn from_env() -> Self {
         let require_approval = env::var("SELF_IMPROVEMENT_REQUIRE_APPROVAL")
@@ -216,12 +234,18 @@ impl SelfImprovementConfig {
                 }
             });
 
+        let apply_config_overrides = env::var("SELF_IMPROVEMENT_APPLY_OVERRIDES")
+            .map_or(DEFAULT_APPLY_CONFIG_OVERRIDES, |v| {
+                v.to_lowercase() == "true"
+            });
+
         Self {
             require_approval,
             min_invocations_for_analysis,
             cycle_interval_secs,
             max_actions_per_cycle,
             circuit_breaker_threshold,
+            apply_config_overrides,
         }
     }
 
@@ -259,6 +283,7 @@ mod tests {
         env::remove_var("SELF_IMPROVEMENT_CYCLE_INTERVAL_SECS");
         env::remove_var("SELF_IMPROVEMENT_MAX_ACTIONS");
         env::remove_var("SELF_IMPROVEMENT_CIRCUIT_BREAKER_THRESHOLD");
+        env::remove_var("SELF_IMPROVEMENT_APPLY_OVERRIDES");
     }
 
     #[test]

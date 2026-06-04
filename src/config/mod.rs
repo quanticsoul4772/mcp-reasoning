@@ -35,8 +35,12 @@
 
 mod secret;
 mod validation;
+pub mod overrides;
 
 mod self_improvement;
+
+#[cfg(test)]
+mod self_improvement_tests;
 
 pub use secret::SecretString;
 pub use self_improvement::SelfImprovementConfig;
@@ -220,6 +224,7 @@ impl Config {
             Some(_) => self.request_timeout_maximum_ms,
         }
     }
+
 }
 
 /// Parse an environment variable as u64, using a default if not set.

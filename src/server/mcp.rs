@@ -51,23 +51,57 @@ impl McpServer {
     pub async fn run_stdio(&self) -> Result<(), AppError> {
         // Initialize storage
         let storage = SqliteStorage::new(&self.config.database_path).await?;
+        let si_storage = Arc::new(SelfImprovementStorage::new(storage.pool.clone()));
+
+        // Initialize self-improvement system (ALWAYS enabled - core feature)
+        let si_config = SelfImprovementConfig::from_env();
+
+        // Start from the env config; when opted in, apply recorded SI config
+        // overrides over it so an approved/auto-executed config change actually
+        // takes effect (bounded to allowlisted, validated fields). Off by
+        // default — SI stays advisory unless SELF_IMPROVEMENT_APPLY_OVERRIDES.
+        let mut config = self.config.clone();
+        if si_config.apply_config_overrides {
+            match si_storage.get_all_config_overrides().await {
+                Ok(records) => {
+                    let loaded = records.len();
+                    let overrides: Vec<(String, serde_json::Value)> = records
+                        .into_iter()
+                        .map(|r| {
+                            let value = serde_json::from_str(&r.value_json)
+                                .unwrap_or(serde_json::Value::String(r.value_json));
+                            (r.key, value)
+                        })
+                        .collect();
+                    let applied = config.apply_overrides(&overrides);
+                    if applied.is_empty() {
+                        tracing::info!(target: "stderr", loaded = loaded, applied = applied.len(), "No applicable self-improvement config overrides found");
+                    } else {
+                        tracing::info!(
+                            applied = ?applied,
+                            "Applied self-improvement config overrides at startup"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to load config overrides; using env config");
+                }
+            }
+        }
 
         // Create Anthropic client for MCP tools
         let client_config = ClientConfig::default()
-            .with_timeout_ms(self.config.request_timeout_maximum_ms) // Use maximum timeout for deep thinking modes
-            .with_max_retries(self.config.max_retries);
-        let client = AnthropicClient::new(self.config.api_key.expose(), client_config)?;
+            .with_timeout_ms(config.request_timeout_maximum_ms) // Use maximum timeout for deep thinking modes
+            .with_max_retries(config.max_retries);
+        let client = AnthropicClient::new(config.api_key.expose(), client_config)?;
 
         // Initialize metrics collector (shared between MCP tools and self-improvement)
         let metrics = Arc::new(MetricsCollector::new());
 
-        // Initialize self-improvement system (ALWAYS enabled - core feature)
-        let si_config = SelfImprovementConfig::from_env();
         let si_client_config = ClientConfig::default()
-            .with_timeout_ms(self.config.request_timeout_maximum_ms) // Use maximum timeout for deep thinking modes
-            .with_max_retries(self.config.max_retries);
-        let si_client = AnthropicClient::new(self.config.api_key.expose(), si_client_config)?;
-        let si_storage = Arc::new(SelfImprovementStorage::new(storage.pool.clone()));
+            .with_timeout_ms(config.request_timeout_maximum_ms) // Use maximum timeout for deep thinking modes
+            .with_max_retries(config.max_retries);
+        let si_client = AnthropicClient::new(config.api_key.expose(), si_client_config)?;
 
         let (si_manager, si_handle) =
             SelfImprovementManager::new(si_config.clone(), si_client, metrics.clone(), si_storage);
@@ -95,7 +129,7 @@ impl McpServer {
         let metadata_builder = crate::metadata::MetadataBuilder::new(
             timing_db,
             preset_index,
-            self.config.factory_timeout_ms,
+            config.factory_timeout_ms,
         );
 
         // Create progress notification channel
@@ -105,7 +139,7 @@ impl McpServer {
         let state = AppState::new(
             storage,
             client,
-            self.config.clone(),
+            config.clone(),
             metrics,
             si_handle,
             metadata_builder,
@@ -117,7 +151,7 @@ impl McpServer {
         // that call. Shares the self-improvement shutdown signal.
         if let Some(voyage) = state.voyage_client.clone() {
             let worker_storage = state.storage.clone();
-            let worker_model = self.config.voyage_model.clone();
+            let worker_model = config.voyage_model.clone();
             let worker_shutdown = shutdown_tx.subscribe();
             tokio::spawn(async move {
                 tracing::info!("Embedding worker started");
