@@ -782,19 +782,17 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
     ///
     /// A failed action is `Failed`. A successful action is `Completed` only when
     /// its effect actually reaches the running system — a `LogObservation`
-    /// (which logs), or a `ConfigAdjust`/`ThresholdAdjust` when override
-    /// application is enabled (so the change is applied at the next startup).
-    /// Otherwise the action only recorded an advisory recommendation that never
-    /// touches the live server, so it is `Recommended` — not `Completed`.
+    /// (which logs), or a `ConfigAdjust` when override application is enabled (so
+    /// the change is applied at the next startup). Otherwise the action only
+    /// recorded an advisory recommendation that never touches the live server,
+    /// so it is `Recommended` — not `Completed`.
     fn action_outcome(&self, exec: &ExecutionResult) -> ActionStatus {
         if !exec.success {
             return ActionStatus::Failed;
         }
         match exec.action.action_type {
             ActionType::LogObservation => ActionStatus::Completed,
-            ActionType::ConfigAdjust | ActionType::ThresholdAdjust
-                if self.config.apply_config_overrides =>
-            {
+            ActionType::ConfigAdjust if self.config.apply_config_overrides => {
                 ActionStatus::Completed
             }
             _ => ActionStatus::Recommended,
@@ -844,23 +842,12 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             return Ok(());
         };
 
-        // (override key, value) pairs to record for this action.
+        // (override key, value) pairs to record for this action. Only
+        // ConfigAdjust maps to real, applyable Config fields; other types carry
+        // no live target and record nothing.
         let overrides: Vec<(String, serde_json::Value)> = match action.action_type {
             ActionType::ConfigAdjust => {
                 params.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-            }
-            ActionType::ThresholdAdjust => {
-                match (
-                    params
-                        .get("threshold_key")
-                        .and_then(serde_json::Value::as_str),
-                    params.get("value"),
-                ) {
-                    (Some(key), Some(value)) => {
-                        vec![(format!("threshold:{key}"), value.clone())]
-                    }
-                    _ => Vec::new(),
-                }
             }
             ActionType::PromptTune | ActionType::LogObservation => Vec::new(),
         };

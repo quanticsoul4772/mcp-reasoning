@@ -55,7 +55,6 @@ impl Default for AllowlistConfig {
         let mut allowed_action_types = HashSet::new();
         allowed_action_types.insert(ActionType::ConfigAdjust);
         allowed_action_types.insert(ActionType::PromptTune);
-        allowed_action_types.insert(ActionType::ThresholdAdjust);
         allowed_action_types.insert(ActionType::LogObservation);
 
         let mut allowed_parameters = std::collections::HashMap::new();
@@ -77,14 +76,6 @@ impl Default for AllowlistConfig {
         prompt_params.insert("template".to_string());
         prompt_params.insert("mode".to_string());
         allowed_parameters.insert(ActionType::PromptTune, prompt_params);
-
-        // ThresholdAdjust allowed parameters
-        let mut threshold_params = HashSet::new();
-        threshold_params.insert("threshold_key".to_string());
-        threshold_params.insert("value".to_string());
-        threshold_params.insert("min".to_string());
-        threshold_params.insert("max".to_string());
-        allowed_parameters.insert(ActionType::ThresholdAdjust, threshold_params);
 
         Self {
             allowed_action_types,
@@ -286,7 +277,6 @@ mod tests {
         let allowlist = Allowlist::with_defaults();
         assert!(allowlist.is_action_type_allowed(&ActionType::ConfigAdjust));
         assert!(allowlist.is_action_type_allowed(&ActionType::PromptTune));
-        assert!(allowlist.is_action_type_allowed(&ActionType::ThresholdAdjust));
         assert!(allowlist.is_action_type_allowed(&ActionType::LogObservation));
     }
 
@@ -465,16 +455,11 @@ mod tests {
     }
 
     #[test]
-    fn test_threshold_adjust_parameters() {
-        let mut allowlist = Allowlist::with_defaults();
-        let mut action = create_test_action(ActionType::ThresholdAdjust);
-        action = action.with_parameters(serde_json::json!({
-            "threshold_key": "confidence",
-            "value": 0.85
-        }));
-
-        let result = allowlist.validate(&action);
-        assert!(result.is_ok());
+    fn test_threshold_adjust_not_allowed() {
+        // ThresholdAdjust was removed (it targeted no real Config field), so it
+        // is no longer an accepted action type.
+        let allowlist = Allowlist::with_defaults();
+        assert_eq!(allowlist.config.allowed_action_types.len(), 3);
     }
 
     #[test]

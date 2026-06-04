@@ -20,8 +20,6 @@ pub enum ActionType {
     ConfigAdjust,
     /// Modify prompt templates.
     PromptTune,
-    /// Adjust mode routing thresholds.
-    ThresholdAdjust,
     /// Log an observation for future reference.
     LogObservation,
 }
@@ -31,7 +29,6 @@ impl std::fmt::Display for ActionType {
         match self {
             Self::ConfigAdjust => write!(f, "config_adjust"),
             Self::PromptTune => write!(f, "prompt_tune"),
-            Self::ThresholdAdjust => write!(f, "threshold_adjust"),
             Self::LogObservation => write!(f, "log_observation"),
         }
     }

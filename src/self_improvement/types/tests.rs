@@ -754,7 +754,6 @@ fn test_legacy_action_rollback() {
 fn test_legacy_action_type_display_all() {
     assert_eq!(ActionType::ConfigAdjust.to_string(), "config_adjust");
     assert_eq!(ActionType::PromptTune.to_string(), "prompt_tune");
-    assert_eq!(ActionType::ThresholdAdjust.to_string(), "threshold_adjust");
     assert_eq!(ActionType::LogObservation.to_string(), "log_observation");
 }
 

@@ -116,7 +116,6 @@ impl Executor {
         let result = match action.action_type {
             ActionType::ConfigAdjust => self.execute_config_adjust(&mut action),
             ActionType::PromptTune => self.execute_prompt_tune(&action),
-            ActionType::ThresholdAdjust => self.execute_threshold_adjust(&action),
             ActionType::LogObservation => self.execute_log_observation(&action),
         };
 
@@ -146,7 +145,7 @@ impl Executor {
         let record = self.execution_history.remove(record_idx);
 
         match record.action_type {
-            ActionType::ConfigAdjust | ActionType::ThresholdAdjust => {
+            ActionType::ConfigAdjust => {
                 if let Some(previous) = record.previous_state {
                     if let Some(key) = previous.get("key").and_then(|v| v.as_str()) {
                         if let Some(value) = previous.get("value") {
@@ -267,53 +266,6 @@ impl Executor {
             success: true,
             message: format!("Prompt '{prompt_key}' tuned"),
             measured_improvement: Some(action.expected_improvement * 0.7),
-        }
-    }
-
-    fn execute_threshold_adjust(
-        &mut self,
-        action: &SelfImprovementAction,
-    ) -> InternalExecutionResult {
-        let params = match &action.parameters {
-            Some(p) => p,
-            None => {
-                return InternalExecutionResult {
-                    success: false,
-                    message: "No parameters provided for threshold adjustment".to_string(),
-                    measured_improvement: None,
-                }
-            }
-        };
-
-        let threshold_key = params
-            .get("threshold_key")
-            .and_then(|v| v.as_str())
-            .unwrap_or("default");
-
-        let Some(new_value) = params.get("value") else {
-            return InternalExecutionResult {
-                success: false,
-                message: "No value provided for threshold adjustment".to_string(),
-                measured_improvement: None,
-            };
-        };
-
-        let config_key = format!("threshold:{threshold_key}");
-        let previous = self.config_state.get(&config_key).cloned();
-
-        self.config_state.set(&config_key, new_value.clone());
-
-        self.record_execution(
-            &action.id,
-            action.action_type.clone(),
-            previous.map(|p| serde_json::json!({"key": config_key, "value": p})),
-            action.parameters.clone(),
-        );
-
-        InternalExecutionResult {
-            success: true,
-            message: format!("Threshold '{threshold_key}' adjusted"),
-            measured_improvement: Some(action.expected_improvement * 0.75),
         }
     }
 
@@ -483,24 +435,6 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_threshold_adjust() {
-        let mut executor = Executor::new();
-        let mut action = create_test_action(ActionType::ThresholdAdjust);
-        action = action.with_parameters(serde_json::json!({
-            "threshold_key": "confidence",
-            "value": 0.85
-        }));
-
-        let result = executor.execute(action);
-
-        assert!(result.success);
-        assert_eq!(
-            executor.config().get("threshold:confidence"),
-            Some(&serde_json::json!(0.85))
-        );
-    }
-
-    #[test]
     fn test_execute_log_observation() {
         let mut executor = Executor::new();
         let action = create_test_action(ActionType::LogObservation);
@@ -632,32 +566,6 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_threshold_adjust_no_params() {
-        let mut executor = Executor::new();
-        let action = create_test_action(ActionType::ThresholdAdjust);
-
-        let result = executor.execute(action);
-
-        assert!(!result.success);
-        assert!(result.message.contains("No parameters provided"));
-    }
-
-    #[test]
-    fn test_execute_threshold_adjust_no_value() {
-        let mut executor = Executor::new();
-        let mut action = create_test_action(ActionType::ThresholdAdjust);
-        action = action.with_parameters(serde_json::json!({
-            "threshold_key": "confidence"
-            // Missing "value"
-        }));
-
-        let result = executor.execute(action);
-
-        assert!(!result.success);
-        assert!(result.message.contains("No value provided"));
-    }
-
-    #[test]
     fn test_rollback_prompt_tune() {
         let mut executor = Executor::new();
 
@@ -688,40 +596,6 @@ mod tests {
 
         // Rollback (note: rollback for prompt tune doesn't fully restore in current impl)
         let result = executor.rollback("prompt-rollback-test");
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_rollback_threshold_adjust() {
-        let mut executor = Executor::new();
-
-        // Set up a previous threshold value
-        executor
-            .config_mut()
-            .set("threshold:test_threshold", serde_json::json!(0.7));
-
-        let mut action = SelfImprovementAction::new(
-            "threshold-rollback-test",
-            ActionType::ThresholdAdjust,
-            "Test threshold adjust",
-            "Testing",
-            0.1,
-        );
-        action = action.with_parameters(serde_json::json!({
-            "threshold_key": "test_threshold",
-            "value": 0.9
-        }));
-
-        executor.execute(action);
-
-        // Verify new value
-        assert_eq!(
-            executor.config().get("threshold:test_threshold"),
-            Some(&serde_json::json!(0.9))
-        );
-
-        // Rollback
-        let result = executor.rollback("threshold-rollback-test");
         assert!(result.is_ok());
     }
 

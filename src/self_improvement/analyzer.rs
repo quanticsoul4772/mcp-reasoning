@@ -89,10 +89,9 @@ impl<C: AnthropicClientTrait> Analyzer<C> {
 {triggers_desc}
 
 ## Available Action Types
-1. ConfigAdjust - Adjust configuration parameters (timeouts, retries, limits)
+1. ConfigAdjust - Adjust configuration parameters (timeouts, retries)
 2. PromptTune - Modify prompt templates for better results
-3. ThresholdAdjust - Adjust mode routing or quality thresholds
-4. LogObservation - Log observation for future analysis
+3. LogObservation - Log observation for future analysis
 
 ## Instructions
 Propose up to {max_actions} improvement actions. For each action:
@@ -102,19 +101,16 @@ Propose up to {max_actions} improvement actions. For each action:
 4. Estimate expected improvement (0.0-1.0)
 5. Provide concrete `parameters` (see below)
 
-`parameters` is REQUIRED for `config_adjust`, `threshold_adjust`, and
-`prompt_tune`. ONLY these exact keys are accepted — any other key causes the
-action to be REJECTED, so use only these:
+`parameters` is REQUIRED for `config_adjust` and `prompt_tune`. ONLY these exact
+keys are accepted — any other key causes the action to be REJECTED, so use only
+these:
 - `config_adjust`: one or more of `request_timeout_ms`,
   `request_timeout_deep_ms`, `request_timeout_maximum_ms`, `factory_timeout_ms`,
   `max_retries` mapped to a new value, e.g. `{{"request_timeout_ms": 45000}}`.
-- `threshold_adjust`: `threshold_key` (the threshold to change) and `value`
-  (the new value); optionally `min` and `max`, e.g.
-  `{{"threshold_key": "quality", "value": 0.7}}`.
 - `prompt_tune`: `prompt_key`, `template`, and optionally `mode`.
 `log_observation` needs no parameters. Also keep `expected_improvement` at or
-below 0.5. An action without a non-empty `parameters` object (for the three
-types above) is discarded.
+below 0.5. An action without a non-empty `parameters` object (for the two types
+above) is discarded.
 
 Respond in JSON format:
 ```json
@@ -191,7 +187,6 @@ Respond in JSON format:
         let action_type = match action_type_str {
             "config_adjust" | "ConfigAdjust" => ActionType::ConfigAdjust,
             "prompt_tune" | "PromptTune" => ActionType::PromptTune,
-            "threshold_adjust" | "ThresholdAdjust" => ActionType::ThresholdAdjust,
             "log_observation" | "LogObservation" => ActionType::LogObservation,
             _ => return None,
         };
@@ -200,7 +195,7 @@ Respond in JSON format:
         // them ("No parameters provided"); only log_observation runs bare.
         let requires_params = matches!(
             action_type,
-            ActionType::ConfigAdjust | ActionType::ThresholdAdjust | ActionType::PromptTune
+            ActionType::ConfigAdjust | ActionType::PromptTune
         );
 
         let description = json["description"]
@@ -267,7 +262,7 @@ Respond in JSON format:
         // This runs when the analysis response could not be parsed, so concrete
         // parameters are unavailable. Use LogObservation — the only type that
         // executes without parameters — and record the severity in the message,
-        // rather than a ConfigAdjust/ThresholdAdjust the executor would reject.
+        // rather than a ConfigAdjust the executor would reject.
         let description = match highest_severity {
             Severity::Critical | Severity::High => {
                 "Log critical/high-severity issue (analysis could not be parsed)"
@@ -419,7 +414,7 @@ mod tests {
     "actions": [
         {"action_type": "config_adjust", "description": "Action 1", "rationale": "R1", "expected_improvement": 0.1, "parameters": {"request_timeout_ms": 45000}},
         {"action_type": "prompt_tune", "description": "Action 2", "rationale": "R2", "expected_improvement": 0.1, "parameters": {"prompt_key": "linear", "template": "x"}},
-        {"action_type": "threshold_adjust", "description": "Action 3", "rationale": "R3", "expected_improvement": 0.1, "parameters": {"quality_threshold": 0.7}},
+        {"action_type": "config_adjust", "description": "Action 3", "rationale": "R3", "expected_improvement": 0.1, "parameters": {"max_retries": 5}},
         {"action_type": "log_observation", "description": "Action 4", "rationale": "R4", "expected_improvement": 0.1}
     ]
 }"#))
@@ -683,7 +678,7 @@ Done."#;
         assert!(analyzer.parse_action(&bare, 0).is_none());
 
         // An empty parameters object does nothing, so it counts as missing.
-        let empty = serde_json::json!({ "action_type": "threshold_adjust", "parameters": {} });
+        let empty = serde_json::json!({ "action_type": "prompt_tune", "parameters": {} });
         assert!(analyzer.parse_action(&empty, 0).is_none());
 
         // With real parameters it is kept.
@@ -723,7 +718,6 @@ Done."#;
         for (type_str, expected) in [
             ("ConfigAdjust", ActionType::ConfigAdjust),
             ("PromptTune", ActionType::PromptTune),
-            ("ThresholdAdjust", ActionType::ThresholdAdjust),
             ("LogObservation", ActionType::LogObservation),
         ] {
             // Include parameters so the param-requiring types are not dropped;
