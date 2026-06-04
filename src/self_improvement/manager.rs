@@ -254,6 +254,39 @@ impl From<&SelfImprovementAction> for PendingDiagnosis {
     }
 }
 
+/// Map a persisted diagnosis to the user-facing pending-diagnosis view.
+///
+/// A diagnosis is cycle-level (it can carry several proposed actions); this
+/// flattens it to one entry keyed by the diagnosis id, summarizing its actions.
+fn diagnosis_to_pending(record: DiagnosisRecord) -> PendingDiagnosis {
+    let actions: Vec<SelfImprovementAction> =
+        serde_json::from_str(&record.suggested_action_json).unwrap_or_default();
+
+    let action_type = match actions.as_slice() {
+        [] => "Unknown".to_string(),
+        [single] => format!("{:?}", single.action_type),
+        _ => "Multiple".to_string(),
+    };
+    let rationale = record.action_rationale.clone().unwrap_or_else(|| {
+        actions
+            .first()
+            .map_or_else(String::new, |a| a.rationale.clone())
+    });
+    let expected_improvement = actions
+        .iter()
+        .map(|a| a.expected_improvement)
+        .fold(0.0_f64, f64::max);
+
+    PendingDiagnosis {
+        id: record.id,
+        action_type,
+        description: record.description,
+        rationale,
+        expected_improvement,
+        created_at: u64::try_from(record.created_at.timestamp_millis()).unwrap_or(0),
+    }
+}
+
 /// A persisted config-override recommendation produced by a successful
 /// self-improvement action.
 ///
@@ -442,6 +475,10 @@ struct ManagerState {
     total_actions_rolled_back: u64,
     total_actions_rejected: u64,
     last_cycle_at: Option<u64>,
+    /// Cached count of persisted `Pending` diagnoses (the DB-backed approval
+    /// queue), refreshed after each cycle/approve/reject so `build_status` can
+    /// stay synchronous.
+    pending_diagnoses: usize,
 }
 
 impl Default for ManagerState {
@@ -455,6 +492,7 @@ impl Default for ManagerState {
             total_actions_rolled_back: 0,
             total_actions_rejected: 0,
             last_cycle_at: None,
+            pending_diagnoses: 0,
         }
     }
 }
@@ -587,6 +625,8 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
         if let Err(e) = self.persist_cycle_audit(&result).await {
             tracing::error!(error = %e, "Failed to persist self-improvement cycle audit");
         }
+        self.refresh_pending_count().await;
+        self.update_status();
     }
 
     /// Fold a completed cycle's outcome into the aggregate counters and refresh
@@ -696,38 +736,52 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             })?;
 
         for exec in &cycle.execution_results {
-            let action_record_id = uuid::Uuid::new_v4().to_string();
-            let record = ActionRecord {
-                id: action_record_id.clone(),
-                diagnosis_id: diagnosis_id.clone(),
-                action_type: format!("{:?}", exec.action.action_type),
-                action_json: serde_json::to_string(&exec.action)
-                    .unwrap_or_else(|_| "{}".to_string()),
-                outcome: if exec.success {
-                    ActionStatus::Completed
-                } else {
-                    ActionStatus::Failed
-                },
-                pre_metrics_json: "{}".to_string(),
-                post_metrics_json: None,
-                execution_time_ms: 0,
-                error_message: (!exec.success).then(|| exec.message.clone()),
-                created_at: Utc::now(),
-            };
-            self.storage
-                .insert_action(&record)
-                .await
-                .map_err(|e| ModeError::StorageError {
-                    message: e.to_string(),
-                })?;
-
-            if exec.success {
-                self.persist_config_recommendations(&action_record_id, &exec.action)
-                    .await?;
-            }
+            self.persist_action_outcome(&diagnosis_id, exec).await?;
         }
 
         Ok(())
+    }
+
+    /// Write one executed action's outcome to `si_actions`, and (on success)
+    /// its config recommendation to `config_overrides`.
+    ///
+    /// Shared by the cycle-audit path and the approval path so both leave an
+    /// identical record. Returns the inserted `si_actions` row id.
+    async fn persist_action_outcome(
+        &self,
+        diagnosis_id: &str,
+        exec: &ExecutionResult,
+    ) -> Result<String, ModeError> {
+        let action_record_id = uuid::Uuid::new_v4().to_string();
+        let record = ActionRecord {
+            id: action_record_id.clone(),
+            diagnosis_id: diagnosis_id.to_string(),
+            action_type: format!("{:?}", exec.action.action_type),
+            action_json: serde_json::to_string(&exec.action).unwrap_or_else(|_| "{}".to_string()),
+            outcome: if exec.success {
+                ActionStatus::Completed
+            } else {
+                ActionStatus::Failed
+            },
+            pre_metrics_json: "{}".to_string(),
+            post_metrics_json: None,
+            execution_time_ms: 0,
+            error_message: (!exec.success).then(|| exec.message.clone()),
+            created_at: Utc::now(),
+        };
+        self.storage
+            .insert_action(&record)
+            .await
+            .map_err(|e| ModeError::StorageError {
+                message: e.to_string(),
+            })?;
+
+        if exec.success {
+            self.persist_config_recommendations(&action_record_id, &exec.action)
+                .await?;
+        }
+
+        Ok(action_record_id)
     }
 
     /// Persist a successful config/threshold action's concrete parameters to the
@@ -803,13 +857,15 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
                 if let Err(e) = self.persist_cycle_audit(&result).await {
                     tracing::error!(error = %e, "Failed to persist self-improvement cycle audit");
                 }
+                self.refresh_pending_count().await;
+                self.update_status();
                 let _ = response_tx.send(result);
             }
             ManagerCommand::Approve {
                 diagnosis_id,
                 response_tx,
             } => {
-                let result = self.handle_approve(&diagnosis_id);
+                let result = self.handle_approve(&diagnosis_id).await;
                 let _ = response_tx.send(result);
             }
             ManagerCommand::Reject {
@@ -817,7 +873,7 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
                 reason,
                 response_tx,
             } => {
-                let result = self.handle_reject(&diagnosis_id, reason.as_deref());
+                let result = self.handle_reject(&diagnosis_id, reason.as_deref()).await;
                 let _ = response_tx.send(result);
             }
             ManagerCommand::Rollback {
@@ -831,7 +887,7 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
                 let _ = response_tx.send(self.build_status());
             }
             ManagerCommand::GetPending { limit, response_tx } => {
-                let pending = self.get_pending_diagnoses(limit);
+                let pending = self.get_pending_diagnoses(limit).await;
                 let _ = response_tx.send(pending);
             }
             ManagerCommand::GetConfigOverrides { limit, response_tx } => {
@@ -865,18 +921,43 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             .collect()
     }
 
-    fn handle_approve(&mut self, diagnosis_id: &str) -> Result<ApproveResult, String> {
-        let pending = self.system.pending_actions();
-        if !pending.iter().any(|a| a.id == diagnosis_id) {
-            return Err(format!("Diagnosis not found: {diagnosis_id}"));
+    /// Approve a persisted diagnosis: reconstruct its proposed actions, execute
+    /// them, record outcomes, and mark the diagnosis `Executed`/`Failed`.
+    ///
+    /// Operates on the DB-backed `diagnoses` table (the same store
+    /// [`Self::get_pending_diagnoses`] surfaces), so the id a caller approves is
+    /// the id they saw, and a diagnosis persisted before a restart can still be
+    /// approved.
+    async fn handle_approve(&mut self, diagnosis_id: &str) -> Result<ApproveResult, String> {
+        let diagnosis = self.load_pending_diagnosis(diagnosis_id).await?;
+        let actions: Vec<SelfImprovementAction> =
+            serde_json::from_str(&diagnosis.suggested_action_json)
+                .map_err(|e| format!("Could not parse stored actions: {e}"))?;
+
+        let (exec_results, learn_results) = self.system.execute_approved(actions);
+
+        for exec in &exec_results {
+            if let Err(e) = self.persist_action_outcome(diagnosis_id, exec).await {
+                tracing::error!(error = %e, "Failed to persist approved action outcome");
+            }
         }
 
-        let (exec_results, learn_results) =
-            self.system.approve_actions(&[diagnosis_id.to_string()]);
+        let succeeded = exec_results.iter().filter(|r| r.success).count();
+        let new_status = if exec_results.is_empty() || succeeded == 0 {
+            DiagnosisStatus::Failed
+        } else {
+            DiagnosisStatus::Executed
+        };
+        if let Err(e) = self
+            .storage
+            .update_diagnosis_status(diagnosis_id, new_status)
+            .await
+        {
+            tracing::error!(error = %e, "Failed to update diagnosis status after approve");
+        }
 
-        self.state.total_actions_executed +=
-            exec_results.iter().filter(|r| r.success).count() as u64;
-
+        self.state.total_actions_executed += succeeded as u64;
+        self.refresh_pending_count().await;
         self.update_status();
 
         Ok(ApproveResult {
@@ -892,11 +973,50 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
         })
     }
 
-    fn handle_reject(&mut self, diagnosis_id: &str, reason: Option<&str>) -> Result<(), String> {
-        self.system.reject_action(diagnosis_id, reason)?;
+    /// Reject a persisted diagnosis: record a rejection lesson per proposed
+    /// action and mark the diagnosis `Rejected`. No actions execute.
+    async fn handle_reject(
+        &mut self,
+        diagnosis_id: &str,
+        reason: Option<&str>,
+    ) -> Result<(), String> {
+        let diagnosis = self.load_pending_diagnosis(diagnosis_id).await?;
+
+        if let Ok(actions) =
+            serde_json::from_str::<Vec<SelfImprovementAction>>(&diagnosis.suggested_action_json)
+        {
+            for action in &actions {
+                self.system.record_rejection(action, reason);
+            }
+        }
+
+        self.storage
+            .update_diagnosis_status(diagnosis_id, DiagnosisStatus::Rejected)
+            .await
+            .map_err(|e| e.to_string())?;
+
         self.state.total_actions_rejected += 1;
+        self.refresh_pending_count().await;
         self.update_status();
         Ok(())
+    }
+
+    /// Load a diagnosis and require it to be `Pending` (the only state that can
+    /// be approved or rejected).
+    async fn load_pending_diagnosis(&self, diagnosis_id: &str) -> Result<DiagnosisRecord, String> {
+        let diagnosis = self
+            .storage
+            .get_diagnosis(diagnosis_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Diagnosis not found: {diagnosis_id}"))?;
+        if diagnosis.status != DiagnosisStatus::Pending {
+            return Err(format!(
+                "Diagnosis {diagnosis_id} is not pending (status: {:?})",
+                diagnosis.status
+            ));
+        }
+        Ok(diagnosis)
     }
 
     fn handle_rollback(&mut self, action_id: &str) -> Result<(), String> {
@@ -908,14 +1028,35 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
         result
     }
 
-    fn get_pending_diagnoses(&self, limit: Option<u32>) -> Vec<PendingDiagnosis> {
-        let pending = self.system.pending_actions();
+    /// List persisted `Pending` diagnoses (the DB-backed approval queue).
+    ///
+    /// Reads the `diagnoses` table rather than the in-memory pending list, so a
+    /// diagnosis survives a restart and the id returned here is the id
+    /// [`Self::handle_approve`] accepts. One entry per diagnosis (cycle), keyed
+    /// by the diagnosis id.
+    async fn get_pending_diagnoses(&self, limit: Option<u32>) -> Vec<PendingDiagnosis> {
+        let diagnoses = match self.storage.get_pending_diagnoses().await {
+            Ok(diagnoses) => diagnoses,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to read pending diagnoses");
+                return Vec::new();
+            }
+        };
         let limit = limit.unwrap_or(100) as usize;
-        pending
-            .iter()
+        diagnoses
+            .into_iter()
             .take(limit)
-            .map(PendingDiagnosis::from)
+            .map(diagnosis_to_pending)
             .collect()
+    }
+
+    /// Refresh the cached `Pending` diagnosis count from storage.
+    async fn refresh_pending_count(&mut self) {
+        self.state.pending_diagnoses = self
+            .storage
+            .get_pending_diagnoses()
+            .await
+            .map_or(self.state.pending_diagnoses, |d| d.len());
     }
 
     fn build_status(&self) -> ManagerStatus {
@@ -931,7 +1072,7 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             total_cycles: self.state.total_cycles,
             successful_cycles: self.state.successful_cycles,
             failed_cycles: self.state.failed_cycles,
-            pending_diagnoses: self.system.pending_actions().len(),
+            pending_diagnoses: self.state.pending_diagnoses,
             total_actions_executed: self.state.total_actions_executed,
             total_actions_rolled_back: self.state.total_actions_rolled_back,
             total_actions_rejected: self.state.total_actions_rejected,
@@ -1600,7 +1741,7 @@ mod tests {
 
         let (manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
 
-        let pending = manager.get_pending_diagnoses(Some(5));
+        let pending = manager.get_pending_diagnoses(Some(5)).await;
         assert!(pending.is_empty());
     }
 
@@ -1613,7 +1754,7 @@ mod tests {
 
         let (manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
 
-        let pending = manager.get_pending_diagnoses(None);
+        let pending = manager.get_pending_diagnoses(None).await;
         assert!(pending.is_empty());
     }
 
@@ -1626,7 +1767,7 @@ mod tests {
 
         let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
 
-        let result = manager.handle_reject("nonexistent", Some("reason"));
+        let result = manager.handle_reject("nonexistent", Some("reason")).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
     }
@@ -1640,9 +1781,128 @@ mod tests {
 
         let (mut manager, _handle) = SelfImprovementManager::new(config, client, metrics, storage);
 
-        let result = manager.handle_approve("nonexistent");
+        let result = manager.handle_approve("nonexistent").await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
+    }
+
+    // Seed a persisted Pending diagnosis carrying one config_adjust action.
+    async fn seed_pending_diagnosis(
+        storage: &SelfImprovementStorage,
+        id: &str,
+        status: DiagnosisStatus,
+    ) {
+        use super::super::types::ActionType;
+        let action = SelfImprovementAction::new("act-1", ActionType::ConfigAdjust, "d", "r", 0.1)
+            .with_parameters(serde_json::json!({ "request_timeout_ms": 45000 }));
+        let record = DiagnosisRecord {
+            id: id.to_string(),
+            trigger_type: "cycle".to_string(),
+            trigger_json: "{}".to_string(),
+            severity: Severity::Warning,
+            description: "seeded".to_string(),
+            suspected_cause: None,
+            suggested_action_json: serde_json::to_string(&vec![action]).expect("serialize"),
+            action_rationale: None,
+            status,
+            created_at: Utc::now(),
+        };
+        storage
+            .insert_diagnosis(&record)
+            .await
+            .expect("insert diagnosis");
+    }
+
+    #[tokio::test]
+    async fn test_pending_diagnosis_is_listed_and_approvable_by_id() {
+        let storage = create_test_storage().await;
+        let (mut manager, _handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            Arc::clone(&storage),
+        );
+
+        seed_pending_diagnosis(&storage, "diag-1", DiagnosisStatus::Pending).await;
+
+        // Listed from the DB, keyed by the diagnosis id the caller will approve.
+        let pending = manager.get_pending_diagnoses(None).await;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].id, "diag-1");
+        assert_eq!(pending[0].action_type, "ConfigAdjust");
+
+        // Approving that same id executes the proposed action.
+        let result = manager.handle_approve("diag-1").await.expect("approve");
+        assert_eq!(result.execution_results.len(), 1);
+        assert!(result.execution_results[0].success);
+
+        // Diagnosis is now Executed and no longer pending; the override and
+        // action outcome were persisted; the cached count refreshed to 0.
+        let diag = storage
+            .get_diagnosis("diag-1")
+            .await
+            .expect("get")
+            .expect("exists");
+        assert_eq!(diag.status, DiagnosisStatus::Executed);
+        assert!(manager.get_pending_diagnoses(None).await.is_empty());
+        assert!(storage
+            .get_config_override("request_timeout_ms")
+            .await
+            .expect("query")
+            .is_some());
+        assert_eq!(manager.state.pending_diagnoses, 0);
+    }
+
+    #[tokio::test]
+    async fn test_pending_diagnosis_rejectable_by_id() {
+        let storage = create_test_storage().await;
+        let (mut manager, _handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            Arc::clone(&storage),
+        );
+
+        seed_pending_diagnosis(&storage, "diag-2", DiagnosisStatus::Pending).await;
+
+        manager
+            .handle_reject("diag-2", Some("unsafe"))
+            .await
+            .expect("reject");
+
+        let diag = storage
+            .get_diagnosis("diag-2")
+            .await
+            .expect("get")
+            .expect("exists");
+        assert_eq!(diag.status, DiagnosisStatus::Rejected);
+        assert_eq!(manager.state.total_actions_rejected, 1);
+        // No execution occurred, so nothing was written to config_overrides.
+        assert!(storage
+            .get_config_override("request_timeout_ms")
+            .await
+            .expect("query")
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn test_approve_rejects_non_pending_diagnosis() {
+        let storage = create_test_storage().await;
+        let (mut manager, _handle) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            Arc::clone(&storage),
+        );
+
+        // Already executed — approving again must be refused, not re-run.
+        seed_pending_diagnosis(&storage, "diag-3", DiagnosisStatus::Executed).await;
+
+        let err = manager
+            .handle_approve("diag-3")
+            .await
+            .expect_err("must refuse non-pending");
+        assert!(err.contains("not pending"));
     }
 
     #[tokio::test]
