@@ -285,8 +285,8 @@ Errors include contextual alternatives — if a tool fails due to incorrect para
 | Modes | Thinking Budget |
 |-------|-----------------|
 | `linear`, `tree`, `auto`, `checkpoint` | None (fast) |
-| `divergent`, `graph` | Standard — 4096 tokens |
-| `reflection`, `decision`, `evidence` | Deep — 8192 tokens |
+| `graph` | Standard — 4096 tokens |
+| `divergent`, `reflection`, `decision`, `evidence` | Deep — 8192 tokens |
 | `counterfactual`, `mcts` | Maximum — 16384 tokens |
 
 ### Streaming

@@ -277,8 +277,8 @@ const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message
 | Mode | Thinking Budget |
 |------|-----------------|
 | Linear, Tree, Auto, Checkpoint | None (fast) |
-| Divergent, Graph | Standard (4096 tokens) |
-| Reflection, Decision, Evidence | Deep (8192 tokens) |
+| Graph | Standard (4096 tokens) |
+| Divergent, Reflection, Decision, Evidence | Deep (8192 tokens) |
 | Counterfactual, MCTS | Maximum (16384 tokens) |
 
 ### Semantic Memory (Voyage AI)
