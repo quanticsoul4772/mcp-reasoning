@@ -256,14 +256,21 @@ Reasoning state is stored in SQLite. Sessions can be resumed across conversation
 
 ### Self-Improvement (4-Phase)
 
-The server continuously monitors and improves its own reasoning quality:
+The server monitors its own reasoning quality and proposes tuning to its
+configuration. It is **advisory by default** — it records recommendations rather
+than silently changing the running server.
 
 1. **Monitor** — Collects execution times, error rates, and tool-chain patterns per reasoning mode
-2. **Analyze** — Uses Claude to diagnose anomalies and generate corrective actions
-3. **Execute** — Applies validated changes with automatic rollback on failure
-4. **Learn** — Calculates reward signals and updates future behavior
+2. **Analyze** — Uses Claude to diagnose anomalies and propose corrective actions (config/threshold adjustments)
+3. **Execute** — Validates each proposed action against the allowlist and records it as a recommendation in `config_overrides`. Recommendations are **not** applied to the running server by default; set `SELF_IMPROVEMENT_APPLY_OVERRIDES=true` to apply recorded overrides over the config at the **next restart** (bounded to allowlisted, validated fields)
+4. **Learn** — Calculates a reward signal and a lesson from each action's outcome (visible via `reasoning_si_status`). These are diagnostics today; they do **not** yet feed back into future proposals (the loop is not closed)
 
-Safety mechanisms: circuit breaker halts after consecutive failures; allowlist validates every proposed action before execution.
+Review recommendations with `reasoning_si_diagnoses` / `reasoning_si_overrides`;
+apply or reject with `reasoning_si_approve` / `reasoning_si_reject`.
+
+Safety mechanisms: an allowlist validates every proposed action (type + parameter
+keys + bounds) before execution; a circuit breaker halts the cycle after
+consecutive failures.
 
 ### Tool Chain Tracking
 
