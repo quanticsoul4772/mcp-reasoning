@@ -70,10 +70,10 @@ impl SuggestionEngine {
     /// same tool-name namespace as the static rules). With no observations this
     /// degrades exactly to [`Self::suggest_next_tools`].
     ///
-    /// Blending (only transitions with ≥ [`MIN_TRANSITION_SAMPLES`] count):
+    /// Blending (only transitions with ≥ `MIN_TRANSITION_SAMPLES` count):
     /// - **Suppress** destinations whose success rate is below
-    ///   [`LOW_SUCCESS_RATE`] — don't recommend a next step that tends to fail.
-    /// - **Promote** destinations at or above [`HIGH_SUCCESS_RATE`] to the front
+    ///   `LOW_SUCCESS_RATE` — don't recommend a next step that tends to fail.
+    /// - **Promote** destinations at or above `HIGH_SUCCESS_RATE` to the front
     ///   (most-observed first), annotating the reason with the evidence and
     ///   adding ones the static rules missed.
     #[must_use]

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::error::enhanced::ComplexityMetrics;
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::meta::MetaMode;
@@ -134,11 +135,18 @@ impl super::ReasoningServer {
             Err(e) => LinearResponse {
                 thought_id: String::new(),
                 session_id: input_session_id,
-                content: format!(
-                    "linear failed: {e}. \
-                     Ensure content is non-empty. \
-                     If this is a timeout, retry or increase timeout_ms. \
-                     If the API is unavailable, check ANTHROPIC_API_KEY."
+                content: super::error_help::with_recovery_suggestions(
+                    format!(
+                        "linear failed: {e}. \
+                         Ensure content is non-empty. \
+                         If this is a timeout, retry or increase timeout_ms. \
+                         If the API is unavailable, check ANTHROPIC_API_KEY."
+                    ),
+                    "reasoning_linear",
+                    None,
+                    &e.to_string(),
+                    ComplexityMetrics::default(),
+                    timeout_ms,
                 ),
                 confidence: 0.0,
                 next_step: None,
@@ -224,10 +232,17 @@ impl super::ReasoningServer {
                             session_id,
                             branch_id: None,
                             branches: None,
-                            recommendation: Some(format!(
-                                "create failed: {e}. \
-                                 Ensure content is non-empty. \
-                                 Retry with different content, or reduce num_branches (2-4)."
+                            recommendation: Some(super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "create failed: {e}. \
+                                     Ensure content is non-empty. \
+                                     Retry with different content, or reduce num_branches (2-4)."
+                                ),
+                                "reasoning_tree",
+                                Some("create"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )),
                             synthesis: None,
                             key_findings: None,
@@ -290,10 +305,17 @@ impl super::ReasoningServer {
                             session_id,
                             branch_id: None,
                             branches: None,
-                            recommendation: Some(format!(
-                                "focus failed: {e}. \
-                                 Use operation='list' to see valid branch_id values \
-                                 for this session_id."
+                            recommendation: Some(super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "focus failed: {e}. \
+                                     Use operation='list' to see valid branch_id values \
+                                     for this session_id."
+                                ),
+                                "reasoning_tree",
+                                Some("focus"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )),
                             synthesis: None,
                             key_findings: None,
@@ -335,10 +357,17 @@ impl super::ReasoningServer {
                         session_id,
                         branch_id: None,
                         branches: None,
-                        recommendation: Some(format!(
-                            "list failed: {e}. \
-                             Verify session_id is from a previous create call. \
-                             An empty list (not an error) means no branches were created yet."
+                        recommendation: Some(super::error_help::with_recovery_suggestions(
+                            format!(
+                                "list failed: {e}. \
+                                 Verify session_id is from a previous create call. \
+                                 An empty list (not an error) means no branches were created yet."
+                            ),
+                            "reasoning_tree",
+                            Some("list"),
+                            &e.to_string(),
+                            ComplexityMetrics::default(),
+                            timeout_ms,
                         )),
                         synthesis: None,
                         key_findings: None,
@@ -382,10 +411,17 @@ impl super::ReasoningServer {
                             session_id,
                             branch_id: None,
                             branches: None,
-                            recommendation: Some(format!(
-                                "complete failed: {e}. \
-                                 Use operation='list' to verify branch_id belongs to \
-                                 this session_id."
+                            recommendation: Some(super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "complete failed: {e}. \
+                                     Use operation='list' to verify branch_id belongs to \
+                                     this session_id."
+                                ),
+                                "reasoning_tree",
+                                Some("complete"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )),
                             synthesis: None,
                             key_findings: None,
@@ -444,10 +480,17 @@ impl super::ReasoningServer {
                             session_id,
                             branch_id: None,
                             branches: None,
-                            recommendation: Some(format!(
-                                "summarize failed: {e}. \
-                                 Run operation='create' first if no branches exist yet, \
-                                 or use operation='list' to confirm branches are present."
+                            recommendation: Some(super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "summarize failed: {e}. \
+                                     Run operation='create' first if no branches exist yet, \
+                                     or use operation='list' to confirm branches are present."
+                                ),
+                                "reasoning_tree",
+                                Some("summarize"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )),
                             synthesis: None,
                             key_findings: None,
@@ -719,11 +762,18 @@ impl super::ReasoningServer {
             Err(e) => AutoResponse {
                 selected_mode: "linear".to_string(),
                 confidence: 0.0,
-                rationale: format!(
-                    "auto failed: {e}. \
-                     Ensure content is non-empty. \
-                     If the API is unavailable, check ANTHROPIC_API_KEY. \
-                     Fallback: use reasoning_linear directly."
+                rationale: super::error_help::with_recovery_suggestions(
+                    format!(
+                        "auto failed: {e}. \
+                         Ensure content is non-empty. \
+                         If the API is unavailable, check ANTHROPIC_API_KEY. \
+                         Fallback: use reasoning_linear directly."
+                    ),
+                    "reasoning_auto",
+                    None,
+                    &e.to_string(),
+                    ComplexityMetrics::default(),
+                    timeout_ms,
                 ),
                 result: serde_json::Value::Null,
                 metadata: None,
@@ -817,10 +867,17 @@ impl super::ReasoningServer {
                 selected_tool: "auto".to_string(),
                 problem_type: "unknown".to_string(),
                 confidence: 0.0,
-                reasoning: format!(
-                    "meta routing failed: {e}. \
-                     Fallback: use reasoning_auto which applies the same selection logic. \
-                     If the API is unavailable, check ANTHROPIC_API_KEY."
+                reasoning: super::error_help::with_recovery_suggestions(
+                    format!(
+                        "meta routing failed: {e}. \
+                         Fallback: use reasoning_auto which applies the same selection logic. \
+                         If the API is unavailable, check ANTHROPIC_API_KEY."
+                    ),
+                    "reasoning_meta",
+                    None,
+                    &e.to_string(),
+                    ComplexityMetrics::default(),
+                    timeout_ms,
                 ),
                 fallback_to_auto: true,
                 candidates_evaluated: 0,

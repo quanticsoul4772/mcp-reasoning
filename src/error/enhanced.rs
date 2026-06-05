@@ -111,7 +111,7 @@ impl ErrorEnhancer {
     fn categorize_error(&self, error_message: &str) -> ErrorCategory {
         let msg = error_message.to_lowercase();
 
-        if msg.contains("timeout") {
+        if msg.contains("timeout") || msg.contains("timed out") {
             ErrorCategory::Timeout
         } else if msg.contains("rate limit") || msg.contains("too many requests") {
             ErrorCategory::RateLimit
@@ -139,8 +139,26 @@ impl ErrorEnhancer {
             ErrorCategory::RateLimit => self.rate_limit_alternatives(),
             ErrorCategory::ApiUnavailable => self.unavailable_alternatives(),
             ErrorCategory::InvalidRequest => self.invalid_request_alternatives(context),
+            ErrorCategory::Authentication => self.authentication_alternatives(),
             _ => vec![],
         }
+    }
+
+    /// Generate alternatives for authentication errors.
+    fn authentication_alternatives(&self) -> Vec<Alternative> {
+        vec![
+            Alternative {
+                suggestion: "Verify ANTHROPIC_API_KEY is set and valid".into(),
+                reason: "Authentication failed — the API key may be missing, expired, or malformed"
+                    .into(),
+                estimated_duration_ms: None,
+            },
+            Alternative {
+                suggestion: "Re-export the key and restart the server".into(),
+                reason: "The server reads ANTHROPIC_API_KEY at startup".into(),
+                estimated_duration_ms: None,
+            },
+        ]
     }
 
     /// Generate alternatives for timeout errors.

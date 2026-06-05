@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::error::enhanced::ComplexityMetrics;
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::{DetectMode, GraphMode};
@@ -370,10 +371,17 @@ impl super::ReasoningServer {
             session_id: session_id.clone(),
             node_id: None,
             nodes: None,
-            aggregated_insight: Some(format!(
-                "graph {operation} failed: {e}. \
-                 Valid operations: init, generate, score, aggregate, refine, prune, finalize, state. \
-                 Use operation='init' first if no session_id exists, then 'generate' to add nodes."
+            aggregated_insight: Some(super::error_help::with_recovery_suggestions(
+                format!(
+                    "graph {operation} failed: {e}. \
+                     Valid operations: init, generate, score, aggregate, refine, prune, finalize, state. \
+                     Use operation='init' first if no session_id exists, then 'generate' to add nodes."
+                ),
+                "reasoning_graph",
+                None,
+                &e.to_string(),
+                ComplexityMetrics::default(),
+                timeout_ms,
             )),
             conclusions: None,
             state: None,
@@ -490,9 +498,16 @@ impl super::ReasoningServer {
                     Err(e) => (
                         DetectResponse {
                             detections: vec![],
-                            summary: Some(format!(
-                                "bias detection failed: {e}. \
-                                 Provide non-empty content or a valid thought_id from a prior reasoning session."
+                            summary: Some(super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "bias detection failed: {e}. \
+                                     Provide non-empty content or a valid thought_id from a prior reasoning session."
+                                ),
+                                "reasoning_detect",
+                                Some("biases"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )),
                             overall_quality: None,
                             debiased_version: None,
@@ -562,10 +577,17 @@ impl super::ReasoningServer {
                     Err(e) => (
                         DetectResponse {
                             detections: vec![],
-                            summary: Some(format!(
-                                "fallacy detection failed: {e}. \
-                                 Provide non-empty content or a valid thought_id. \
-                                 Use detect_type='biases' to check cognitive biases instead."
+                            summary: Some(super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "fallacy detection failed: {e}. \
+                                     Provide non-empty content or a valid thought_id. \
+                                     Use detect_type='biases' to check cognitive biases instead."
+                                ),
+                                "reasoning_detect",
+                                Some("fallacies"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )),
                             overall_quality: None,
                             debiased_version: None,
@@ -635,9 +657,16 @@ impl super::ReasoningServer {
                     Err(e) => (
                         DetectResponse {
                             detections: vec![],
-                            summary: Some(format!(
-                                "knowledge gap detection failed: {e}. \
-                                 Provide non-empty content or a valid thought_id."
+                            summary: Some(super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "knowledge gap detection failed: {e}. \
+                                     Provide non-empty content or a valid thought_id."
+                                ),
+                                "reasoning_detect",
+                                Some("gaps"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )),
                             overall_quality: None,
                             debiased_version: None,

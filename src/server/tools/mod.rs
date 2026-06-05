@@ -40,6 +40,7 @@ use super::responses::{
 use super::types::AppState;
 
 // Handler modules (each contains `impl ReasoningServer` with handler methods)
+mod error_help;
 mod handlers_agents;
 mod handlers_basic;
 mod handlers_cognitive;

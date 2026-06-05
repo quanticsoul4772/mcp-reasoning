@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::error::enhanced::ComplexityMetrics;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::{DecisionMode, DecisionValidation, EvidenceAnalysis, EvidenceMode};
 use crate::prompts::ReasoningMode;
@@ -212,10 +213,17 @@ impl super::ReasoningServer {
                     }
                     Err(e) => (
                         DecisionResponse {
-                            recommendation: format!(
-                                "weighted decision failed: {e}. \
-                                 Provide at least 2 options and a question/topic. \
-                                 Try decision_type='pairwise' for head-to-head comparison."
+                            recommendation: super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "weighted decision failed: {e}. \
+                                     Provide at least 2 options and a question/topic. \
+                                     Try decision_type='pairwise' for head-to-head comparison."
+                                ),
+                                "reasoning_decision",
+                                Some("weighted"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             ),
                             rankings: None,
                             stakeholder_map: None,
@@ -280,10 +288,17 @@ impl super::ReasoningServer {
                     }
                     Err(e) => (
                         DecisionResponse {
-                            recommendation: format!(
-                                "pairwise decision failed: {e}. \
-                                 Provide at least 2 options for head-to-head comparison. \
-                                 Try decision_type='weighted' for multi-criteria scoring."
+                            recommendation: super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "pairwise decision failed: {e}. \
+                                     Provide at least 2 options for head-to-head comparison. \
+                                     Try decision_type='weighted' for multi-criteria scoring."
+                                ),
+                                "reasoning_decision",
+                                Some("pairwise"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             ),
                             rankings: None,
                             stakeholder_map: None,
@@ -359,10 +374,17 @@ impl super::ReasoningServer {
                     }
                     Err(e) => (
                         DecisionResponse {
-                            recommendation: format!(
-                                "topsis decision failed: {e}. \
-                                 TOPSIS requires numeric criteria weights alongside options. \
-                                 Try decision_type='weighted' if criteria weights are unavailable."
+                            recommendation: super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "topsis decision failed: {e}. \
+                                     TOPSIS requires numeric criteria weights alongside options. \
+                                     Try decision_type='weighted' if criteria weights are unavailable."
+                                ),
+                                "reasoning_decision",
+                                Some("topsis"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             ),
                             rankings: None,
                             stakeholder_map: None,
@@ -424,10 +446,17 @@ impl super::ReasoningServer {
                     ),
                     Err(e) => (
                         DecisionResponse {
-                            recommendation: format!(
-                                "perspectives decision failed: {e}. \
-                                 Provide a topic with stakeholders to map. \
-                                 Try decision_type='weighted' for options without stakeholder data."
+                            recommendation: super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "perspectives decision failed: {e}. \
+                                     Provide a topic with stakeholders to map. \
+                                     Try decision_type='weighted' for options without stakeholder data."
+                                ),
+                                "reasoning_decision",
+                                Some("perspectives"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             ),
                             rankings: None,
                             stakeholder_map: None,
@@ -588,10 +617,17 @@ impl super::ReasoningServer {
                             likelihood_ratio: None,
                             entropy: None,
                             confidence_interval: None,
-                            synthesis: Some(format!(
-                                "evidence assess failed: {e}. \
-                                 Provide a claim or hypothesis to evaluate. \
-                                 Try evidence_type='probabilistic' for Bayesian belief updates."
+                            synthesis: Some(super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "evidence assess failed: {e}. \
+                                     Provide a claim or hypothesis to evaluate. \
+                                     Try evidence_type='probabilistic' for Bayesian belief updates."
+                                ),
+                                "reasoning_evidence",
+                                Some("assess"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )),
                             evidential_support: None,
                             pivot_evidence: None,
@@ -668,10 +704,17 @@ impl super::ReasoningServer {
                             likelihood_ratio: None,
                             entropy: None,
                             confidence_interval: None,
-                            synthesis: Some(format!(
-                                "probabilistic evidence failed: {e}. \
-                                 Provide a hypothesis with a prior probability and evidence. \
-                                 Try evidence_type='assess' for qualitative credibility scoring."
+                            synthesis: Some(super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "probabilistic evidence failed: {e}. \
+                                     Provide a hypothesis with a prior probability and evidence. \
+                                     Try evidence_type='assess' for qualitative credibility scoring."
+                                ),
+                                "reasoning_evidence",
+                                Some("probabilistic"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )),
                             evidential_support: None,
                             pivot_evidence: None,

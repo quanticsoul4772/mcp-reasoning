@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::error::enhanced::ComplexityMetrics;
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::TimelineBranch as ModeTimelineBranch;
@@ -665,10 +666,17 @@ impl super::ReasoningServer {
                 }
                 Err(e) => (
                     TimelineResponse {
-                        timeline_id: format!(
-                            "timeline create failed: {e}. \
-                             Provide non-empty content describing the scenario. \
-                             Use operation='branch' once a timeline_id exists."
+                        timeline_id: super::error_help::with_recovery_suggestions(
+                            format!(
+                                "timeline create failed: {e}. \
+                                 Provide non-empty content describing the scenario. \
+                                 Use operation='branch' once a timeline_id exists."
+                            ),
+                            "reasoning_timeline",
+                            Some("create"),
+                            &e.to_string(),
+                            ComplexityMetrics::default(),
+                            timeout_ms,
                         ),
                         ..Default::default()
                     },
@@ -737,10 +745,17 @@ impl super::ReasoningServer {
                 }
                 Err(e) => (
                     TimelineResponse {
-                        timeline_id: format!(
-                            "timeline branch failed: {e}. \
-                             Provide a session_id from a previous create call. \
-                             Use operation='create' first if no timeline exists yet."
+                        timeline_id: super::error_help::with_recovery_suggestions(
+                            format!(
+                                "timeline branch failed: {e}. \
+                                 Provide a session_id from a previous create call. \
+                                 Use operation='create' first if no timeline exists yet."
+                            ),
+                            "reasoning_timeline",
+                            Some("branch"),
+                            &e.to_string(),
+                            ComplexityMetrics::default(),
+                            timeout_ms,
                         ),
                         ..Default::default()
                     },
@@ -793,10 +808,17 @@ impl super::ReasoningServer {
                 }
                 Err(e) => (
                     TimelineResponse {
-                        timeline_id: format!(
-                            "timeline compare failed: {e}. \
-                             Provide a session_id with at least 2 branches to compare. \
-                             Use operation='branch' first to create divergent paths."
+                        timeline_id: super::error_help::with_recovery_suggestions(
+                            format!(
+                                "timeline compare failed: {e}. \
+                                 Provide a session_id with at least 2 branches to compare. \
+                                 Use operation='branch' first to create divergent paths."
+                            ),
+                            "reasoning_timeline",
+                            Some("compare"),
+                            &e.to_string(),
+                            ComplexityMetrics::default(),
+                            timeout_ms,
                         ),
                         ..Default::default()
                     },
@@ -853,10 +875,17 @@ impl super::ReasoningServer {
                 }
                 Err(e) => (
                     TimelineResponse {
-                        timeline_id: format!(
-                            "timeline merge failed: {e}. \
-                             Provide a session_id with branches to synthesize. \
-                             Use operation='compare' first to identify divergence points."
+                        timeline_id: super::error_help::with_recovery_suggestions(
+                            format!(
+                                "timeline merge failed: {e}. \
+                                 Provide a session_id with branches to synthesize. \
+                                 Use operation='compare' first to identify divergence points."
+                            ),
+                            "reasoning_timeline",
+                            Some("merge"),
+                            &e.to_string(),
+                            ComplexityMetrics::default(),
+                            timeout_ms,
                         ),
                         ..Default::default()
                     },
@@ -1348,10 +1377,17 @@ impl super::ReasoningServer {
                 }
             }
             Err(e) => CounterfactualResponse {
-                counterfactual_outcome: format!(
-                    "counterfactual failed: {e}. \
-                     Provide a scenario and intervention to analyze. \
-                     Use depth='counterfactual' for basic what-if, or 'interventional'/'causal' for deeper analysis."
+                counterfactual_outcome: super::error_help::with_recovery_suggestions(
+                    format!(
+                        "counterfactual failed: {e}. \
+                         Provide a scenario and intervention to analyze. \
+                         Use depth='counterfactual' for basic what-if, or 'interventional'/'causal' for deeper analysis."
+                    ),
+                    "reasoning_counterfactual",
+                    None,
+                    &e.to_string(),
+                    ComplexityMetrics::default(),
+                    timeout_ms,
                 ),
                 causal_chain: vec![],
                 session_id: req.session_id,

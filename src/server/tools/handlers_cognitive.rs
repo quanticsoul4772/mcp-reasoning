@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::error::enhanced::ComplexityMetrics;
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::{CheckpointContext, CheckpointMode, DivergentMode, ReflectionMode};
@@ -22,7 +23,15 @@ impl super::ReasoningServer {
             session_id,
             perspectives: vec![],
             challenged_assumptions: None,
-            synthesis: Some(format!("divergent failed: {message}")),
+            synthesis: Some(super::error_help::with_recovery_suggestions(
+                format!("divergent failed: {message}"),
+                "reasoning_divergent",
+                None,
+                message,
+                ComplexityMetrics::default(),
+                // divergent runs at the DEEP_THINKING (60s) budget.
+                60_000,
+            )),
             metadata: None,
         }
     }
@@ -310,10 +319,17 @@ impl super::ReasoningServer {
                             session_id: None,
                             iterations_used: None,
                             strengths: None,
-                            weaknesses: Some(vec![format!(
-                                "reflection process failed: {e}. \
-                                 Provide non-empty content. \
-                                 Use operation='evaluate' to assess an existing session instead."
+                            weaknesses: Some(vec![super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "reflection process failed: {e}. \
+                                     Provide non-empty content. \
+                                     Use operation='evaluate' to assess an existing session instead."
+                                ),
+                                "reasoning_reflection",
+                                Some("process"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )]),
                             recommendations: None,
                             refined_content: None,
@@ -379,10 +395,17 @@ impl super::ReasoningServer {
                             session_id: None,
                             iterations_used: None,
                             strengths: None,
-                            weaknesses: Some(vec![format!(
-                                "reflection evaluate failed: {e}. \
-                                 Verify session_id is from a previous reasoning session. \
-                                 Use operation='process' with content to start a new reflection."
+                            weaknesses: Some(vec![super::error_help::with_recovery_suggestions(
+                                format!(
+                                    "reflection evaluate failed: {e}. \
+                                     Verify session_id is from a previous reasoning session. \
+                                     Use operation='process' with content to start a new reflection."
+                                ),
+                                "reasoning_reflection",
+                                Some("evaluate"),
+                                &e.to_string(),
+                                ComplexityMetrics::default(),
+                                timeout_ms,
                             )]),
                             recommendations: None,
                             refined_content: None,
