@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 33 tools across reasoning (16), self-improvement (7), session management (4), and agent/team coordination (6).
+MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 35 tools across reasoning (17), self-improvement (7), session management (4), and agent/team coordination (7).
 
-**Status**: Complete. 38,000+ lines of Rust code and 2,620+ tests.
+**Status**: Complete. 38,000+ lines of Rust code and 2,690+ tests.
 
 **Key Stats**:
 
 - 119 source files, 38,000+ lines of code
-- 2,620+ tests (90%+ line coverage)
-- 16 core reasoning tools + 7 SI + 4 session + 6 agent/team = 33 tools total
+- 2,690+ tests (95%+ line coverage)
+- 17 core reasoning tools + 7 SI + 4 session + 7 agent/team = 35 tools total
 - 6 workflow presets (code-review, debug-analysis, architecture-decision, strategic-decision, evidence-conclusion, brainstorming)
 - 4-phase self-improvement system with safety mechanisms
 - Tool chain tracking with pattern detection
@@ -76,7 +76,7 @@ MCP_TRANSPORT=stdio                   # stdio (default) or http
 # Semantic memory (Voyage AI) — REQUIRED for reasoning_search,
 # reasoning_relate, and reasoning_divergent (which grounds its novelty
 # scores in embeddings). Without VOYAGE_API_KEY those three tools return a
-# clear config error; the other 29 tools are unaffected.
+# clear config error; the other 32 tools are unaffected.
 VOYAGE_API_KEY=pa-xxx                 # Enables embeddings + reranking
 VOYAGE_MODEL=voyage-4                 # Default embedding model
 ```
@@ -206,7 +206,7 @@ src/
     └── cli/             # CLI commands for SI management
 ```
 
-## The 16 Core Reasoning Tools
+## The 17 Core Reasoning Tools
 
 | Tool | Description | Operations |
 |------|-------------|------------|
@@ -226,6 +226,7 @@ src/
 | `reasoning_counterfactual` | Causal analysis | Pearl's Ladder levels |
 | `reasoning_preset` | Workflow presets | list, run |
 | `reasoning_metrics` | Usage queries | by_mode, by_time, etc. |
+| `reasoning_confidence_route` | Confidence-aware routing | executes auto-selected mode or escalates to tree |
 
 ## Key Design Patterns
 
@@ -300,7 +301,7 @@ const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message
 - **No panics**: No `.unwrap()` or `.expect()` in production paths
 - **TDD workflow**: Write tests first, fail, implement, pass, 95%+ coverage
 - **File size limits**: Max 500 lines per .rs file
-- **High test coverage**: 2,620+ tests with 90%+ line coverage
+- **High test coverage**: 2,690+ tests with 95%+ line coverage
 - **Structured logging**: Use `tracing` with structured fields, logs to stderr only
 
 ## Implementation Status
