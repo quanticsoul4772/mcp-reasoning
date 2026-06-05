@@ -205,6 +205,11 @@ pub struct MetaRequest {
     /// — which tool has historically succeeded after this one — and uses it to
     /// break ties / resolve low-data routing. Omit if there is no prior tool.
     pub previous_tool: Option<String>,
+    /// Session id of the current reasoning workflow. When `previous_tool` is not
+    /// given, meta derives it from the last tool recorded in this session, so
+    /// chain-aware routing works without the caller threading the prior tool by
+    /// hand. Pass the same session id used for the preceding reasoning calls.
+    pub session_id: Option<String>,
 }
 
 /// Request for graph reasoning.

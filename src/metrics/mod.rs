@@ -559,6 +559,24 @@ impl MetricsCollector {
         }
     }
 
+    /// The last tool recorded in `session_id`, if any.
+    ///
+    /// This is the previous-tool source for chain-aware routing: `reasoning_meta`
+    /// uses it to auto-derive `previous_tool` when the caller did not pass one
+    /// explicitly, so the recorded transition matrix influences routing without
+    /// the client having to thread the prior tool by hand. Returns `None` for an
+    /// empty or unknown session.
+    #[must_use]
+    pub fn last_tool_for_session(&self, session_id: &str) -> Option<String> {
+        if session_id.is_empty() {
+            return None;
+        }
+        self.last_tool_by_session
+            .read()
+            .ok()
+            .and_then(|map| map.get(session_id).cloned())
+    }
+
     /// Mark the last transition for a session as failed.
     ///
     /// Used when a tool execution fails after the transition was recorded.
@@ -1287,6 +1305,30 @@ mod tests {
                 .map(|s| s.count),
             Some(1)
         );
+    }
+
+    #[test]
+    fn test_last_tool_for_session() {
+        let collector = MetricsCollector::new();
+        // Unknown / empty sessions yield nothing.
+        assert_eq!(collector.last_tool_for_session("s1"), None);
+        assert_eq!(collector.last_tool_for_session(""), None);
+
+        collector.record_tool_use("s1", "decision", true);
+        assert_eq!(
+            collector.last_tool_for_session("s1").as_deref(),
+            Some("decision")
+        );
+
+        // Tracks the most recent tool in the session.
+        collector.record_tool_use("s1", "linear", true);
+        assert_eq!(
+            collector.last_tool_for_session("s1").as_deref(),
+            Some("linear")
+        );
+
+        // Sessions are isolated.
+        assert_eq!(collector.last_tool_for_session("s2"), None);
     }
 
     #[test]
