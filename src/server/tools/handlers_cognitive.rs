@@ -17,7 +17,11 @@ use super::DEEP_THINKING;
 
 impl super::ReasoningServer {
     /// Build a failed divergent response carrying `message`.
-    fn divergent_error(session_id: String, message: &str) -> DivergentResponse {
+    fn divergent_error(
+        session_id: String,
+        message: &str,
+        complexity: ComplexityMetrics,
+    ) -> DivergentResponse {
         DivergentResponse {
             thought_id: String::new(),
             session_id,
@@ -28,7 +32,7 @@ impl super::ReasoningServer {
                 "reasoning_divergent",
                 None,
                 message,
-                ComplexityMetrics::default(),
+                complexity,
                 // divergent runs at the DEEP_THINKING (60s) budget.
                 60_000,
             )),
@@ -41,6 +45,9 @@ impl super::ReasoningServer {
         let challenge = req.challenge_assumptions.unwrap_or(false);
         let rebellion = req.force_rebellion.unwrap_or(false);
         let content_length = req.content.len();
+        // Real complexity for error enhancement (content size + fan-out).
+        let divergent_complexity =
+            ComplexityMetrics::from_content(content_length).with_branching(req.num_perspectives);
 
         tracing::info!(
             tool = "reasoning_divergent",
@@ -64,6 +71,7 @@ impl super::ReasoningServer {
             return Self::divergent_error(
                 input_session_id,
                 "reasoning_divergent requires VOYAGE_API_KEY to ground novelty scores",
+                divergent_complexity.clone(),
             );
         };
 
@@ -194,12 +202,14 @@ impl super::ReasoningServer {
                                 scores.len(),
                                 perspectives.len()
                             ),
+                            divergent_complexity.clone(),
                         );
                     }
                     Err(e) => {
                         return Self::divergent_error(
                             resp.session_id,
                             &format!("novelty grounding failed: {e}"),
+                            divergent_complexity.clone(),
                         );
                     }
                 }
@@ -219,6 +229,7 @@ impl super::ReasoningServer {
                     "{e}. Ensure content is non-empty. \
                      Try reducing num_perspectives (2-4) or retry without force_rebellion."
                 ),
+                divergent_complexity,
             ),
         }
     }
@@ -328,7 +339,7 @@ impl super::ReasoningServer {
                                 "reasoning_reflection",
                                 Some("process"),
                                 &e.to_string(),
-                                ComplexityMetrics::default(),
+                                ComplexityMetrics::from_content(content.len()),
                                 timeout_ms,
                             )]),
                             recommendations: None,
@@ -404,7 +415,9 @@ impl super::ReasoningServer {
                                 "reasoning_reflection",
                                 Some("evaluate"),
                                 &e.to_string(),
-                                ComplexityMetrics::default(),
+                                ComplexityMetrics::from_content(
+                                    req.content.as_deref().unwrap_or("").len(),
+                                ),
                                 timeout_ms,
                             )]),
                             recommendations: None,

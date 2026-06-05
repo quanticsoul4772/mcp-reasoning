@@ -84,7 +84,7 @@ impl super::ReasoningServer {
                         "reasoning_confidence_route",
                         None,
                         &e.to_string(),
-                        ComplexityMetrics::default(),
+                        ComplexityMetrics::from_content(req.content.len()),
                         timeout_ms,
                     ),
                     result: serde_json::Value::Null,

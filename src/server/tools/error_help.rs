@@ -103,6 +103,23 @@ mod tests {
     }
 
     #[test]
+    fn test_incorrect_parameter_appends_example_call() {
+        // A not-found param failure now categorizes as InvalidRequest and the
+        // enhancer appends a corrected example call with values.
+        let msg = with_recovery_suggestions(
+            "focus failed: Not found: branch xyz".to_string(),
+            "reasoning_tree",
+            Some("focus"),
+            "Not found: branch xyz",
+            ComplexityMetrics::default(),
+            30_000,
+        );
+        assert!(msg.contains("Suggestions:"));
+        assert!(msg.contains("Example:"));
+        assert!(msg.contains("branch_id"));
+    }
+
+    #[test]
     fn test_operation_specific_error_keeps_base_unchanged() {
         // An uncategorized error ("Other") yields no alternatives, so the
         // handler's specific hint is returned verbatim.
@@ -111,7 +128,8 @@ mod tests {
             base.clone(),
             "reasoning_tree",
             Some("focus"),
-            "branch xyz not found in session",
+            // Genuinely uncategorized: no timeout/invalid/not-found/etc. keyword.
+            "branch selection was rejected",
             ComplexityMetrics::default(),
             30_000,
         );

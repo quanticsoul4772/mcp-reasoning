@@ -675,7 +675,7 @@ impl super::ReasoningServer {
                             "reasoning_timeline",
                             Some("create"),
                             &e.to_string(),
-                            ComplexityMetrics::default(),
+                            ComplexityMetrics::from_content(content.len()),
                             timeout_ms,
                         ),
                         ..Default::default()
@@ -754,7 +754,7 @@ impl super::ReasoningServer {
                             "reasoning_timeline",
                             Some("branch"),
                             &e.to_string(),
-                            ComplexityMetrics::default(),
+                            ComplexityMetrics::from_content(content.len()),
                             timeout_ms,
                         ),
                         ..Default::default()
@@ -817,7 +817,7 @@ impl super::ReasoningServer {
                             "reasoning_timeline",
                             Some("compare"),
                             &e.to_string(),
-                            ComplexityMetrics::default(),
+                            ComplexityMetrics::from_content(content.len()),
                             timeout_ms,
                         ),
                         ..Default::default()
@@ -884,7 +884,7 @@ impl super::ReasoningServer {
                             "reasoning_timeline",
                             Some("merge"),
                             &e.to_string(),
-                            ComplexityMetrics::default(),
+                            ComplexityMetrics::from_content(content.len()),
                             timeout_ms,
                         ),
                         ..Default::default()
@@ -1386,7 +1386,7 @@ impl super::ReasoningServer {
                     "reasoning_counterfactual",
                     None,
                     &e.to_string(),
-                    ComplexityMetrics::default(),
+                    ComplexityMetrics::from_content(content.len()),
                     timeout_ms,
                 ),
                 causal_chain: vec![],
