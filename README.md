@@ -263,7 +263,7 @@ than silently changing the running server.
 1. **Monitor** — Collects execution times, error rates, and tool-chain patterns per reasoning mode
 2. **Analyze** — Uses Claude to diagnose anomalies and propose corrective actions (config/threshold adjustments)
 3. **Execute** — Validates each proposed action against the allowlist and records it as a recommendation in `config_overrides`. Recommendations are **not** applied to the running server by default; set `SELF_IMPROVEMENT_APPLY_OVERRIDES=true` to apply recorded overrides over the config at the **next restart** (bounded to allowlisted, validated fields)
-4. **Learn** — Calculates a reward signal and a lesson from each action's outcome (visible via `reasoning_si_status`). These are diagnostics today; they do **not** yet feed back into future proposals (the loop is not closed)
+4. **Learn** — Calculates a reward signal and a lesson from each action's outcome (visible via `reasoning_si_status`) and feeds them back into the next **Analyze** step: per-action-type effectiveness and recent outcomes steer later proposals toward what worked and away from what repeatedly failed. This runs **in-memory within a process run** — cross-restart persistence of lessons is a planned follow-up
 
 Review recommendations with `reasoning_si_diagnoses` / `reasoning_si_overrides`;
 apply or reject with `reasoning_si_approve` / `reasoning_si_reject`.

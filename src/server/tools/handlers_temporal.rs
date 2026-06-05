@@ -986,8 +986,8 @@ impl super::ReasoningServer {
                                 ucb1_score: n.ucb1_score,
                             })
                             .collect();
-                        // `best_path` kept for backward compatibility, with honest
-                        // (un-fabricated) content.
+                        // `best_path` kept for backward compatibility, with
+                        // accurate (un-fabricated) content.
                         let best_path = resp
                             .frontier_evaluation
                             .iter()
