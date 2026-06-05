@@ -1177,6 +1177,38 @@ async fn test_metrics_chains_query_returns_transition_matrix() {
 }
 
 #[tokio::test]
+async fn test_metrics_chains_query_flags_anti_patterns() {
+    let server = create_test_server().await;
+    // 3 sessions where `evidence` fails immediately after `decision` — a
+    // low-success transition the detector should flag.
+    for i in 0..3 {
+        let s = format!("ap-{i}");
+        server.state.metrics.record_tool_use(&s, "decision", true);
+        server.state.metrics.record_tool_use(&s, "evidence", false);
+    }
+
+    let req = MetricsRequest {
+        query: "chains".to_string(),
+        mode_name: None,
+        tool_name: None,
+        session_id: None,
+        success_only: None,
+        limit: None,
+    };
+    let resp = server.reasoning_metrics(Parameters(req)).await;
+
+    let chains = resp.chains.expect("chains query returns chain data");
+    let anti_patterns = chains["anti_patterns"]
+        .as_array()
+        .expect("anti_patterns is an array");
+    assert_eq!(anti_patterns.len(), 1, "the failing transition is flagged");
+    assert_eq!(anti_patterns[0]["kind"], "low_success_transition");
+    assert_eq!(anti_patterns[0]["from_tool"], "decision");
+    assert_eq!(anti_patterns[0]["to_tool"], "evidence");
+    assert_eq!(anti_patterns[0]["occurrences"], 3);
+}
+
+#[tokio::test]
 async fn test_meta_auto_derives_previous_tool_from_session() {
     let server = create_test_server().await;
 
