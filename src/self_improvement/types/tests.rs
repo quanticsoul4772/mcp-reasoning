@@ -45,6 +45,25 @@ fn test_action_type_display() {
 }
 
 #[test]
+fn test_action_type_from_str_roundtrips_display() {
+    for action_type in [
+        ActionType::ConfigAdjust,
+        ActionType::PromptTune,
+        ActionType::ThresholdAdjust,
+        ActionType::LogObservation,
+    ] {
+        let parsed: ActionType = action_type
+            .to_string()
+            .parse()
+            .expect("Display form must parse back");
+        assert_eq!(parsed, action_type);
+    }
+
+    // Unknown strings are rejected, not silently mapped.
+    assert!("nonsense".parse::<ActionType>().is_err());
+}
+
+#[test]
 fn test_legacy_action_new() {
     let action = SelfImprovementAction::new(
         "action-1",

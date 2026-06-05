@@ -11,9 +11,10 @@ use super::allowlist::{Allowlist, AllowlistConfig, ValidationError};
 use super::analyzer::{AnalysisResult, Analyzer};
 use super::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
 use super::executor::{ConfigState, ExecutionResult, Executor};
-use super::learner::{Learner, LearnerConfig, LearningResult, LearningSummary};
+use super::learner::{ActionTypeStats, Learner, LearnerConfig, LearningResult, LearningSummary};
 use super::monitor::{Monitor, MonitorConfig, MonitorResult};
-use super::types::{ActionStatus, Lesson, SelfImprovementAction};
+use super::types::{ActionStatus, ActionType, Lesson, SelfImprovementAction};
+use std::collections::HashMap;
 
 /// Configuration for the self-improvement system.
 #[derive(Debug, Clone)]
@@ -169,6 +170,18 @@ impl<C: AnthropicClientTrait> SelfImprovementSystem<C> {
             blocked: false,
             error: None,
         })
+    }
+
+    /// Per-action-type learning stats, for persistence across restarts.
+    #[must_use]
+    pub fn learner_stats(&self) -> &HashMap<ActionType, ActionTypeStats> {
+        self.learner.all_stats()
+    }
+
+    /// Restore per-action-type learning stats from persistence at startup, so
+    /// [`Learner::guidance`]'s effectiveness table reflects prior runs.
+    pub fn seed_learner_stats(&mut self, stats: HashMap<ActionType, ActionTypeStats>) {
+        self.learner.seed_stats(stats);
     }
 
     /// Approve pending actions and execute them.

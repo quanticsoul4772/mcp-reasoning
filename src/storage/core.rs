@@ -170,6 +170,16 @@ impl SqliteStorage {
                 message: format!("Failed to run migration 007: {e}"),
             })?;
 
+        // Migration 008: Persist per-action-type self-improvement learning stats
+        let schema_008 = include_str!("../../migrations/008_si_action_type_stats.sql");
+        sqlx::query(schema_008)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::MigrationFailed {
+                version: "008".to_string(),
+                message: format!("Failed to run migration 008: {e}"),
+            })?;
+
         Ok(())
     }
 

@@ -25,5 +25,6 @@ mod tests;
 // Re-export main types
 pub use operations::SelfImprovementStorage;
 pub use records::{
-    ActionRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord, InvocationStats,
+    ActionRecord, ActionTypeStatRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord,
+    InvocationStats,
 };

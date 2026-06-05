@@ -5,7 +5,8 @@ use super::helpers::{
 };
 use super::operations::SelfImprovementStorage;
 use super::records::{
-    ActionRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord, InvocationStats,
+    ActionRecord, ActionTypeStatRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord,
+    InvocationStats,
 };
 use crate::error::StorageError;
 use crate::self_improvement::types::{ActionStatus, DiagnosisStatus, Severity};
@@ -58,6 +59,59 @@ fn test_invocation_record_creation_no_quality() {
     assert_eq!(record.latency_ms, 200);
     assert!(!record.success);
     assert_eq!(record.quality_score, None);
+}
+
+#[tokio::test]
+#[serial]
+async fn test_action_type_stats_roundtrip_and_upsert() {
+    let storage = test_storage().await;
+
+    // Empty before anything is written.
+    let loaded = storage
+        .get_all_action_type_stats()
+        .await
+        .expect("load empty");
+    assert!(loaded.is_empty());
+
+    let record = ActionTypeStatRecord {
+        action_type: "config_adjust".to_string(),
+        total_executions: 5,
+        successful: 3,
+        avg_reward: 0.42,
+        total_expected: 1.5,
+        total_actual: 1.2,
+    };
+    storage
+        .upsert_action_type_stats(&record)
+        .await
+        .expect("insert");
+
+    let loaded = storage.get_all_action_type_stats().await.expect("load one");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].action_type, "config_adjust");
+    assert_eq!(loaded[0].total_executions, 5);
+    assert_eq!(loaded[0].successful, 3);
+    assert!((loaded[0].avg_reward - 0.42).abs() < f64::EPSILON);
+
+    // A second upsert for the same action type overwrites, never duplicates.
+    let updated = ActionTypeStatRecord {
+        total_executions: 8,
+        successful: 6,
+        avg_reward: 0.55,
+        ..record
+    };
+    storage
+        .upsert_action_type_stats(&updated)
+        .await
+        .expect("upsert");
+
+    let loaded = storage
+        .get_all_action_type_stats()
+        .await
+        .expect("load after upsert");
+    assert_eq!(loaded.len(), 1, "upsert must not duplicate the row");
+    assert_eq!(loaded[0].total_executions, 8);
+    assert_eq!(loaded[0].successful, 6);
 }
 
 #[test]

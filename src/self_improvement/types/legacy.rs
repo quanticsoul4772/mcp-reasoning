@@ -37,6 +37,39 @@ impl std::fmt::Display for ActionType {
     }
 }
 
+/// Error parsing an [`ActionType`] from its string form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseActionTypeError {
+    /// The input that failed to parse.
+    pub input: String,
+}
+
+impl std::fmt::Display for ParseActionTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Unknown action type: '{}'", self.input)
+    }
+}
+
+impl std::error::Error for ParseActionTypeError {}
+
+impl std::str::FromStr for ActionType {
+    type Err = ParseActionTypeError;
+
+    /// Parse the lowercase string form produced by [`Display`]. The inverse of
+    /// `to_string()`, used to rehydrate persisted action-type keys.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "config_adjust" => Ok(Self::ConfigAdjust),
+            "prompt_tune" => Ok(Self::PromptTune),
+            "threshold_adjust" => Ok(Self::ThresholdAdjust),
+            "log_observation" => Ok(Self::LogObservation),
+            _ => Err(ParseActionTypeError {
+                input: s.to_string(),
+            }),
+        }
+    }
+}
+
 // ============================================================================
 // ActionStatus (Legacy)
 // ============================================================================

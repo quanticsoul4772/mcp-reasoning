@@ -125,6 +125,31 @@ pub struct ConfigOverrideRecord {
 }
 
 // ============================================================================
+// Action-Type Learning Stats Records
+// ============================================================================
+
+/// Persisted per-action-type learning stats (Migration 008).
+///
+/// Mirrors `Learner::ActionTypeStats` in storable form so SI guidance's
+/// effectiveness table survives restarts. Counts are stored as `i64` (SQLite's
+/// integer type).
+#[derive(Debug, Clone)]
+pub struct ActionTypeStatRecord {
+    /// Action type string (the `Display` form of `ActionType`).
+    pub action_type: String,
+    /// Total executions of this action type.
+    pub total_executions: i64,
+    /// Successful executions.
+    pub successful: i64,
+    /// Rolling average reward.
+    pub avg_reward: f64,
+    /// Sum of expected improvements.
+    pub total_expected: f64,
+    /// Sum of actual improvements.
+    pub total_actual: f64,
+}
+
+// ============================================================================
 // Stats Types
 // ============================================================================
 
