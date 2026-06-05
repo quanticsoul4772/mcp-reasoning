@@ -43,6 +43,15 @@ const MAX_TRANSITIONS: usize = 10_000;
 /// dropping stale entries only costs a missed first-hop link, not correctness).
 const MAX_TRACKED_SESSIONS: usize = 10_000;
 
+/// Minimum observations before a transition can be flagged as an anti-pattern,
+/// so a single fluke failure is never reported. Mirrors the `count >= 3` sample
+/// floor used elsewhere for chain-derived signals.
+const ANTIPATTERN_MIN_OCCURRENCES: u32 = 3;
+
+/// A transition is flagged when its destination's success rate is below this —
+/// i.e. it fails more often than it succeeds.
+const ANTIPATTERN_MAX_SUCCESS_RATE: f64 = 0.5;
+
 /// A single metric event recording.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricEvent {
@@ -276,6 +285,29 @@ pub struct ChainSummary {
     pub entry_tools: Vec<String>,
     /// Tools that are frequently ending points.
     pub terminal_tools: Vec<String>,
+    /// Automatically flagged workflow anti-patterns (e.g. transitions that
+    /// frequently fail). Empty until a transition clears the detection
+    /// thresholds, so this is additive — quiet servers see `[]`.
+    pub anti_patterns: Vec<ChainAntiPattern>,
+}
+
+/// A flagged tool-chain anti-pattern — a workflow signal worth avoiding,
+/// detected automatically from the transition data so callers don't have to
+/// eyeball success rates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChainAntiPattern {
+    /// Anti-pattern category (currently `"low_success_transition"`).
+    pub kind: String,
+    /// Tool the transition starts from.
+    pub from_tool: String,
+    /// Tool the transition lands on.
+    pub to_tool: String,
+    /// How many times this transition was observed.
+    pub occurrences: u32,
+    /// Success rate of the destination tool for this transition (0.0–1.0).
+    pub success_rate: f64,
+    /// Human-readable label explaining why it was flagged.
+    pub detail: String,
 }
 
 /// Tool effectiveness for a specific context.
@@ -815,6 +847,7 @@ impl MetricsCollector {
     /// - Common tool sequences (3+ tools, 5+ occurrences)
     /// - Transition matrix with success rates
     /// - Entry and terminal tools
+    /// - Anti-patterns (transitions that frequently fail)
     #[must_use]
     pub fn chain_summary(&self) -> ChainSummary {
         let transitions = self
@@ -832,12 +865,64 @@ impl MetricsCollector {
         // Detect common chains (3-5 tool sequences)
         let common_chains = self.detect_common_chains(&transitions);
 
+        // Flag anti-patterns from the matrix before it's moved into the summary.
+        let anti_patterns = Self::detect_anti_patterns(&transition_matrix);
+
         ChainSummary {
             common_chains,
             transitions: transition_matrix,
             entry_tools,
             terminal_tools,
+            anti_patterns,
         }
+    }
+
+    /// Flag workflow anti-patterns from the transition matrix.
+    ///
+    /// Current rule (`low_success_transition`): a transition observed at least
+    /// [`ANTIPATTERN_MIN_OCCURRENCES`] times whose destination succeeds less than
+    /// [`ANTIPATTERN_MAX_SUCCESS_RATE`] of the time. The occurrence floor keeps
+    /// noise out; the threshold flags transitions that more often fail than not.
+    /// Output is sorted (worst success rate first, then by tool names) so it is
+    /// deterministic regardless of `HashMap` iteration order.
+    #[must_use]
+    fn detect_anti_patterns(
+        matrix: &HashMap<String, HashMap<String, TransitionStats>>,
+    ) -> Vec<ChainAntiPattern> {
+        let mut flagged: Vec<ChainAntiPattern> = Vec::new();
+
+        for (from_tool, destinations) in matrix {
+            for (to_tool, stats) in destinations {
+                if stats.count >= ANTIPATTERN_MIN_OCCURRENCES
+                    && stats.success_rate < ANTIPATTERN_MAX_SUCCESS_RATE
+                {
+                    flagged.push(ChainAntiPattern {
+                        kind: "low_success_transition".to_string(),
+                        from_tool: from_tool.clone(),
+                        to_tool: to_tool.clone(),
+                        occurrences: stats.count,
+                        success_rate: stats.success_rate,
+                        detail: format!(
+                            "{} succeeded only {:.0}% of the time after {} (n={})",
+                            to_tool,
+                            stats.success_rate * 100.0,
+                            from_tool,
+                            stats.count
+                        ),
+                    });
+                }
+            }
+        }
+
+        // Deterministic order: worst success rate first, then by tool names.
+        flagged.sort_by(|a, b| {
+            a.success_rate
+                .partial_cmp(&b.success_rate)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.from_tool.cmp(&b.from_tool))
+                .then_with(|| a.to_tool.cmp(&b.to_tool))
+        });
+        flagged
     }
 
     /// Build the transition matrix from recorded transitions.
@@ -1538,6 +1623,72 @@ mod tests {
         assert!(summary.transitions.is_empty());
         assert!(summary.entry_tools.is_empty());
         assert!(summary.terminal_tools.is_empty());
+        assert!(summary.anti_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_detect_anti_patterns_flags_low_success_transition() {
+        let collector = MetricsCollector::new();
+        // decision -> evidence: 3 observations, all fail (success_rate 0.0).
+        for i in 0..3 {
+            collector.record_transition(ToolTransition::new(
+                "decision",
+                "evidence",
+                format!("bad-{i}"),
+                false,
+            ));
+        }
+        // decision -> linear: 3 observations, all succeed (success_rate 1.0).
+        for i in 0..3 {
+            collector.record_transition(ToolTransition::new(
+                "decision",
+                "linear",
+                format!("good-{i}"),
+                true,
+            ));
+        }
+
+        let summary = collector.chain_summary();
+        // Only the failing transition is flagged.
+        assert_eq!(summary.anti_patterns.len(), 1);
+        let ap = &summary.anti_patterns[0];
+        assert_eq!(ap.kind, "low_success_transition");
+        assert_eq!(ap.from_tool, "decision");
+        assert_eq!(ap.to_tool, "evidence");
+        assert_eq!(ap.occurrences, 3);
+        assert!(ap.success_rate < 0.5);
+        assert!(ap.detail.contains("evidence"));
+        assert!(ap.detail.contains("decision"));
+        assert!(ap.detail.contains("n=3"));
+    }
+
+    #[test]
+    fn test_detect_anti_patterns_respects_occurrence_floor() {
+        let collector = MetricsCollector::new();
+        // Two failing observations — below the floor of 3, so not flagged.
+        for i in 0..2 {
+            collector.record_transition(ToolTransition::new(
+                "decision",
+                "evidence",
+                format!("bad-{i}"),
+                false,
+            ));
+        }
+        assert!(collector.chain_summary().anti_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_detect_anti_patterns_empty_when_all_succeed() {
+        let collector = MetricsCollector::new();
+        for i in 0..5 {
+            collector.record_transition(ToolTransition::new(
+                "decision",
+                "linear",
+                format!("ok-{i}"),
+                true,
+            ));
+        }
+        assert!(collector.chain_summary().anti_patterns.is_empty());
     }
 
     #[test]
