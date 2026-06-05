@@ -62,7 +62,6 @@
 
 mod mcp;
 mod metadata_builders;
-mod params;
 mod progress;
 mod requests;
 mod responses;
@@ -71,16 +70,6 @@ mod transport;
 mod types;
 
 pub use mcp::McpServer;
-pub use params::{
-    AnalysisDepth, AutoParams, CausalModelDef, CausalRelationship, CheckpointOperation,
-    CheckpointParams, CounterfactualParams, DecisionCriterion, DecisionParams, DecisionType,
-    DetectParams, DetectType, DivergentParams, EvidenceParams, EvidencePieceDef,
-    EvidenceSourceType, EvidenceType, GraphConfig, GraphOperation, GraphParams, LinearParams,
-    ListSessionsParams, MctsOperation, MctsParams, MergeStrategy, MetricsParams, MetricsQuery,
-    PresetOperation, PresetParams, ReflectionOperation, ReflectionParams, RelateParams,
-    ResumeParams, SearchParams, StakeholderDef, TimelineOperation, TimelineParams, TreeOperation,
-    TreeParams,
-};
 pub use progress::{create_progress_channel, ProgressEvent, ProgressMilestone, ProgressReporter};
 pub use requests::{
     AgentInvokeRequest, AgentListRequest, AgentMetricsRequest, AutoRequest, CheckpointRequest,
