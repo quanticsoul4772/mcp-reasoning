@@ -5,6 +5,7 @@ use super::{
     SuggestionMetadata, TimingDatabase, TimingMetadata,
 };
 use crate::error::AppError;
+use crate::metrics::MetricsCollector;
 use std::sync::Arc;
 
 /// Builder for constructing response metadata.
@@ -12,6 +13,10 @@ pub struct MetadataBuilder {
     timing_db: Arc<TimingDatabase>,
     suggestion_engine: Arc<SuggestionEngine>,
     factory_timeout_ms: u64,
+    /// Runtime metrics used to enrich next-tool suggestions with observed
+    /// tool-chain transitions. Optional: when absent (e.g. in unit tests), the
+    /// builder falls back to purely static suggestions.
+    metrics: Option<Arc<MetricsCollector>>,
 }
 
 impl MetadataBuilder {
@@ -28,7 +33,16 @@ impl MetadataBuilder {
             timing_db,
             suggestion_engine,
             factory_timeout_ms,
+            metrics: None,
         }
+    }
+
+    /// Attach the runtime metrics collector so next-tool suggestions are blended
+    /// with empirically observed tool-chain transitions.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Arc<MetricsCollector>) -> Self {
+        self.metrics = Some(metrics);
+        self
     }
 
     /// Build complete metadata for a tool response.
@@ -75,13 +89,38 @@ impl MetadataBuilder {
     }
 
     fn build_suggestion_metadata(&self, request: &MetadataRequest) -> SuggestionMetadata {
-        let next_tools = self
-            .suggestion_engine
-            .suggest_next_tools(&request.tool_name, &request.result_context);
+        let empirical = self
+            .metrics
+            .as_ref()
+            .map(|m| m.transition_stats_from(&request.tool_name))
+            .unwrap_or_default();
+        let next_tools = self.suggestion_engine.suggest_next_tools_blended(
+            &request.tool_name,
+            &request.result_context,
+            &empirical,
+        );
+
+        // Prefer the session's actual tool sequence (reconstructed from observed
+        // transitions) over the request's hint, so preset matching reflects what
+        // the agent really did. Falls back to the request when unavailable.
+        let session_history = match (
+            self.metrics.as_ref(),
+            request.result_context.session_id.as_deref(),
+        ) {
+            (Some(metrics), Some(session_id)) if !session_id.is_empty() => {
+                let history = metrics.session_tool_history(session_id);
+                if history.is_empty() {
+                    request.tool_history.clone()
+                } else {
+                    history
+                }
+            }
+            _ => request.tool_history.clone(),
+        };
 
         let relevant_presets = self
             .suggestion_engine
-            .suggest_presets(&request.tool_history, request.goal.as_deref());
+            .suggest_presets(&session_history, request.goal.as_deref());
 
         SuggestionMetadata {
             next_tools,
@@ -137,6 +176,45 @@ mod tests {
         let preset_index = Arc::new(PresetIndex::build());
 
         MetadataBuilder::new(timing_db, preset_index, 30_000)
+    }
+
+    #[tokio::test]
+    async fn test_build_suggestions_blend_observed_transitions() {
+        let storage = SqliteStorage::new_in_memory().await.expect("storage");
+        let timing_db = Arc::new(TimingDatabase::new(Arc::new(storage)));
+        let preset_index = Arc::new(PresetIndex::build());
+        let metrics = Arc::new(crate::metrics::MetricsCollector::new());
+
+        // Observe reasoning_tree → reasoning_mcts succeeding repeatedly.
+        for i in 0..6 {
+            let sid = format!("s{i}");
+            metrics.record_tool_use(&sid, "reasoning_tree", true);
+            metrics.record_tool_use(&sid, "reasoning_mcts", true);
+        }
+
+        let builder = MetadataBuilder::new(timing_db, preset_index, 30_000)
+            .with_metrics(Arc::clone(&metrics));
+
+        let request = MetadataRequest {
+            tool_name: "reasoning_tree".into(),
+            mode_name: Some("create".into()),
+            result_context: super::super::suggestions::ResultContext {
+                has_branches: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let metadata = builder.build(&request).await.expect("build");
+        // The observed high-success transition is promoted to the front.
+        assert_eq!(
+            metadata
+                .suggestions
+                .next_tools
+                .first()
+                .map(|s| s.tool.as_str()),
+            Some("reasoning_mcts")
+        );
     }
 
     #[tokio::test]

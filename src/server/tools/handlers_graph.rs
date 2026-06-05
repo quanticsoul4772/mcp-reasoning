@@ -364,7 +364,7 @@ impl super::ReasoningServer {
         );
         self.state
             .metrics
-            .record_tool_use(&session_id, ReasoningMode::Graph.as_str(), success);
+            .record_tool_use(&session_id, ReasoningMode::Graph.tool_name(), success);
 
         let mut response = result.unwrap_or_else(|e| GraphResponse {
             session_id: session_id.clone(),
@@ -703,7 +703,7 @@ impl super::ReasoningServer {
         );
         self.state.metrics.record_tool_use(
             &input_session_id,
-            ReasoningMode::Detect.as_str(),
+            ReasoningMode::Detect.tool_name(),
             success,
         );
 

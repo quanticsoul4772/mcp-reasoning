@@ -497,7 +497,7 @@ impl super::ReasoningServer {
         );
         self.state.metrics.record_tool_use(
             &input_session_id,
-            ReasoningMode::Decision.as_str(),
+            ReasoningMode::Decision.tool_name(),
             success,
         );
 
@@ -743,7 +743,7 @@ impl super::ReasoningServer {
         );
         self.state.metrics.record_tool_use(
             &input_session_id,
-            ReasoningMode::Evidence.as_str(),
+            ReasoningMode::Evidence.tool_name(),
             success,
         );
 

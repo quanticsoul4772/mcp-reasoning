@@ -124,7 +124,7 @@ impl super::ReasoningServer {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or(input_session_id.as_str()),
-            ReasoningMode::Divergent.as_str(),
+            ReasoningMode::Divergent.tool_name(),
             success,
         );
 
@@ -428,7 +428,7 @@ impl super::ReasoningServer {
             .record(MetricEvent::new("reflection", elapsed_ms, success).with_operation(operation));
         self.state.metrics.record_tool_use(
             response.session_id.as_deref().unwrap_or(""),
-            ReasoningMode::Reflection.as_str(),
+            ReasoningMode::Reflection.tool_name(),
             success,
         );
 
@@ -612,7 +612,7 @@ impl super::ReasoningServer {
         );
         self.state.metrics.record_tool_use(
             &response.session_id,
-            ReasoningMode::Checkpoint.as_str(),
+            ReasoningMode::Checkpoint.tool_name(),
             success,
         );
 

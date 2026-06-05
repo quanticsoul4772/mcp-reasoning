@@ -76,7 +76,7 @@ MCP server providing structured reasoning capabilities via direct Anthropic Clau
 | Tool | Operations | Description |
 |------|------------|-------------|
 | `reasoning_preset` | list, run | Workflows: list=show presets by category, run=execute preset with automatic step sequencing and dependency management |
-| `reasoning_metrics` | summary, by_mode, invocations, fallbacks, config | Observability: summary=all stats, by_mode=mode stats, invocations=call history with filters, fallbacks=usage breakdown, config=debug info |
+| `reasoning_metrics` | summary, by_mode, invocations, fallbacks, chains, config | Observability: summary=all stats, by_mode=mode stats, invocations=call history with filters, fallbacks=usage breakdown, chains=tool-composition transition matrix (success rates, common sequences, anti-patterns), config=debug info |
 
 ---
 

@@ -213,6 +213,9 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("confidence_route", elapsed_ms, true));
+        self.state
+            .metrics
+            .record_tool_use(&auto_session_id, "reasoning_confidence_route", true);
 
         tracing::info!(
             tool = "reasoning_confidence_route",

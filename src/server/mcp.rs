@@ -114,7 +114,8 @@ impl McpServer {
             timing_db,
             preset_index,
             config.factory_timeout_ms,
-        );
+        )
+        .with_metrics(Arc::clone(&metrics));
 
         // Create progress notification channel
         let (progress_tx, _progress_rx) = super::progress::create_progress_channel();

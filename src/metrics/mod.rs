@@ -604,6 +604,84 @@ impl MetricsCollector {
         }
     }
 
+    /// Aggregated outgoing transitions from `from_tool`: for each tool observed
+    /// to follow it, the count and success rate, sorted by count (most common
+    /// first).
+    ///
+    /// This is a lighter, single-pass alternative to [`Self::chain_summary`]
+    /// (no dwell-time or per-session ordering) intended for cheap per-response
+    /// suggestion enrichment, where only "what tends to follow X, and does it
+    /// work?" matters. `avg_time_between_ms` is left as `0` here.
+    #[must_use]
+    pub fn transition_stats_from(&self, from_tool: &str) -> Vec<(String, TransitionStats)> {
+        let transitions = self
+            .transitions
+            .read()
+            .map(|t| t.clone())
+            .unwrap_or_default();
+
+        let mut agg: HashMap<String, (u32, u32)> = HashMap::new();
+        for t in transitions.iter().filter(|t| t.from_tool == from_tool) {
+            let entry = agg.entry(t.to_tool.clone()).or_insert((0, 0));
+            entry.0 += 1;
+            if t.success {
+                entry.1 += 1;
+            }
+        }
+
+        let mut out: Vec<(String, TransitionStats)> = agg
+            .into_iter()
+            .map(|(to_tool, (count, successful))| {
+                let success_rate = if count > 0 {
+                    f64::from(successful) / f64::from(count)
+                } else {
+                    0.0
+                };
+                (
+                    to_tool,
+                    TransitionStats {
+                        count,
+                        success_rate,
+                        avg_time_between_ms: 0,
+                    },
+                )
+            })
+            .collect();
+        out.sort_by(|a, b| b.1.count.cmp(&a.1.count).then_with(|| a.0.cmp(&b.0)));
+        out
+    }
+
+    /// Reconstruct the ordered sequence of tools used in `session_id` from the
+    /// recorded transitions (oldest first).
+    ///
+    /// Consecutive repeats of the same tool (multi-operation tools whose
+    /// self-transitions are not recorded) collapse to a single entry, which is
+    /// exactly the granularity preset matching wants. Returns empty when the
+    /// session has no recorded transitions (e.g. a single tool call so far).
+    #[must_use]
+    pub fn session_tool_history(&self, session_id: &str) -> Vec<String> {
+        let transitions = self
+            .transitions
+            .read()
+            .map(|t| t.clone())
+            .unwrap_or_default();
+
+        let mut seq: Vec<&ToolTransition> = transitions
+            .iter()
+            .filter(|t| t.session_id == session_id)
+            .collect();
+        seq.sort_by_key(|t| t.timestamp);
+
+        let mut history: Vec<String> = Vec::new();
+        for t in seq {
+            if history.last() != Some(&t.from_tool) {
+                history.push(t.from_tool.clone());
+            }
+            history.push(t.to_tool.clone());
+        }
+        history
+    }
+
     /// The last tool recorded in `session_id`, if any.
     ///
     /// This is the previous-tool source for chain-aware routing: `reasoning_meta`
@@ -1419,6 +1497,28 @@ mod tests {
     }
 
     #[test]
+    fn test_transition_stats_from_aggregates_and_sorts() {
+        let collector = MetricsCollector::new();
+        // tree → decision (2×, one fail), tree → mcts (1×, ok), linear → tree (1×).
+        collector.record_transition(ToolTransition::new("tree", "decision", "s1", true));
+        collector.record_transition(ToolTransition::new("tree", "decision", "s2", false));
+        collector.record_transition(ToolTransition::new("tree", "mcts", "s3", true));
+        collector.record_transition(ToolTransition::new("linear", "tree", "s4", true));
+
+        let from_tree = collector.transition_stats_from("tree");
+        // Sorted by count desc: decision (2) before mcts (1).
+        assert_eq!(from_tree.len(), 2);
+        assert_eq!(from_tree[0].0, "decision");
+        assert_eq!(from_tree[0].1.count, 2);
+        assert!((from_tree[0].1.success_rate - 0.5).abs() < f64::EPSILON);
+        assert_eq!(from_tree[1].0, "mcts");
+        assert_eq!(from_tree[1].1.count, 1);
+
+        // Unknown source → empty.
+        assert!(collector.transition_stats_from("nope").is_empty());
+    }
+
+    #[test]
     fn test_record_tool_use_skips_self_and_empty() {
         let collector = MetricsCollector::new();
         // Self-transitions (multi-operation tool) are not recorded.
@@ -1429,6 +1529,32 @@ mod tests {
         collector.record_tool_use("s2", "", true);
 
         assert!(collector.chain_summary().transitions.is_empty());
+    }
+
+    #[test]
+    fn test_session_tool_history_reconstructs_sequence() {
+        let collector = MetricsCollector::new();
+        collector.record_tool_use("s1", "reasoning_linear", true);
+        collector.record_tool_use("s1", "reasoning_divergent", true);
+        collector.record_tool_use("s1", "reasoning_decision", true);
+        // A different session must not bleed in.
+        collector.record_tool_use("s2", "reasoning_tree", true);
+        collector.record_tool_use("s2", "reasoning_mcts", true);
+
+        assert_eq!(
+            collector.session_tool_history("s1"),
+            vec![
+                "reasoning_linear".to_string(),
+                "reasoning_divergent".to_string(),
+                "reasoning_decision".to_string(),
+            ]
+        );
+        assert_eq!(
+            collector.session_tool_history("s2"),
+            vec!["reasoning_tree".to_string(), "reasoning_mcts".to_string()]
+        );
+        // No transitions recorded → empty (single tool call or unknown session).
+        assert!(collector.session_tool_history("missing").is_empty());
     }
 
     #[test]

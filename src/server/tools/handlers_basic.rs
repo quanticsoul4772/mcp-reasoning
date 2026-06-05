@@ -88,7 +88,7 @@ impl super::ReasoningServer {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or(input_session_id.as_str()),
-            ReasoningMode::Linear.as_str(),
+            ReasoningMode::Linear.tool_name(),
             success,
         );
 
@@ -492,7 +492,7 @@ impl super::ReasoningServer {
             .record(MetricEvent::new("tree", elapsed_ms, success).with_operation(operation));
         self.state.metrics.record_tool_use(
             &response.session_id,
-            ReasoningMode::Tree.as_str(),
+            ReasoningMode::Tree.tool_name(),
             success,
         );
 
@@ -570,7 +570,7 @@ impl super::ReasoningServer {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or(""),
-            ReasoningMode::Auto.as_str(),
+            ReasoningMode::Auto.tool_name(),
             success,
         );
 

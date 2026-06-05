@@ -902,7 +902,7 @@ impl super::ReasoningServer {
         );
         self.state.metrics.record_tool_use(
             &input_session_id,
-            ReasoningMode::Timeline.as_str(),
+            ReasoningMode::Timeline.tool_name(),
             success,
         );
 
@@ -1212,7 +1212,7 @@ impl super::ReasoningServer {
         );
         self.state.metrics.record_tool_use(
             &response.session_id,
-            ReasoningMode::Mcts.as_str(),
+            ReasoningMode::Mcts.tool_name(),
             success,
         );
 
@@ -1380,7 +1380,7 @@ impl super::ReasoningServer {
         );
         self.state.metrics.record_tool_use(
             response.session_id.as_deref().unwrap_or(""),
-            ReasoningMode::Counterfactual.as_str(),
+            ReasoningMode::Counterfactual.tool_name(),
             success,
         );
 
