@@ -5,6 +5,7 @@ use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::meta::MetaMode;
 use crate::modes::{AutoMode, LinearMode, TreeMode};
+use crate::prompts::ReasoningMode;
 use crate::server::metadata_builders;
 use crate::server::requests::{
     AutoRequest, DivergentRequest, LinearRequest, MetaRequest, ReflectionRequest, TreeRequest,
@@ -87,7 +88,7 @@ impl super::ReasoningServer {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or(input_session_id.as_str()),
-            "linear",
+            ReasoningMode::Linear.as_str(),
             success,
         );
 
@@ -489,9 +490,11 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("tree", elapsed_ms, success).with_operation(operation));
-        self.state
-            .metrics
-            .record_tool_use(&response.session_id, "tree", success);
+        self.state.metrics.record_tool_use(
+            &response.session_id,
+            ReasoningMode::Tree.as_str(),
+            success,
+        );
 
         // Add metadata on success
         if success {
@@ -567,7 +570,7 @@ impl super::ReasoningServer {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or(""),
-            "auto",
+            ReasoningMode::Auto.as_str(),
             success,
         );
 
