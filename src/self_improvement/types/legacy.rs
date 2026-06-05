@@ -55,8 +55,8 @@ impl std::error::Error for ParseActionTypeError {}
 impl std::str::FromStr for ActionType {
     type Err = ParseActionTypeError;
 
-    /// Parse the lowercase string form produced by [`Display`]. The inverse of
-    /// `to_string()`, used to rehydrate persisted action-type keys.
+    /// Parse the lowercase string form produced by [`Display`](std::fmt::Display).
+    /// The inverse of `to_string()`, used to rehydrate persisted action-type keys.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "config_adjust" => Ok(Self::ConfigAdjust),
