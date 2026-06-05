@@ -184,6 +184,15 @@ impl Learner {
         &self.action_type_stats
     }
 
+    /// Replace the per-action-type stats — used to restore persisted learning at
+    /// startup so [`Self::guidance`]'s effectiveness table reflects prior runs.
+    ///
+    /// Only the aggregates are restored; per-lesson insights are not (the
+    /// `recent_insights` list re-warms from new lessons at runtime).
+    pub fn seed_stats(&mut self, stats: HashMap<ActionType, ActionTypeStats>) {
+        self.action_type_stats = stats;
+    }
+
     /// Get summary of learning.
     #[must_use]
     pub fn summary(&self) -> LearningSummary {
@@ -731,6 +740,35 @@ mod tests {
         // The failure insight is surfaced first.
         assert!(!guidance.recent_insights.is_empty());
         assert!(guidance.recent_insights[0].contains("failed"));
+    }
+
+    #[test]
+    fn test_seed_stats_restores_effectiveness_guidance() {
+        let mut learner = Learner::with_defaults();
+
+        // Simulate stats restored from storage on startup.
+        let mut stats = std::collections::HashMap::new();
+        stats.insert(
+            ActionType::ConfigAdjust,
+            ActionTypeStats {
+                total_executions: 4,
+                successful: 3,
+                avg_reward: 0.5,
+                total_expected: 0.4,
+                total_actual: 0.5,
+            },
+        );
+        learner.seed_stats(stats);
+
+        let guidance = learner.guidance(5);
+        assert!(!guidance.is_empty());
+        assert_eq!(guidance.effectiveness.len(), 1);
+        let eff = &guidance.effectiveness[0];
+        assert_eq!(eff.action_type, "config_adjust");
+        assert_eq!(eff.attempts, 4);
+        assert!((eff.success_rate - 0.75).abs() < 1e-9);
+        // No lessons were seeded — insights re-warm at runtime (chosen tradeoff).
+        assert!(guidance.recent_insights.is_empty());
     }
 
     #[test]

@@ -8,7 +8,8 @@ use sqlx::{Row, SqlitePool};
 
 use super::helpers::{parse_action_status, parse_datetime, parse_diagnosis_status, parse_severity};
 use super::records::{
-    ActionRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord, InvocationStats,
+    ActionRecord, ActionTypeStatRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord,
+    InvocationStats,
 };
 use crate::error::StorageError;
 use crate::self_improvement::types::{ActionStatus, DiagnosisStatus};
@@ -371,6 +372,77 @@ impl SelfImprovementStorage {
         .map_err(|e| query_error(e.to_string()))?;
 
         Ok(())
+    }
+
+    // ------------------------------------------------------------------------
+    // Action-Type Learning Stats Operations (Migration 008)
+    // ------------------------------------------------------------------------
+
+    /// Upsert the persisted learning stats for one action type.
+    ///
+    /// Keyed on `action_type`, so repeated calls overwrite the row with the
+    /// latest aggregates rather than accumulating duplicates.
+    pub async fn upsert_action_type_stats(
+        &self,
+        record: &ActionTypeStatRecord,
+    ) -> Result<(), StorageError> {
+        sqlx::query(
+            r"
+            INSERT INTO si_action_type_stats (
+                action_type, total_executions, successful, avg_reward,
+                total_expected, total_actual, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(action_type) DO UPDATE SET
+                total_executions = excluded.total_executions,
+                successful       = excluded.successful,
+                avg_reward       = excluded.avg_reward,
+                total_expected   = excluded.total_expected,
+                total_actual     = excluded.total_actual,
+                updated_at       = excluded.updated_at
+            ",
+        )
+        .bind(&record.action_type)
+        .bind(record.total_executions)
+        .bind(record.successful)
+        .bind(record.avg_reward)
+        .bind(record.total_expected)
+        .bind(record.total_actual)
+        .bind(Utc::now().to_rfc3339())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| query_error(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Load all persisted action-type learning stats (to seed the Learner on
+    /// startup).
+    pub async fn get_all_action_type_stats(
+        &self,
+    ) -> Result<Vec<ActionTypeStatRecord>, StorageError> {
+        let rows = sqlx::query(
+            r"
+            SELECT action_type, total_executions, successful, avg_reward,
+                   total_expected, total_actual
+            FROM si_action_type_stats
+            ",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| query_error(e.to_string()))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| ActionTypeStatRecord {
+                action_type: row.get("action_type"),
+                total_executions: row.get("total_executions"),
+                successful: row.get("successful"),
+                avg_reward: row.get("avg_reward"),
+                total_expected: row.get("total_expected"),
+                total_actual: row.get("total_actual"),
+            })
+            .collect())
     }
 
     /// Get action by ID.

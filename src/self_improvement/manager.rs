@@ -36,6 +36,7 @@
 //! └──────────────────────────────────────────────────────────────┘
 //! ```
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -51,8 +52,11 @@ use crate::traits::AnthropicClientTrait;
 
 use super::circuit_breaker::CircuitState;
 use super::executor::ExecutionResult;
-use super::learner::{LearningResult, LearningSummary};
-use super::storage::{ActionRecord, ConfigOverrideRecord, DiagnosisRecord, SelfImprovementStorage};
+use super::learner::{ActionTypeStats, LearningResult, LearningSummary};
+use super::storage::{
+    ActionRecord, ActionTypeStatRecord, ConfigOverrideRecord, DiagnosisRecord,
+    SelfImprovementStorage,
+};
 use super::system::{CycleResult, SelfImprovementSystem, SystemConfig};
 use super::types::{ActionStatus, ActionType, DiagnosisStatus, SelfImprovementAction, Severity};
 
@@ -591,6 +595,10 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             "Self-improvement manager started"
         );
 
+        // Restore learning effectiveness persisted by prior runs so guidance is
+        // warm from the first cycle instead of resetting on every restart.
+        self.load_learner_stats().await;
+
         loop {
             tokio::select! {
                 _ = interval.tick() => {
@@ -625,8 +633,85 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
         if let Err(e) = self.persist_cycle_audit(&result).await {
             tracing::error!(error = %e, "Failed to persist self-improvement cycle audit");
         }
+        self.persist_learner_stats().await;
         self.refresh_pending_count().await;
         self.update_status();
+    }
+
+    /// Restore the Learner's per-action-type effectiveness from storage so SI
+    /// guidance survives restarts. Best-effort: a storage error logs and leaves
+    /// the Learner empty (it re-accumulates from new cycles). Unknown persisted
+    /// action types are skipped.
+    async fn load_learner_stats(&mut self) {
+        let records = match self.storage.get_all_action_type_stats().await {
+            Ok(records) => records,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to load persisted SI learning stats");
+                return;
+            }
+        };
+        if records.is_empty() {
+            return;
+        }
+
+        let mut stats: HashMap<ActionType, ActionTypeStats> = HashMap::new();
+        for record in records {
+            match record.action_type.parse::<ActionType>() {
+                Ok(action_type) => {
+                    stats.insert(
+                        action_type,
+                        ActionTypeStats {
+                            total_executions: u64::try_from(record.total_executions).unwrap_or(0),
+                            successful: u64::try_from(record.successful).unwrap_or(0),
+                            avg_reward: record.avg_reward,
+                            total_expected: record.total_expected,
+                            total_actual: record.total_actual,
+                        },
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Skipping unknown persisted SI action type");
+                }
+            }
+        }
+
+        let restored = stats.len();
+        self.system.seed_learner_stats(stats);
+        tracing::info!(
+            action_types = restored,
+            "Restored SI learning stats from storage"
+        );
+    }
+
+    /// Persist the Learner's current per-action-type effectiveness so it survives
+    /// restarts. Called after each cycle; best-effort (errors are logged, not
+    /// propagated, so a storage hiccup never aborts the improvement loop).
+    async fn persist_learner_stats(&self) {
+        // Snapshot to owned records first so the borrow of `self.system` is
+        // released before the upsert awaits.
+        let records: Vec<ActionTypeStatRecord> = self
+            .system
+            .learner_stats()
+            .iter()
+            .map(|(action_type, stats)| ActionTypeStatRecord {
+                action_type: action_type.to_string(),
+                total_executions: i64::try_from(stats.total_executions).unwrap_or(i64::MAX),
+                successful: i64::try_from(stats.successful).unwrap_or(i64::MAX),
+                avg_reward: stats.avg_reward,
+                total_expected: stats.total_expected,
+                total_actual: stats.total_actual,
+            })
+            .collect();
+
+        for record in records {
+            if let Err(e) = self.storage.upsert_action_type_stats(&record).await {
+                tracing::error!(
+                    error = %e,
+                    action_type = %record.action_type,
+                    "Failed to persist SI learning stats"
+                );
+            }
+        }
     }
 
     /// Fold a completed cycle's outcome into the aggregate counters and refresh
@@ -880,6 +965,7 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
                 if let Err(e) = self.persist_cycle_audit(&result).await {
                     tracing::error!(error = %e, "Failed to persist self-improvement cycle audit");
                 }
+                self.persist_learner_stats().await;
                 self.refresh_pending_count().await;
                 self.update_status();
                 let _ = response_tx.send(result);
@@ -1145,6 +1231,58 @@ mod tests {
     async fn create_test_storage() -> Arc<SelfImprovementStorage> {
         let sqlite_storage = SqliteStorage::new_in_memory().await.unwrap();
         Arc::new(SelfImprovementStorage::new(sqlite_storage.pool.clone()))
+    }
+
+    #[tokio::test]
+    async fn test_learner_stats_persist_across_restart() {
+        use super::super::learner::ActionTypeStats;
+        use super::super::types::ActionType;
+
+        // Two managers sharing ONE database simulates a process restart.
+        let sqlite = SqliteStorage::new_in_memory().await.unwrap();
+        let storage_a = Arc::new(SelfImprovementStorage::new(sqlite.pool.clone()));
+        let storage_b = Arc::new(SelfImprovementStorage::new(sqlite.pool.clone()));
+
+        let (mut manager_a, _h1) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            storage_a,
+        );
+
+        // The first run accumulates effectiveness, then persists it.
+        let mut stats = HashMap::new();
+        stats.insert(
+            ActionType::ConfigAdjust,
+            ActionTypeStats {
+                total_executions: 6,
+                successful: 5,
+                avg_reward: 0.6,
+                total_expected: 0.5,
+                total_actual: 0.6,
+            },
+        );
+        manager_a.system.seed_learner_stats(stats);
+        manager_a.persist_learner_stats().await;
+
+        // A fresh manager (the "restart") starts empty, then restores from storage.
+        let (mut manager_b, _h2) = SelfImprovementManager::new(
+            SelfImprovementConfig::default(),
+            create_mock_client(),
+            Arc::new(MetricsCollector::new()),
+            storage_b,
+        );
+        assert!(manager_b.system.learner_stats().is_empty());
+
+        manager_b.load_learner_stats().await;
+
+        let restored = manager_b.system.learner_stats();
+        let cfg = restored
+            .get(&ActionType::ConfigAdjust)
+            .expect("config_adjust effectiveness restored after restart");
+        assert_eq!(cfg.total_executions, 6);
+        assert_eq!(cfg.successful, 5);
+        assert!((cfg.avg_reward - 0.6).abs() < f64::EPSILON);
     }
 
     #[tokio::test]
