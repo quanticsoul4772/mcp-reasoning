@@ -321,6 +321,7 @@ async fn test_meta_success_path_with_api_classification() {
         content: "Analyze the sequential steps for deploying a new service".to_string(),
         problem_type_hint: None, // No hint → API classifies the problem
         min_confidence: None,
+        previous_tool: None,
     };
 
     let resp = server.reasoning_meta(Parameters(req)).await;

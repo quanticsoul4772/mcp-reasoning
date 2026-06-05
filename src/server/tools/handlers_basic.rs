@@ -759,6 +759,7 @@ impl super::ReasoningServer {
                 &req.content,
                 req.problem_type_hint,
                 req.min_confidence,
+                req.previous_tool,
                 &self.state.metrics,
             ),
         )

@@ -200,6 +200,11 @@ pub struct MetaRequest {
     pub problem_type_hint: Option<String>,
     /// Minimum confidence threshold for recommendation (0.0-1.0, default 0.4).
     pub min_confidence: Option<f64>,
+    /// The reasoning tool you just ran (bare mode name, e.g. "decision",
+    /// "divergent"). When provided, meta consults the observed tool-chain history
+    /// — which tool has historically succeeded after this one — and uses it to
+    /// break ties / resolve low-data routing. Omit if there is no prior tool.
+    pub previous_tool: Option<String>,
 }
 
 /// Request for graph reasoning.

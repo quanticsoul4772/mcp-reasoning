@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::ModeError;
-use crate::metrics::{MetricsCollector, ToolEffectiveness};
+use crate::metrics::{MetricsCollector, ToolEffectiveness, TransitionStats};
 use crate::modes::{extract_json, validate_content};
 use crate::traits::{AnthropicClientTrait, CompletionConfig, Message, StorageTrait};
 
@@ -65,6 +65,7 @@ where
         content: &str,
         problem_type_hint: Option<String>,
         min_confidence: Option<f64>,
+        previous_tool: Option<String>,
         metrics: &MetricsCollector,
     ) -> Result<MetaRouteResult, ModeError> {
         validate_content(content)?;
@@ -90,6 +91,23 @@ where
         let candidates = metrics.effectiveness_by_context(&classification.problem_type);
         let recommendation = metrics.recommend_tool(&classification.problem_type);
 
+        // Tool-chain signal: which tool has historically succeeded after the tool
+        // the caller just ran. Used to enrich a confident pick and to resolve the
+        // low-data fallback below. `None` when there's no prior tool or no data.
+        let chain_hint = previous_tool
+            .as_deref()
+            .and_then(|prev| Self::chain_hint(metrics, prev));
+        let chain_note = match (&chain_hint, previous_tool.as_deref()) {
+            (Some((next_tool, stats)), Some(prev)) => format!(
+                " Tool-chain history: {} succeeded after {} in {:.0}% of {} sessions.",
+                next_tool,
+                prev,
+                stats.success_rate * 100.0,
+                stats.count
+            ),
+            _ => String::new(),
+        };
+
         if let Some((tool_name, confidence)) = recommendation {
             let threshold = min_confidence.unwrap_or(0.4);
             if confidence >= threshold {
@@ -105,11 +123,12 @@ where
                     problem_type: classification.problem_type,
                     confidence,
                     reasoning: format!(
-                        "Selected {} based on {} observations with {:.0}% success rate for this problem type. {}",
+                        "Selected {} based on {} observations with {:.0}% success rate for this problem type. {}{}",
                         tool_name,
                         sample_count,
                         effectiveness.as_ref().map_or(0.0, |e| e.success_rate * 100.0),
-                        classification.reasoning
+                        classification.reasoning,
+                        chain_note
                     ),
                     fallback_to_auto: false,
                     effectiveness,
@@ -118,7 +137,37 @@ where
             }
         }
 
-        // Step 3: Fall back — not enough data
+        // Step 3: Fall back — not enough effectiveness data. If tool-chain history
+        // points to a tool that reliably follows the previous one, route there
+        // instead of a blind auto fallback. This is what makes the recorded
+        // transitions an actual routing decision rather than inert data.
+        if let Some((next_tool, stats)) = chain_hint {
+            tracing::info!(
+                tool = "reasoning_meta",
+                next_tool = %next_tool,
+                problem_type = %classification.problem_type,
+                "Routing via tool-chain history (no confident effectiveness data)"
+            );
+
+            return Ok(MetaRouteResult {
+                selected_tool: next_tool.clone(),
+                problem_type: classification.problem_type,
+                confidence: stats.success_rate,
+                reasoning: format!(
+                    "No confident effectiveness data for this problem type, but tool-chain \
+                     history shows {} succeeded after {} in {:.0}% of {} sessions. {}",
+                    next_tool,
+                    previous_tool.as_deref().unwrap_or("the previous tool"),
+                    stats.success_rate * 100.0,
+                    stats.count,
+                    classification.reasoning
+                ),
+                fallback_to_auto: false,
+                effectiveness: None,
+                candidates,
+            });
+        }
+
         let reason = if candidates.is_empty() {
             "No effectiveness data for this problem type"
         } else {
@@ -144,6 +193,32 @@ where
             effectiveness: None,
             candidates,
         })
+    }
+
+    /// Pick the tool that most reliably follows `previous_tool` from recorded
+    /// tool-chain transitions, if one clears the minimum-observation floor.
+    ///
+    /// Ranks candidates by success rate, breaking ties by observation count.
+    /// Returns `None` when no transition from `previous_tool` has been observed at
+    /// least `MIN_OBSERVED` times — so sparse/cold-start data has no influence.
+    fn chain_hint(
+        metrics: &MetricsCollector,
+        previous_tool: &str,
+    ) -> Option<(String, TransitionStats)> {
+        // Mirror `recommend_tool`'s sample floor so a single fluke transition
+        // never steers routing.
+        const MIN_OBSERVED: u32 = 3;
+
+        metrics
+            .transitions_from(previous_tool)
+            .into_iter()
+            .filter(|(_, stats)| stats.count >= MIN_OBSERVED)
+            .max_by(|a, b| {
+                a.1.success_rate
+                    .partial_cmp(&b.1.success_rate)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.1.count.cmp(&b.1.count))
+            })
     }
 
     /// Classify problem type using the LLM.
@@ -247,6 +322,7 @@ mod tests {
                 "Solve x^2 + 3x + 2 = 0",
                 Some("math".to_string()),
                 None,
+                None,
                 &metrics,
             )
             .await;
@@ -270,6 +346,7 @@ mod tests {
             .route(
                 "Something",
                 Some("unknown_type".to_string()),
+                None,
                 None,
                 &metrics,
             )
@@ -296,7 +373,7 @@ mod tests {
 
         let mode = MetaMode::new(mock_storage, mock_client);
         let result = mode
-            .route("Solve x^2 + 3x + 2 = 0", None, None, &metrics)
+            .route("Solve x^2 + 3x + 2 = 0", None, None, None, &metrics)
             .await;
 
         assert!(result.is_ok());
@@ -315,7 +392,13 @@ mod tests {
         let mode = MetaMode::new(mock_storage, mock_client);
         // Set very high threshold that data can't meet
         let result = mode
-            .route("Solve 2+2", Some("math".to_string()), Some(0.99), &metrics)
+            .route(
+                "Solve 2+2",
+                Some("math".to_string()),
+                Some(0.99),
+                None,
+                &metrics,
+            )
             .await;
 
         assert!(result.is_ok());
@@ -330,8 +413,122 @@ mod tests {
         let metrics = MetricsCollector::new();
 
         let mode = MetaMode::new(mock_storage, mock_client);
-        let result = mode.route("", None, None, &metrics).await;
+        let result = mode.route("", None, None, None, &metrics).await;
 
         assert!(result.is_err());
+    }
+
+    /// Build a collector whose only data is a strong `decision -> linear`
+    /// tool-chain (4 successful observations), with NO per-problem effectiveness
+    /// data, so routing must fall through to the chain-history branch.
+    fn metrics_with_chain_decision_to_linear(observations: usize) -> MetricsCollector {
+        let metrics = MetricsCollector::new();
+        for i in 0..observations {
+            let session = format!("chain-s{i}");
+            metrics.record_tool_use(&session, "decision", true);
+            metrics.record_tool_use(&session, "linear", true); // decision -> linear, success
+        }
+        metrics
+    }
+
+    #[tokio::test]
+    async fn test_route_uses_chain_history_in_fallback() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+        // Chain data present, but no effectiveness data for this problem type.
+        let metrics = metrics_with_chain_decision_to_linear(4);
+
+        let mode = MetaMode::new(mock_storage, mock_client);
+        let result = mode
+            .route(
+                "Something",
+                Some("unknown_type".to_string()),
+                None,
+                Some("decision".to_string()),
+                &metrics,
+            )
+            .await
+            .unwrap();
+
+        // The inert matrix now drives a real routing decision.
+        assert_eq!(result.selected_tool, "linear");
+        assert!(!result.fallback_to_auto);
+        assert!(result.reasoning.contains("tool-chain history"));
+    }
+
+    #[tokio::test]
+    async fn test_route_no_chain_influence_without_previous_tool() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+        let metrics = metrics_with_chain_decision_to_linear(4);
+
+        let mode = MetaMode::new(mock_storage, mock_client);
+        // No previous_tool → chain data is ignored → unchanged auto fallback.
+        let result = mode
+            .route(
+                "Something",
+                Some("unknown_type".to_string()),
+                None,
+                None,
+                &metrics,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.selected_tool, "auto");
+        assert!(result.fallback_to_auto);
+    }
+
+    #[tokio::test]
+    async fn test_route_chain_below_floor_falls_back_to_auto() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+        // Only 2 observations — below the MIN_OBSERVED floor of 3.
+        let metrics = metrics_with_chain_decision_to_linear(2);
+
+        let mode = MetaMode::new(mock_storage, mock_client);
+        let result = mode
+            .route(
+                "Something",
+                Some("unknown_type".to_string()),
+                None,
+                Some("decision".to_string()),
+                &metrics,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.selected_tool, "auto");
+        assert!(result.fallback_to_auto);
+    }
+
+    #[tokio::test]
+    async fn test_chain_hint_enriches_confident_pick_without_overriding() {
+        let mock_storage = MockStorageTrait::new();
+        let mock_client = MockAnthropicClientTrait::new();
+        // Effectiveness data picks "linear" for math; chain data points elsewhere.
+        let metrics = create_mock_metrics_with_data();
+        for i in 0..4 {
+            let session = format!("conf-s{i}");
+            metrics.record_tool_use(&session, "decision", true);
+            metrics.record_tool_use(&session, "tree", true); // decision -> tree
+        }
+
+        let mode = MetaMode::new(mock_storage, mock_client);
+        let result = mode
+            .route(
+                "Solve x^2 + 3x + 2 = 0",
+                Some("math".to_string()),
+                None,
+                Some("decision".to_string()),
+                &metrics,
+            )
+            .await
+            .unwrap();
+
+        // Effectiveness pick wins; the chain hint only annotates the reasoning.
+        assert_eq!(result.selected_tool, "linear");
+        assert!(!result.fallback_to_auto);
+        assert!(result.reasoning.contains("Tool-chain history"));
     }
 }

@@ -16,6 +16,7 @@ async fn test_meta_basic() {
         content: "Analyze tradeoffs between approaches step by step".to_string(),
         problem_type_hint: None,
         min_confidence: None,
+        previous_tool: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     assert!(!resp.selected_tool.is_empty());
@@ -29,6 +30,7 @@ async fn test_meta_with_problem_type_hint() {
         content: "What is 2+2?".to_string(),
         problem_type_hint: Some("math".to_string()),
         min_confidence: Some(0.1),
+        previous_tool: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // API will fail (no real key), falls back to auto
@@ -44,6 +46,7 @@ async fn test_meta_with_code_hint() {
         content: "Review this Rust code for bugs".to_string(),
         problem_type_hint: Some("code_review".to_string()),
         min_confidence: Some(0.5),
+        previous_tool: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // API fails → fallback response: selected_tool is "auto"
@@ -58,6 +61,7 @@ async fn test_meta_empty_content() {
         content: String::new(),
         problem_type_hint: None,
         min_confidence: Some(0.8),
+        previous_tool: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // Empty content → API fails → fallback
@@ -71,6 +75,7 @@ async fn test_meta_high_confidence_threshold() {
         content: "planning task".to_string(),
         problem_type_hint: Some("planning".to_string()),
         min_confidence: Some(0.99),
+        previous_tool: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // Should always fall back since API is unavailable in tests
