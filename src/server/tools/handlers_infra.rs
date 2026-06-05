@@ -360,16 +360,35 @@ impl super::ReasoningServer {
             }
             "chains" => {
                 let summary = self.state.metrics.chain_summary();
-                (
-                    MetricsResponse {
-                        summary: None,
-                        mode_stats: None,
-                        invocations: None,
-                        config: None,
-                        chains: Some(serde_json::to_value(&summary).unwrap_or_default()),
-                    },
-                    true,
-                )
+                match serde_json::to_value(&summary) {
+                    Ok(value) => (
+                        MetricsResponse {
+                            summary: None,
+                            mode_stats: None,
+                            invocations: None,
+                            config: None,
+                            chains: Some(value),
+                        },
+                        true,
+                    ),
+                    Err(e) => {
+                        // Don't hide a serialization failure behind an empty value:
+                        // surface it to the caller and mark the query unsuccessful.
+                        tracing::error!(error = %e, "failed to serialize chain summary");
+                        (
+                            MetricsResponse {
+                                summary: None,
+                                mode_stats: None,
+                                invocations: None,
+                                config: Some(serde_json::json!({
+                                    "error": format!("Failed to serialize chain summary: {e}")
+                                })),
+                                chains: None,
+                            },
+                            false,
+                        )
+                    }
+                }
             }
             "config" => (
                 MetricsResponse {
