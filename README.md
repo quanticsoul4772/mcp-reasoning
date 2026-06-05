@@ -244,7 +244,7 @@ Ask Claude: *"Run the architecture-decision preset to evaluate switching to Kube
 
 ### Session Persistence
 
-Reasoning state is stored in SQLite. Sessions can be resumed across conversations using checkpoints.
+Reasoning state (sessions, thoughts, branches) is stored in SQLite, so sessions can be **resumed across conversations** with `reasoning_resume` (which reloads the session's thought chain). Checkpoints are a separate feature for saving and rolling back state *within* a session (`reasoning_checkpoint`).
 
 ### Semantic Memory
 
