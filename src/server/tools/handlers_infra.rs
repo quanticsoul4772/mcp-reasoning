@@ -179,25 +179,26 @@ impl super::ReasoningServer {
         response
     }
 
-    pub(super) async fn handle_metrics(&self, req: MetricsRequest) -> MetricsResponse {
-        let timer = Timer::start();
-        let query = req.query.clone();
-
-        let (response, success) = match query.as_str() {
-            "summary" => {
-                let summary = self.state.metrics.summary();
+    /// Build the all-modes summary response, shared by the `summary` and
+    /// empty-`by_mode` queries. Surfaces a `by_mode` serialization failure as an
+    /// error (`config.error` + `success = false`) rather than swallowing it into
+    /// an empty value.
+    fn summary_response(summary: &crate::metrics::MetricsSummary) -> (MetricsResponse, bool) {
+        match serde_json::to_value(&summary.by_mode) {
+            Ok(by_mode) => {
+                let avg_latency_ms = summary
+                    .by_mode
+                    .values()
+                    .map(|m| m.avg_latency_ms)
+                    .sum::<f64>()
+                    / summary.by_mode.len().max(1) as f64;
                 (
                     MetricsResponse {
                         summary: Some(MetricsSummary {
                             total_calls: summary.total_invocations,
                             success_rate: summary.overall_success_rate,
-                            avg_latency_ms: summary
-                                .by_mode
-                                .values()
-                                .map(|m| m.avg_latency_ms)
-                                .sum::<f64>()
-                                / summary.by_mode.len().max(1) as f64,
-                            by_mode: serde_json::to_value(&summary.by_mode).unwrap_or_default(),
+                            avg_latency_ms,
+                            by_mode,
                         }),
                         mode_stats: None,
                         invocations: None,
@@ -207,32 +208,40 @@ impl super::ReasoningServer {
                     true,
                 )
             }
+            Err(e) => {
+                tracing::error!(error = %e, "failed to serialize by_mode metrics summary");
+                (
+                    MetricsResponse {
+                        summary: None,
+                        mode_stats: None,
+                        invocations: None,
+                        config: Some(serde_json::json!({
+                            "error": format!("Failed to serialize metrics summary: {e}")
+                        })),
+                        chains: None,
+                    },
+                    false,
+                )
+            }
+        }
+    }
+
+    pub(super) async fn handle_metrics(&self, req: MetricsRequest) -> MetricsResponse {
+        let timer = Timer::start();
+        let query = req.query.clone();
+
+        let (response, success) = match query.as_str() {
+            "summary" => {
+                let summary = self.state.metrics.summary();
+                Self::summary_response(&summary)
+            }
             "by_mode" => {
                 let mode_name = req.mode_name.clone().unwrap_or_default();
 
                 // If mode_name is empty, return summary with all modes instead
                 if mode_name.is_empty() {
                     let summary = self.state.metrics.summary();
-                    (
-                        MetricsResponse {
-                            summary: Some(MetricsSummary {
-                                total_calls: summary.total_invocations,
-                                success_rate: summary.overall_success_rate,
-                                avg_latency_ms: summary
-                                    .by_mode
-                                    .values()
-                                    .map(|m| m.avg_latency_ms)
-                                    .sum::<f64>()
-                                    / summary.by_mode.len().max(1) as f64,
-                                by_mode: serde_json::to_value(&summary.by_mode).unwrap_or_default(),
-                            }),
-                            mode_stats: None,
-                            invocations: None,
-                            config: None,
-                            chains: None,
-                        },
-                        true,
-                    )
+                    Self::summary_response(&summary)
                 } else {
                     let events = self.state.metrics.invocations_by_mode(&mode_name);
                     let total = events.len() as u64;
