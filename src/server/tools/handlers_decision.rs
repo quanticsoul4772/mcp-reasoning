@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::{DecisionMode, DecisionValidation, EvidenceAnalysis, EvidenceMode};
+use crate::prompts::ReasoningMode;
 use crate::server::requests::{DecisionRequest, EvidenceRequest};
 use crate::server::responses::{
     BayesianBreakdown, BayesianEvidence, ComparisonInfo, CredibilityBreakdown, CriterionInfo,
@@ -494,9 +495,11 @@ impl super::ReasoningServer {
                 .with_operation(decision_type)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
-        self.state
-            .metrics
-            .record_tool_use(&input_session_id, "decision", success);
+        self.state.metrics.record_tool_use(
+            &input_session_id,
+            ReasoningMode::Decision.as_str(),
+            success,
+        );
 
         response
     }
@@ -738,9 +741,11 @@ impl super::ReasoningServer {
                 .with_operation(evidence_type)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
-        self.state
-            .metrics
-            .record_tool_use(&input_session_id, "evidence", success);
+        self.state.metrics.record_tool_use(
+            &input_session_id,
+            ReasoningMode::Evidence.as_str(),
+            success,
+        );
 
         response
     }

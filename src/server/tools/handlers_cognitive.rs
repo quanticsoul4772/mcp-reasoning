@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::{CheckpointContext, CheckpointMode, DivergentMode, ReflectionMode};
+use crate::prompts::ReasoningMode;
 use crate::server::metadata_builders;
 use crate::server::requests::{CheckpointRequest, DivergentRequest, ReflectionRequest};
 use crate::server::responses::{
@@ -123,7 +124,7 @@ impl super::ReasoningServer {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or(input_session_id.as_str()),
-            "divergent",
+            ReasoningMode::Divergent.as_str(),
             success,
         );
 
@@ -427,7 +428,7 @@ impl super::ReasoningServer {
             .record(MetricEvent::new("reflection", elapsed_ms, success).with_operation(operation));
         self.state.metrics.record_tool_use(
             response.session_id.as_deref().unwrap_or(""),
-            "reflection",
+            ReasoningMode::Reflection.as_str(),
             success,
         );
 
@@ -609,9 +610,11 @@ impl super::ReasoningServer {
         self.state.metrics.record(
             MetricEvent::new("checkpoint", timer.elapsed_ms(), success).with_operation(operation),
         );
-        self.state
-            .metrics
-            .record_tool_use(&response.session_id, "checkpoint", success);
+        self.state.metrics.record_tool_use(
+            &response.session_id,
+            ReasoningMode::Checkpoint.as_str(),
+            success,
+        );
 
         response
     }

@@ -11,6 +11,7 @@ use crate::modes::{
     FrontierNode, MctsMode, QualityAssessment, QualityTrend, RobustStrategy, SelectedNode,
     TemporalStructure, TimelineEvent, TimelineMode,
 };
+use crate::prompts::ReasoningMode;
 use crate::server::requests::{CounterfactualRequest, MctsRequest, TimelineRequest};
 use crate::server::responses::{
     AssociationInfo, BacktrackSuggestion, BranchComparison, BranchDifferenceInfo, BranchEventInfo,
@@ -899,9 +900,11 @@ impl super::ReasoningServer {
                 .with_operation(&operation)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
-        self.state
-            .metrics
-            .record_tool_use(&input_session_id, "timeline", success);
+        self.state.metrics.record_tool_use(
+            &input_session_id,
+            ReasoningMode::Timeline.as_str(),
+            success,
+        );
 
         response
     }
@@ -1207,9 +1210,11 @@ impl super::ReasoningServer {
                 .with_validation(response.validation.as_ref().map(|v| v.consistent))
                 .with_convergence(response.convergence.as_ref().map(|c| c.converged)),
         );
-        self.state
-            .metrics
-            .record_tool_use(&response.session_id, "mcts", success);
+        self.state.metrics.record_tool_use(
+            &response.session_id,
+            ReasoningMode::Mcts.as_str(),
+            success,
+        );
 
         response
     }
@@ -1375,7 +1380,7 @@ impl super::ReasoningServer {
         );
         self.state.metrics.record_tool_use(
             response.session_id.as_deref().unwrap_or(""),
-            "counterfactual",
+            ReasoningMode::Counterfactual.as_str(),
             success,
         );
 

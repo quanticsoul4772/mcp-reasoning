@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::{DetectMode, GraphMode};
+use crate::prompts::ReasoningMode;
 use crate::server::metadata_builders;
 use crate::server::requests::{DetectRequest, GraphRequest};
 use crate::server::responses::{
@@ -363,7 +364,7 @@ impl super::ReasoningServer {
         );
         self.state
             .metrics
-            .record_tool_use(&session_id, "graph", success);
+            .record_tool_use(&session_id, ReasoningMode::Graph.as_str(), success);
 
         let mut response = result.unwrap_or_else(|e| GraphResponse {
             session_id: session_id.clone(),
@@ -700,9 +701,11 @@ impl super::ReasoningServer {
                 .with_operation(detect_type)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
-        self.state
-            .metrics
-            .record_tool_use(&input_session_id, "detect", success);
+        self.state.metrics.record_tool_use(
+            &input_session_id,
+            ReasoningMode::Detect.as_str(),
+            success,
+        );
 
         response
     }
