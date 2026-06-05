@@ -18,6 +18,25 @@ pub struct ComplexityMetrics {
     pub branching_factor: Option<u32>,
 }
 
+impl ComplexityMetrics {
+    /// Build metrics from a request's content length (the common case).
+    #[must_use]
+    pub const fn from_content(content_length: usize) -> Self {
+        Self {
+            content_length,
+            operation_depth: None,
+            branching_factor: None,
+        }
+    }
+
+    /// Attach a branching factor (e.g. `num_branches` / `num_perspectives`).
+    #[must_use]
+    pub const fn with_branching(mut self, branching_factor: Option<u32>) -> Self {
+        self.branching_factor = branching_factor;
+        self
+    }
+}
+
 /// Enhanced error with recovery suggestions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnhancedError {
@@ -117,7 +136,14 @@ impl ErrorEnhancer {
             ErrorCategory::RateLimit
         } else if msg.contains("authentication") || msg.contains("api key") {
             ErrorCategory::Authentication
-        } else if msg.contains("invalid") || msg.contains("bad request") {
+        } else if msg.contains("invalid")
+            || msg.contains("bad request")
+            || msg.contains("missing required")
+            || msg.contains("required but not provided")
+            || msg.contains("not found")
+        {
+            // Incorrect-parameter failures: bad value/operation, a missing or
+            // required field, or a bad id (session/branch/thought "not found").
             ErrorCategory::InvalidRequest
         } else if msg.contains("unavailable") || msg.contains("service error") {
             ErrorCategory::ApiUnavailable
@@ -203,6 +229,20 @@ impl ErrorEnhancer {
             });
         }
 
+        // Suggest reducing branching if the fan-out is wide (num_branches /
+        // num_perspectives). Each branch is an additional generation step.
+        if let Some(branching) = ctx.complexity.branching_factor {
+            if branching > 4 {
+                alts.push(Alternative {
+                    suggestion: "Reduce branching (num_branches / num_perspectives) to 2-3".into(),
+                    reason: format!(
+                        "Branching factor {branching} is high. Each branch adds a generation step."
+                    ),
+                    estimated_duration_ms: None,
+                });
+            }
+        }
+
         // Always suggest auto mode
         alts.push(Alternative {
             suggestion: "Use reasoning_auto to select optimal mode".into(),
@@ -261,6 +301,17 @@ impl ErrorEnhancer {
     fn invalid_request_alternatives(&self, ctx: &ErrorContext) -> Vec<Alternative> {
         let mut alts = vec![];
 
+        // Incorrect parameters: show the correct call with example values so the
+        // caller can copy a working invocation instead of guessing the schema.
+        if let Some(example) = Self::example_call(&ctx.failed_tool, ctx.failed_operation.as_deref())
+        {
+            alts.push(Alternative {
+                suggestion: "Retry with corrected parameters".into(),
+                reason: format!("Example: {example}"),
+                estimated_duration_ms: None,
+            });
+        }
+
         if ctx.complexity.content_length > 50_000 {
             alts.push(Alternative {
                 suggestion: "Reduce content length".into(),
@@ -283,6 +334,69 @@ impl ErrorEnhancer {
         }
 
         alts
+    }
+
+    /// A correctly-shaped example invocation for a tool/operation, used to show
+    /// "the correct call with example values" on an incorrect-parameter failure.
+    /// Returns `None` for tools we have no canonical example for, so the caller
+    /// never sees a misleading example.
+    fn example_call(failed_tool: &str, failed_operation: Option<&str>) -> Option<String> {
+        let op = failed_operation.unwrap_or("");
+        let args = match (failed_tool, op) {
+            ("reasoning_linear", _) => r#"{ "content": "Explain X step by step" }"#,
+            ("reasoning_tree", "focus") => {
+                r#"{ "operation": "focus", "session_id": "<id from create>", "branch_id": "<id from list>" }"#
+            }
+            ("reasoning_tree", "complete") => {
+                r#"{ "operation": "complete", "session_id": "<id from create>", "branch_id": "<id from list>", "completed": true }"#
+            }
+            ("reasoning_tree", "list" | "summarize") => {
+                r#"{ "operation": "list", "session_id": "<id from create>" }"#
+            }
+            ("reasoning_tree", _) => {
+                r#"{ "operation": "create", "content": "Compare options A and B", "num_branches": 3 }"#
+            }
+            ("reasoning_divergent", _) => {
+                r#"{ "content": "Critique this plan", "num_perspectives": 4 }"#
+            }
+            ("reasoning_reflection", "evaluate") => {
+                r#"{ "operation": "evaluate", "session_id": "<id from a prior session>" }"#
+            }
+            ("reasoning_reflection", _) => {
+                r#"{ "operation": "process", "content": "Reasoning to refine" }"#
+            }
+            ("reasoning_auto", _) => r#"{ "content": "Problem to route" }"#,
+            ("reasoning_meta", _) => r#"{ "content": "Problem to classify and route" }"#,
+            ("reasoning_confidence_route", _) => {
+                r#"{ "content": "Problem to route by confidence" }"#
+            }
+            ("reasoning_checkpoint", _) => {
+                r#"{ "operation": "create", "session_id": "<id from a prior session>" }"#
+            }
+            ("reasoning_graph", _) => {
+                r#"{ "operation": "init", "content": "Problem to explore as a graph" }"#
+            }
+            ("reasoning_detect", _) => {
+                r#"{ "operation": "biases", "content": "Argument to analyze" }"#
+            }
+            ("reasoning_decision", _) => {
+                r#"{ "operation": "weighted", "options": ["A", "B"], "criteria": ["cost", "speed"] }"#
+            }
+            ("reasoning_evidence", _) => {
+                r#"{ "operation": "assess", "content": "Claim and supporting evidence" }"#
+            }
+            ("reasoning_timeline", _) => {
+                r#"{ "operation": "create", "content": "Sequence of events to analyze" }"#
+            }
+            ("reasoning_mcts", _) => {
+                r#"{ "operation": "explore", "content": "Decision space to search" }"#
+            }
+            ("reasoning_counterfactual", _) => {
+                r#"{ "content": "Causal scenario: what if X had not happened?" }"#
+            }
+            _ => return None,
+        };
+        Some(format!("{failed_tool} {args}"))
     }
 }
 
@@ -566,5 +680,88 @@ mod tests {
 
         let json = serde_json::to_string(&alt).unwrap();
         assert!(!json.contains("estimated_duration_ms"));
+    }
+
+    #[test]
+    fn test_complexity_metrics_constructors() {
+        let m = ComplexityMetrics::from_content(123).with_branching(Some(4));
+        assert_eq!(m.content_length, 123);
+        assert_eq!(m.branching_factor, Some(4));
+        assert!(m.operation_depth.is_none());
+    }
+
+    #[test]
+    fn test_categorize_missing_field_is_invalid_request() {
+        let enhancer = ErrorEnhancer::new();
+        let ctx = create_test_context("reasoning_linear");
+        let enhanced = enhancer.enhance("Missing required field: content", ctx);
+        assert_eq!(enhanced.category, ErrorCategory::InvalidRequest);
+    }
+
+    #[test]
+    fn test_categorize_session_required_is_invalid_request() {
+        let enhancer = ErrorEnhancer::new();
+        let ctx = create_test_context("reasoning_tree");
+        let enhanced = enhancer.enhance("Session required but not provided", ctx);
+        assert_eq!(enhanced.category, ErrorCategory::InvalidRequest);
+    }
+
+    #[test]
+    fn test_categorize_not_found_is_invalid_request() {
+        let enhancer = ErrorEnhancer::new();
+        let ctx = create_test_context("reasoning_tree");
+        let enhanced = enhancer.enhance("Not found: branch xyz", ctx);
+        assert_eq!(enhanced.category, ErrorCategory::InvalidRequest);
+    }
+
+    #[test]
+    fn test_invalid_request_includes_example_call() {
+        let enhancer = ErrorEnhancer::new();
+        let ctx = ErrorContext {
+            failed_tool: "reasoning_tree".into(),
+            failed_operation: Some("focus".into()),
+            complexity: ComplexityMetrics::default(),
+            timeout_ms: 30_000,
+        };
+        let enhanced = enhancer.enhance("Not found: branch xyz", ctx);
+        let example = enhanced
+            .alternatives
+            .iter()
+            .find(|a| a.reason.contains("Example:"))
+            .expect("an example-call alternative");
+        assert!(example.reason.contains("reasoning_tree"));
+        assert!(example.reason.contains("branch_id"));
+    }
+
+    #[test]
+    fn test_invalid_request_unknown_tool_has_no_example() {
+        let enhancer = ErrorEnhancer::new();
+        let ctx = ErrorContext {
+            failed_tool: "reasoning_unknown".into(),
+            failed_operation: None,
+            complexity: ComplexityMetrics::default(),
+            timeout_ms: 30_000,
+        };
+        let enhanced = enhancer.enhance("Not found: thing", ctx);
+        assert!(!enhanced
+            .alternatives
+            .iter()
+            .any(|a| a.reason.contains("Example:")));
+    }
+
+    #[test]
+    fn test_timeout_alternatives_high_branching() {
+        let enhancer = ErrorEnhancer::new();
+        let ctx = ErrorContext {
+            failed_tool: "reasoning_divergent".into(),
+            failed_operation: None,
+            complexity: ComplexityMetrics::from_content(100).with_branching(Some(8)),
+            timeout_ms: 30_000,
+        };
+        let enhanced = enhancer.enhance("Operation timed out after 30000ms", ctx);
+        assert!(enhanced
+            .alternatives
+            .iter()
+            .any(|a| a.suggestion.contains("Reduce branching")));
     }
 }
