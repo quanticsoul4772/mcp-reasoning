@@ -1944,8 +1944,8 @@ mod timeline_verify_tests {
             description: "d".to_string(),
             time: "t".to_string(),
             event_type: EventType::Event,
-            causes: causes.iter().map(|s| s.to_string()).collect(),
-            effects: effects.iter().map(|s| s.to_string()).collect(),
+            causes: causes.iter().map(ToString::to_string).collect(),
+            effects: effects.iter().map(ToString::to_string).collect(),
         }
     }
 
