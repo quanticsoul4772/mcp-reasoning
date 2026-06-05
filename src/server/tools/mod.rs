@@ -309,6 +309,8 @@ impl ReasoningServer {
         description = "Query usage and performance metrics for the reasoning server. \
                        summary=aggregate stats across all tools. by_mode=breakdown per reasoning mode. \
                        invocations=raw call log with timestamps. fallbacks=cases where auto-routing changed mode. \
+                       chains=observed tool-composition patterns: the A→B transition matrix with success rates, \
+                       common multi-tool sequences, and entry/terminal tools — use to see which tool sequences actually work. \
                        config=current server configuration. Use to understand which tools are effective before choosing reasoning_meta."
     )]
     async fn reasoning_metrics(&self, req: Parameters<MetricsRequest>) -> MetricsResponse {

@@ -1133,6 +1133,59 @@ async fn test_metrics_by_mode_no_name_no_fallback() {
     assert_eq!(stats.mode_name, "tree");
 }
 
+#[tokio::test]
+async fn test_metrics_chains_query_returns_transition_matrix() {
+    let server = create_test_server().await;
+    // Simulate a tool chain within one session: linear → divergent → decision.
+    server
+        .state
+        .metrics
+        .record_tool_use("chain-s1", "linear", true);
+    server
+        .state
+        .metrics
+        .record_tool_use("chain-s1", "divergent", true);
+    server
+        .state
+        .metrics
+        .record_tool_use("chain-s1", "decision", true);
+
+    let req = MetricsRequest {
+        query: "chains".to_string(),
+        mode_name: None,
+        tool_name: None,
+        session_id: None,
+        success_only: None,
+        limit: None,
+    };
+    let resp = server.reasoning_metrics(Parameters(req)).await;
+
+    let chains = resp.chains.expect("chains query returns chain data");
+    let transitions = &chains["transitions"];
+    assert_eq!(transitions["linear"]["divergent"]["count"], 1);
+    assert_eq!(transitions["divergent"]["decision"]["count"], 1);
+}
+
+#[tokio::test]
+async fn test_metrics_unknown_query_lists_chains_option() {
+    let server = create_test_server().await;
+    let req = MetricsRequest {
+        query: "nonsense".to_string(),
+        mode_name: None,
+        tool_name: None,
+        session_id: None,
+        success_only: None,
+        limit: None,
+    };
+    let resp = server.reasoning_metrics(Parameters(req)).await;
+    let config = resp.config.expect("unknown query returns config error");
+    let err = config["error"].as_str().unwrap_or("");
+    assert!(
+        err.contains("chains"),
+        "error should advertise chains: {err}"
+    );
+}
+
 // ============================================================================
 // Linear: success-adjacent paths exercise metadata_builders
 // ============================================================================

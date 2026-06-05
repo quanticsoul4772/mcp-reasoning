@@ -116,6 +116,16 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("divergent", elapsed_ms, success));
+        self.state.metrics.record_tool_use(
+            result
+                .as_ref()
+                .map(|r| r.session_id.as_str())
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(input_session_id.as_str()),
+            "divergent",
+            success,
+        );
 
         match result {
             Ok(resp) => {
@@ -415,6 +425,11 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("reflection", elapsed_ms, success).with_operation(operation));
+        self.state.metrics.record_tool_use(
+            response.session_id.as_deref().unwrap_or(""),
+            "reflection",
+            success,
+        );
 
         // Add metadata on success
         if success {
@@ -594,6 +609,9 @@ impl super::ReasoningServer {
         self.state.metrics.record(
             MetricEvent::new("checkpoint", timer.elapsed_ms(), success).with_operation(operation),
         );
+        self.state
+            .metrics
+            .record_tool_use(&response.session_id, "checkpoint", success);
 
         response
     }

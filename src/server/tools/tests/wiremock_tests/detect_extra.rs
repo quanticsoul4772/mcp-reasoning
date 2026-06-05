@@ -404,6 +404,7 @@ async fn test_into_contents_implementations() {
         mode_stats: None,
         invocations: None,
         config: None,
+        chains: None,
     };
     let _ = metrics_resp.into_contents();
 }

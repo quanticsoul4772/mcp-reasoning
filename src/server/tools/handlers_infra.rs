@@ -202,6 +202,7 @@ impl super::ReasoningServer {
                         mode_stats: None,
                         invocations: None,
                         config: None,
+                        chains: None,
                     },
                     true,
                 )
@@ -228,6 +229,7 @@ impl super::ReasoningServer {
                             mode_stats: None,
                             invocations: None,
                             config: None,
+                            chains: None,
                         },
                         true,
                     )
@@ -270,6 +272,7 @@ impl super::ReasoningServer {
                             }),
                             invocations: None,
                             config: None,
+                            chains: None,
                         },
                         true,
                     )
@@ -317,6 +320,7 @@ impl super::ReasoningServer {
                         mode_stats: None,
                         invocations: Some(invocations),
                         config: None,
+                        chains: None,
                     },
                     true,
                 )
@@ -349,6 +353,20 @@ impl super::ReasoningServer {
                                 .collect(),
                         ),
                         config: None,
+                        chains: None,
+                    },
+                    true,
+                )
+            }
+            "chains" => {
+                let summary = self.state.metrics.chain_summary();
+                (
+                    MetricsResponse {
+                        summary: None,
+                        mode_stats: None,
+                        invocations: None,
+                        config: None,
+                        chains: Some(serde_json::to_value(&summary).unwrap_or_default()),
                     },
                     true,
                 )
@@ -364,6 +382,7 @@ impl super::ReasoningServer {
                         "max_retries": self.state.config.max_retries,
                         "log_level": self.state.config.log_level,
                     })),
+                    chains: None,
                 },
                 true,
             ),
@@ -374,10 +393,11 @@ impl super::ReasoningServer {
                     invocations: None,
                     config: Some(serde_json::json!({
                         "error": format!(
-                            "Unknown query: {}. Use 'summary', 'by_mode', 'invocations', 'fallbacks', or 'config'.",
+                            "Unknown query: {}. Use 'summary', 'by_mode', 'invocations', 'fallbacks', 'chains', or 'config'.",
                             query
                         )
                     })),
+                    chains: None,
                 },
                 false,
             ),

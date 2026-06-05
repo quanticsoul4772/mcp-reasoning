@@ -125,6 +125,8 @@ fn enum_to_string<T: serde::Serialize>(value: &T) -> String {
 impl super::ReasoningServer {
     pub(super) async fn handle_decision(&self, req: DecisionRequest) -> DecisionResponse {
         let timer = Timer::start();
+        // Effective session id for tool-chain linking (the response carries none).
+        let input_session_id = req.session_id.clone().unwrap_or_default();
         let mode = DecisionMode::new(
             Arc::clone(&self.state.storage),
             Arc::clone(&self.state.client),
@@ -492,12 +494,17 @@ impl super::ReasoningServer {
                 .with_operation(decision_type)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
+        self.state
+            .metrics
+            .record_tool_use(&input_session_id, "decision", success);
 
         response
     }
 
     pub(super) async fn handle_evidence(&self, req: EvidenceRequest) -> EvidenceResponse {
         let timer = Timer::start();
+        // Effective session id for tool-chain linking (the response carries none).
+        let input_session_id = req.session_id.clone().unwrap_or_default();
         let mode = EvidenceMode::new(
             Arc::clone(&self.state.storage),
             Arc::clone(&self.state.client),
@@ -731,6 +738,9 @@ impl super::ReasoningServer {
                 .with_operation(evidence_type)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
+        self.state
+            .metrics
+            .record_tool_use(&input_session_id, "evidence", success);
 
         response
     }

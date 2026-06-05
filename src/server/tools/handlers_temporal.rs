@@ -604,6 +604,8 @@ impl super::ReasoningServer {
     pub(super) async fn handle_timeline(&self, req: TimelineRequest) -> TimelineResponse {
         let timer = Timer::start();
         let operation = req.operation.clone();
+        // Effective session id for tool-chain linking (the response carries none).
+        let input_session_id = req.session_id.clone().unwrap_or_default();
         let mode = TimelineMode::new(
             Arc::clone(&self.state.storage),
             Arc::clone(&self.state.client),
@@ -897,6 +899,9 @@ impl super::ReasoningServer {
                 .with_operation(&operation)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
+        self.state
+            .metrics
+            .record_tool_use(&input_session_id, "timeline", success);
 
         response
     }
@@ -1202,6 +1207,9 @@ impl super::ReasoningServer {
                 .with_validation(response.validation.as_ref().map(|v| v.consistent))
                 .with_convergence(response.convergence.as_ref().map(|c| c.converged)),
         );
+        self.state
+            .metrics
+            .record_tool_use(&response.session_id, "mcts", success);
 
         response
     }
@@ -1364,6 +1372,11 @@ impl super::ReasoningServer {
         self.state.metrics.record(
             MetricEvent::new("counterfactual", timer.elapsed_ms(), success)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
+        );
+        self.state.metrics.record_tool_use(
+            response.session_id.as_deref().unwrap_or(""),
+            "counterfactual",
+            success,
         );
 
         response

@@ -359,6 +359,7 @@ fn test_metrics_response_into_contents() {
         mode_stats: None,
         invocations: None,
         config: None,
+        chains: None,
     };
     let contents = response.into_contents();
     assert_eq!(contents.len(), 1);

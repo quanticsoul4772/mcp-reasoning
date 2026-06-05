@@ -80,6 +80,16 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("linear", elapsed_ms, success));
+        self.state.metrics.record_tool_use(
+            result
+                .as_ref()
+                .map(|r| r.session_id.as_str())
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(input_session_id.as_str()),
+            "linear",
+            success,
+        );
 
         // Build metadata for response enrichment
         let metadata = if success {
@@ -479,6 +489,9 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("tree", elapsed_ms, success).with_operation(operation));
+        self.state
+            .metrics
+            .record_tool_use(&response.session_id, "tree", success);
 
         // Add metadata on success
         if success {
@@ -547,6 +560,16 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("auto", timer.elapsed_ms(), success));
+        self.state.metrics.record_tool_use(
+            result
+                .as_ref()
+                .map(|r| r.session_id.as_str())
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(""),
+            "auto",
+            success,
+        );
 
         match result {
             Ok(resp) => {
