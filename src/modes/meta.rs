@@ -210,7 +210,7 @@ where
         const MIN_OBSERVED: u32 = 3;
 
         metrics
-            .transitions_from(previous_tool)
+            .transition_counts_from(previous_tool)
             .into_iter()
             .filter(|(_, stats)| stats.count >= MIN_OBSERVED)
             .max_by(|a, b| {

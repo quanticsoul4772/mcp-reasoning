@@ -662,6 +662,52 @@ impl MetricsCollector {
             .collect()
     }
 
+    /// Lightweight per-destination `count` + `success_rate` for transitions FROM
+    /// `tool`.
+    ///
+    /// Unlike [`Self::transitions_from`], this does not clone the transition log
+    /// or build per-session timelines to compute dwell time
+    /// (`avg_time_between_ms`, left as `0` here). It makes a single pass under the
+    /// read lock. Use it when only `count` and `success_rate` matter — e.g.
+    /// chain-aware routing in `reasoning_meta`, which discards the dwell field.
+    #[must_use]
+    pub fn transition_counts_from(&self, tool: &str) -> HashMap<String, TransitionStats> {
+        let Ok(transitions) = self.transitions.read() else {
+            return HashMap::new();
+        };
+
+        // (count, successful) per to_tool.
+        let mut acc: HashMap<String, (u32, u32)> = HashMap::new();
+        for t in transitions.iter() {
+            if t.from_tool != tool {
+                continue;
+            }
+            let entry = acc.entry(t.to_tool.clone()).or_insert((0, 0));
+            entry.0 += 1;
+            if t.success {
+                entry.1 += 1;
+            }
+        }
+
+        acc.into_iter()
+            .map(|(to_tool, (count, successful))| {
+                let success_rate = if count > 0 {
+                    f64::from(successful) / f64::from(count)
+                } else {
+                    0.0
+                };
+                (
+                    to_tool,
+                    TransitionStats {
+                        count,
+                        success_rate,
+                        avg_time_between_ms: 0, // not computed on this lightweight path
+                    },
+                )
+            })
+            .collect()
+    }
+
     /// Get total number of recorded invocations.
     #[must_use]
     pub fn total_invocations(&self) -> u64 {
@@ -1329,6 +1375,46 @@ mod tests {
 
         // Sessions are isolated.
         assert_eq!(collector.last_tool_for_session("s2"), None);
+    }
+
+    #[test]
+    fn test_transition_counts_from_matches_counts_without_dwell() {
+        let collector = MetricsCollector::new();
+        // 3 successful decision -> linear transitions.
+        for i in 0..3 {
+            let s = format!("s{i}");
+            collector.record_tool_use(&s, "decision", true);
+            collector.record_tool_use(&s, "linear", true);
+        }
+        // 1 failed decision -> tree transition.
+        collector.record_tool_use("sx", "decision", true);
+        collector.record_tool_use("sx", "tree", false);
+
+        let counts = collector.transition_counts_from("decision");
+
+        let linear = counts.get("linear").expect("linear transition");
+        assert_eq!(linear.count, 3);
+        assert!((linear.success_rate - 1.0).abs() < f64::EPSILON);
+        // The lightweight path does not compute dwell time.
+        assert_eq!(linear.avg_time_between_ms, 0);
+
+        let tree = counts.get("tree").expect("tree transition");
+        assert_eq!(tree.count, 1);
+        assert!(tree.success_rate.abs() < f64::EPSILON);
+
+        // count + success_rate agree with the heavier transitions_from.
+        let heavy = collector.transitions_from("decision");
+        assert_eq!(
+            linear.count,
+            heavy.get("linear").expect("heavy linear").count
+        );
+        assert!(
+            (linear.success_rate - heavy.get("linear").expect("heavy linear").success_rate).abs()
+                < f64::EPSILON
+        );
+
+        // Unknown from-tool yields nothing.
+        assert!(collector.transition_counts_from("nonexistent").is_empty());
     }
 
     #[test]
