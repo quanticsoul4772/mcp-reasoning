@@ -31,6 +31,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::Instant;
 
@@ -300,8 +301,12 @@ pub struct MetricsCollector {
     transitions: RwLock<Vec<ToolTransition>>,
     /// Last tool seen per session id, used to derive A→B transitions. Keyed on
     /// the *effective* (output-preferred) session id so the next call — which
-    /// the client continues with that id — links back to this tool.
-    last_tool_by_session: RwLock<HashMap<String, String>>,
+    /// the client continues with that id — links back to this tool. The value
+    /// pairs the tool with a monotonic use-sequence for LRU eviction at the cap.
+    last_tool_by_session: RwLock<HashMap<String, (String, u64)>>,
+    /// Monotonic counter stamped on each `last_tool_by_session` write, so the
+    /// least-recently-used session can be evicted individually at the cap.
+    tool_use_seq: AtomicU64,
 }
 
 impl MetricsCollector {
@@ -535,16 +540,24 @@ impl MetricsCollector {
             return;
         }
 
+        let seq = self.tool_use_seq.fetch_add(1, Ordering::Relaxed);
+
         let previous = match self.last_tool_by_session.write() {
             Ok(mut last) => {
+                // At the cap, evict only the least-recently-used session rather
+                // than wiping the whole map — so a new session costs one dropped
+                // first-hop link, not every session's link.
                 if last.len() >= MAX_TRACKED_SESSIONS && !last.contains_key(session_id) {
-                    tracing::debug!(
-                        tracked = last.len(),
-                        "record_tool_use: session map at cap, clearing stale entries"
-                    );
-                    last.clear();
+                    if let Some(lru_key) = last
+                        .iter()
+                        .min_by_key(|(_, (_, used))| *used)
+                        .map(|(key, _)| key.clone())
+                    {
+                        last.remove(&lru_key);
+                    }
                 }
-                last.insert(session_id.to_string(), tool.to_string())
+                last.insert(session_id.to_string(), (tool.to_string(), seq))
+                    .map(|(prev_tool, _)| prev_tool)
             }
             Err(poison) => {
                 tracing::error!(error = %poison, "record_tool_use: last-tool lock poisoned");
@@ -574,7 +587,7 @@ impl MetricsCollector {
         self.last_tool_by_session
             .read()
             .ok()
-            .and_then(|map| map.get(session_id).cloned())
+            .and_then(|map| map.get(session_id).map(|(tool, _)| tool.clone()))
     }
 
     /// Mark the last transition for a session as failed.
@@ -1415,6 +1428,38 @@ mod tests {
 
         // Unknown from-tool yields nothing.
         assert!(collector.transition_counts_from("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn test_record_tool_use_evicts_lru_not_whole_map_at_cap() {
+        let collector = MetricsCollector::new();
+
+        // Fill to the cap. Each distinct session records once — the first tool in
+        // a session forms no transition, it just sets that session's last-tool.
+        for i in 0..MAX_TRACKED_SESSIONS {
+            collector.record_tool_use(&format!("s{i}"), "linear", true);
+        }
+        assert!(collector.last_tool_for_session("s0").is_some());
+        assert!(collector.last_tool_for_session("s1").is_some());
+
+        // Touch s0 so it becomes most-recently-used (bumps its use-sequence).
+        collector.record_tool_use("s0", "tree", true);
+
+        // One more new session at the cap evicts exactly the LRU entry — s1, the
+        // oldest never-touched session — rather than wiping the whole map.
+        collector.record_tool_use("new-session", "linear", true);
+
+        assert!(
+            collector.last_tool_for_session("s0").is_some(),
+            "recently-used session must survive"
+        );
+        assert!(
+            collector.last_tool_for_session("s1").is_none(),
+            "the least-recently-used session is the one evicted"
+        );
+        assert!(collector.last_tool_for_session("new-session").is_some());
+        // The map was not wiped: a session far from the LRU is still present.
+        assert!(collector.last_tool_for_session("s5000").is_some());
     }
 
     #[test]
