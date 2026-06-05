@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::error::enhanced::ComplexityMetrics;
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::AutoMode;
@@ -74,10 +75,17 @@ impl super::ReasoningServer {
                     auto_suggested_mode: String::new(),
                     routing_confidence: 0.0,
                     routing_decision: "error".to_string(),
-                    routing_reason: format!(
-                        "Auto-detection failed: {e}. \
-                         Check ANTHROPIC_API_KEY and retry. \
-                         Alternatively call reasoning_linear directly."
+                    routing_reason: super::error_help::with_recovery_suggestions(
+                        format!(
+                            "Auto-detection failed: {e}. \
+                             Check ANTHROPIC_API_KEY and retry. \
+                             Alternatively call reasoning_linear directly."
+                        ),
+                        "reasoning_confidence_route",
+                        None,
+                        &e.to_string(),
+                        ComplexityMetrics::default(),
+                        timeout_ms,
                     ),
                     result: serde_json::Value::Null,
                     metadata: None,
@@ -213,6 +221,9 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("confidence_route", elapsed_ms, true));
+        self.state
+            .metrics
+            .record_tool_use(&auto_session_id, "reasoning_confidence_route", true);
 
         tracing::info!(
             tool = "reasoning_confidence_route",

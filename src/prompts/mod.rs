@@ -141,6 +141,30 @@ impl ReasoningMode {
         }
     }
 
+    /// Returns the canonical MCP tool name for this mode (e.g. `reasoning_linear`).
+    ///
+    /// This is the identity used for tool-chain tracking and next-tool
+    /// suggestions, so the transition matrix and the [`crate::metadata`]
+    /// `SuggestionEngine` share one namespace (the names agents actually call).
+    #[must_use]
+    pub const fn tool_name(&self) -> &'static str {
+        match self {
+            Self::Linear => "reasoning_linear",
+            Self::Tree => "reasoning_tree",
+            Self::Divergent => "reasoning_divergent",
+            Self::Reflection => "reasoning_reflection",
+            Self::Checkpoint => "reasoning_checkpoint",
+            Self::Auto => "reasoning_auto",
+            Self::Graph => "reasoning_graph",
+            Self::Detect => "reasoning_detect",
+            Self::Decision => "reasoning_decision",
+            Self::Evidence => "reasoning_evidence",
+            Self::Timeline => "reasoning_timeline",
+            Self::Mcts => "reasoning_mcts",
+            Self::Counterfactual => "reasoning_counterfactual",
+        }
+    }
+
     /// Returns all available modes.
     #[must_use]
     pub const fn all() -> &'static [Self] {

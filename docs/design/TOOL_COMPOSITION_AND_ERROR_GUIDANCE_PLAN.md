@@ -1,9 +1,19 @@
 # Tool Composition Guidance & Enhanced Error Messages - Implementation Plan
 
-**Status**: Ready for Implementation
+**Status**: Tool Composition Guidance — IMPLEMENTED
 **Created**: 2025-12-31
-**Updated**: 2025-12-31 (Addressed review gaps)
+**Updated**: 2026-06-04 (Chain Discovery, Transition Matrix, and Dynamic
+Suggestions are now implemented; see below)
 **Priority**: Medium (Post-metadata enrichment improvements)
+
+> **Implementation note (2026-06-04).** The tool-composition half of this plan
+> is done: tool transitions are recorded per session (`MetricsCollector::record_tool_use`),
+> aggregated into a transition matrix with success rates and anti-patterns
+> (`chain_summary`, surfaced via `reasoning_metrics` query=`"chains"`), and fed
+> back into next-tool suggestions (`SuggestionEngine::suggest_next_tools_blended`
+> via `MetadataBuilder::with_metrics`) — promoting high-success transitions and
+> suppressing low-success ones. `tool_history` for preset matching is
+> reconstructed from observed transitions (`session_tool_history`).
 
 ---
 

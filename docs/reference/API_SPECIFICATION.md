@@ -854,14 +854,14 @@
 ```json
 {
   "name": "reasoning_metrics",
-  "description": "Observability, usage statistics, and debugging. Queries: SUMMARY returns aggregated stats across all modes (call counts, success rates, latency); BY_MODE returns detailed stats for a specific mode_name; INVOCATIONS returns call history with inputs/outputs/latency/status, filterable by tool_name/session_id/success_only with limit; FALLBACKS shows fallback usage breakdown and recommendations; CONFIG returns current pipe configuration for debugging.",
+  "description": "Observability, usage statistics, and debugging. Queries: SUMMARY returns aggregated stats across all modes (call counts, success rates, latency); BY_MODE returns detailed stats for a specific mode_name; INVOCATIONS returns call history with inputs/outputs/latency/status, filterable by tool_name/session_id/success_only with limit; FALLBACKS shows fallback usage breakdown and recommendations; CHAINS returns observed tool-composition patterns (the A→B transition matrix with success rates, common multi-tool sequences, entry/terminal tools, and low-success anti-patterns); CONFIG returns current pipe configuration for debugging.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "query": {
         "type": "string",
-        "enum": ["summary", "by_mode", "invocations", "fallbacks", "config"],
-        "description": "summary=all stats, by_mode=mode stats, invocations=call history, fallbacks=fallback usage, config=debug info"
+        "enum": ["summary", "by_mode", "invocations", "fallbacks", "chains", "config"],
+        "description": "summary=all stats, by_mode=mode stats, invocations=call history, fallbacks=fallback usage, chains=tool-composition transition matrix, config=debug info"
       },
       "mode_name": { "type": "string", "description": "For by_mode query" },
       "tool_name": { "type": "string", "description": "Filter for invocations" },
@@ -913,6 +913,7 @@
         },
         "description": "For invocations query"
       },
+      "chains": { "type": "object", "description": "For chains query: transition matrix (from→to with count/success_rate), common_chains, entry_tools, terminal_tools, and anti_patterns" },
       "config": { "type": "object", "description": "For config query" }
     }
   },

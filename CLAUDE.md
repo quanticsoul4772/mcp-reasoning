@@ -185,11 +185,16 @@ src/
 │       └── handlers_infra.rs    # preset, metrics
 ├── agents/              # Agent coordination system (invoke/list/team)
 ├── skills/              # Composable skill system (run/discover/builtin)
-├── metadata/            # Tool metadata, suggestions, timing defaults
+├── metadata/            # Tool metadata; next-tool suggestions (static rules blended
+│                        #   with observed transitions: promote high-success, suppress
+│                        #   low-success anti-patterns); timing defaults
 ├── presets/
 │   └── mod.rs           # 6 built-in presets (code-review, debug-analysis, architecture-decision,
 │                        #   strategic-decision, evidence-conclusion, brainstorming)
-├── metrics/mod.rs       # Usage metrics + tool chain tracking (ToolTransition, ChainSummary)
+├── metrics/mod.rs       # Usage metrics + tool chain tracking (ToolTransition, ChainSummary,
+│                        #   record_tool_use, transition_stats_from, session_tool_history).
+│                        #   Surfaced via reasoning_metrics query="chains"; feeds the
+│                        #   SuggestionEngine so next-tool hints are data-driven.
 └── self_improvement/
     ├── mod.rs           # Re-exports
     ├── system.rs        # SelfImprovementSystem orchestrator

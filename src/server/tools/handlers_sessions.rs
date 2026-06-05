@@ -99,6 +99,14 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("resume_session", elapsed_ms, success));
+        // Resume continues a specific session, so it's a genuine chain entry:
+        // a "reasoning_resume → reasoning_X" edge captures the common pattern of
+        // picking up a session and continuing the reasoning. (search/relate are
+        // cross-session discovery with no single session key, so they don't
+        // participate in the per-session transition matrix.)
+        self.state
+            .metrics
+            .record_tool_use(&req.session_id, "reasoning_resume", success);
 
         match result {
             Ok(context) => ResumeSessionResponse {
