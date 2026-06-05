@@ -254,7 +254,11 @@ impl super::ReasoningServer {
                 }
                 "prune" => {
                     let sid = session_id.clone();
-                    mode.prune(content, Some(session_id.clone()))
+                    // Caller value wins; otherwise the tunable Config default.
+                    let quality_floor = req
+                        .threshold
+                        .unwrap_or(self.state.config.graph_prune_threshold);
+                    mode.prune(content, Some(session_id.clone()), quality_floor)
                         .await
                         .map(move |r| GraphResponse {
                             session_id: sid,
