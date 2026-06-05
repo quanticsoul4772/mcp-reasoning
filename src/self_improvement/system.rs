@@ -125,8 +125,11 @@ impl<C: AnthropicClientTrait> SelfImprovementSystem<C> {
             });
         }
 
-        // Phase 2: Analyze
-        let analysis_result = match self.analyzer.analyze(&monitor_result).await {
+        // Phase 2: Analyze — feed back what earlier cycles' actions taught us so
+        // proposals favor what has worked and avoid what has repeatedly failed.
+        // Empty on the first cycle (no history), leaving the prompt unchanged.
+        let guidance = self.learner.guidance(5);
+        let analysis_result = match self.analyzer.analyze(&monitor_result, &guidance).await {
             Ok(result) => result,
             Err(e) => {
                 self.circuit_breaker.record_failure();
@@ -469,6 +472,80 @@ mod tests {
         assert!(!result.blocked);
         assert!(result.analysis_result.is_some());
         assert!(!result.execution_results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_second_cycle_prompt_includes_learning_guidance() {
+        use std::sync::{Arc, Mutex};
+
+        // Capture each analyzer prompt the system sends.
+        let prompts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&prompts);
+
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(move |messages, _| {
+            if let Some(first) = messages.first() {
+                captured
+                    .lock()
+                    .expect("lock prompts")
+                    .push(first.content.clone());
+            }
+            Ok(mock_response(
+                r#"{
+                "summary": "Test analysis",
+                "confidence": 0.8,
+                "actions": [
+                    {
+                        "action_type": "config_adjust",
+                        "description": "Test action",
+                        "rationale": "Testing",
+                        "expected_improvement": 0.1,
+                        "parameters": {"request_timeout_ms": 45000}
+                    }
+                ]
+            }"#,
+            ))
+        });
+
+        let config = SystemConfig {
+            require_approval: false,
+            monitor: MonitorConfig {
+                min_invocations: 5,
+                min_success_rate: 0.8,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut system = SelfImprovementSystem::new(config, client);
+
+        // Cycle 1: no history yet → prompt must omit the guidance section.
+        let r1 = system
+            .run_cycle(&create_metrics_with_issues())
+            .await
+            .unwrap();
+        assert!(!r1.execution_results.is_empty());
+        assert!(!r1.learning_results.is_empty());
+
+        // Cycle 2: the first cycle's executed action was learned from, so its
+        // outcome must now appear in the analyzer prompt — the closed loop.
+        system.reset_circuit_breaker();
+        let _ = system
+            .run_cycle(&create_metrics_with_issues())
+            .await
+            .unwrap();
+
+        let prompts = prompts.lock().expect("lock prompts");
+        assert_eq!(prompts.len(), 2, "expected one analyzer call per cycle");
+        assert!(
+            !prompts[0].contains("What past self-improvement actions taught us"),
+            "first cycle has no history, so no guidance section"
+        );
+        assert!(
+            prompts[1].contains("What past self-improvement actions taught us"),
+            "second cycle must feed back the first cycle's outcome"
+        );
+        assert!(prompts[1].contains("config_adjust"));
     }
 
     #[tokio::test]

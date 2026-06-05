@@ -206,6 +206,55 @@ impl Learner {
         }
     }
 
+    /// Summarize what past actions taught us, for steering the analyzer.
+    ///
+    /// Returns per-action-type effectiveness (attempts, success rate, average
+    /// reward) plus the most recent lesson insights, failures first. Empty when
+    /// no actions have been learned from yet, so the first cycle is unaffected.
+    #[must_use]
+    pub fn guidance(&self, max_recent: usize) -> LearningGuidance {
+        // Per-action-type effectiveness, sorted by type name for determinism.
+        let mut effectiveness: Vec<ActionEffectiveness> = self
+            .action_type_stats
+            .iter()
+            .map(|(action_type, stats)| {
+                let success_rate = if stats.total_executions > 0 {
+                    stats.successful as f64 / stats.total_executions as f64
+                } else {
+                    0.0
+                };
+                ActionEffectiveness {
+                    action_type: action_type.to_string(),
+                    attempts: stats.total_executions,
+                    success_rate,
+                    avg_reward: stats.avg_reward,
+                }
+            })
+            .collect();
+        effectiveness.sort_by(|a, b| a.action_type.cmp(&b.action_type));
+
+        // Most recent insights, failures (negative reward) first.
+        let mut failures: Vec<String> = Vec::new();
+        let mut others: Vec<String> = Vec::new();
+        for lesson in self.lessons.iter().rev() {
+            if lesson.reward < 0.0 {
+                failures.push(lesson.insight.clone());
+            } else {
+                others.push(lesson.insight.clone());
+            }
+        }
+        let recent_insights: Vec<String> = failures
+            .into_iter()
+            .chain(others)
+            .take(max_recent)
+            .collect();
+
+        LearningGuidance {
+            effectiveness,
+            recent_insights,
+        }
+    }
+
     fn generate_insight(&self, result: &ExecutionResult, reward: f64) -> String {
         let action_type = &result.action.action_type;
         let expected = result.action.expected_improvement;
@@ -320,6 +369,37 @@ pub struct LearningSummary {
     pub failed: usize,
     /// Stats by action type.
     pub by_type: HashMap<ActionType, ActionTypeStats>,
+}
+
+/// Effectiveness of a single action type, distilled for the analyzer.
+#[derive(Debug, Clone)]
+pub struct ActionEffectiveness {
+    /// Action type name (e.g., `config_adjust`).
+    pub action_type: String,
+    /// Number of times this action type was executed.
+    pub attempts: u64,
+    /// Fraction of executions that succeeded (0.0–1.0).
+    pub success_rate: f64,
+    /// Rolling average reward across executions.
+    pub avg_reward: f64,
+}
+
+/// A compact, owned summary of past learning, fed back into the analyzer so
+/// later cycles prefer what has worked and avoid what has repeatedly failed.
+#[derive(Debug, Clone, Default)]
+pub struct LearningGuidance {
+    /// Per-action-type effectiveness, sorted by type name.
+    pub effectiveness: Vec<ActionEffectiveness>,
+    /// Most recent lesson insights, failures first.
+    pub recent_insights: Vec<String>,
+}
+
+impl LearningGuidance {
+    /// Whether there is no learning history to surface.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.effectiveness.is_empty() && self.recent_insights.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -616,6 +696,76 @@ mod tests {
         assert!(contexts.contains(&"successful".to_string()));
         assert!(contexts.contains(&"high_impact".to_string()));
         assert!(contexts.contains(&"param:timeout".to_string()));
+    }
+
+    #[test]
+    fn test_guidance_empty_with_no_history() {
+        let learner = Learner::with_defaults();
+        let guidance = learner.guidance(5);
+        assert!(guidance.is_empty());
+        assert!(guidance.effectiveness.is_empty());
+        assert!(guidance.recent_insights.is_empty());
+    }
+
+    #[test]
+    fn test_guidance_reflects_stats_and_insights() {
+        let mut learner = Learner::with_defaults();
+
+        // Two successful ConfigAdjust actions.
+        learner.learn(&create_execution_result(true, 0.1, Some(0.15)));
+        learner.learn(&create_execution_result(true, 0.1, Some(0.15)));
+        // One failed ConfigAdjust action.
+        learner.learn(&create_execution_result(false, 0.1, None));
+
+        let guidance = learner.guidance(5);
+        assert!(!guidance.is_empty());
+
+        // Single action type present.
+        assert_eq!(guidance.effectiveness.len(), 1);
+        let eff = &guidance.effectiveness[0];
+        assert_eq!(eff.action_type, "config_adjust");
+        assert_eq!(eff.attempts, 3);
+        // 2 of 3 succeeded.
+        assert!((eff.success_rate - 2.0 / 3.0).abs() < 1e-9);
+
+        // The failure insight is surfaced first.
+        assert!(!guidance.recent_insights.is_empty());
+        assert!(guidance.recent_insights[0].contains("failed"));
+    }
+
+    #[test]
+    fn test_guidance_caps_recent_insights() {
+        let mut learner = Learner::with_defaults();
+        for _ in 0..10 {
+            learner.learn(&create_execution_result(true, 0.1, Some(0.15)));
+        }
+        let guidance = learner.guidance(3);
+        assert_eq!(guidance.recent_insights.len(), 3);
+    }
+
+    #[test]
+    fn test_guidance_effectiveness_sorted_by_type() {
+        let mut learner = Learner::with_defaults();
+
+        // PromptTune first, then ConfigAdjust — output must be alphabetical.
+        let mut prompt =
+            SelfImprovementAction::new("p", ActionType::PromptTune, "Test", "Test", 0.1);
+        prompt.complete(0.1);
+        learner.learn(&ExecutionResult {
+            action: prompt,
+            success: true,
+            message: "Test".to_string(),
+            measured_improvement: Some(0.1),
+        });
+        learner.learn(&create_execution_result(true, 0.1, Some(0.1)));
+
+        let guidance = learner.guidance(5);
+        let names: Vec<&str> = guidance
+            .effectiveness
+            .iter()
+            .map(|e| e.action_type.as_str())
+            .collect();
+        assert_eq!(names, vec!["config_adjust", "prompt_tune"]);
     }
 
     #[test]

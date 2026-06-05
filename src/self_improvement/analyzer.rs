@@ -2,6 +2,7 @@
 //!
 //! Phase 2 of the 4-phase loop: LLM-based diagnosis and action proposal.
 
+use super::learner::LearningGuidance;
 use super::monitor::MonitorResult;
 use super::types::{ActionType, LegacyTriggerMetric, SelfImprovementAction, Severity};
 use crate::error::ModeError;
@@ -41,9 +42,15 @@ impl<C: AnthropicClientTrait> Analyzer<C> {
     }
 
     /// Analyze monitoring results and propose actions.
+    ///
+    /// `guidance` carries what past cycles' executed actions taught us; when
+    /// non-empty it is rendered into the prompt so proposals favor action types
+    /// that have worked and avoid those that have repeatedly failed. Pass
+    /// `&LearningGuidance::default()` on the first cycle (no history).
     pub async fn analyze(
         &self,
         monitor_result: &MonitorResult,
+        guidance: &LearningGuidance,
     ) -> Result<AnalysisResult, ModeError> {
         if monitor_result.triggers.is_empty() {
             return Ok(AnalysisResult {
@@ -53,7 +60,7 @@ impl<C: AnthropicClientTrait> Analyzer<C> {
             });
         }
 
-        let prompt = self.build_analysis_prompt(monitor_result);
+        let prompt = self.build_analysis_prompt(monitor_result, guidance);
         let messages = vec![Message::user(&prompt)];
         let config = CompletionConfig::new()
             .with_max_tokens(2048)
@@ -64,7 +71,11 @@ impl<C: AnthropicClientTrait> Analyzer<C> {
         self.parse_analysis_response(&response.content, monitor_result)
     }
 
-    fn build_analysis_prompt(&self, monitor_result: &MonitorResult) -> String {
+    fn build_analysis_prompt(
+        &self,
+        monitor_result: &MonitorResult,
+        guidance: &LearningGuidance,
+    ) -> String {
         let triggers_desc = monitor_result
             .triggers
             .iter()
@@ -77,6 +88,8 @@ impl<C: AnthropicClientTrait> Analyzer<C> {
             .collect::<Vec<_>>()
             .join("\n");
 
+        let guidance_section = Self::render_guidance(guidance);
+
         format!(
             r#"Analyze the following system metrics issues and propose improvement actions.
 
@@ -87,6 +100,7 @@ impl<C: AnthropicClientTrait> Analyzer<C> {
 
 ## Detected Issues
 {triggers_desc}
+{guidance_section}
 
 ## Available Action Types
 1. ConfigAdjust - Adjust configuration parameters (timeouts, retries)
@@ -140,6 +154,47 @@ Respond in JSON format:
             monitor_result.metrics.total_invocations,
             max_actions = self.max_actions
         )
+    }
+
+    /// Render the learning-feedback section, or an empty string on the first
+    /// cycle (no history) so the prompt — and thus behavior — is unchanged until
+    /// there is something to learn from.
+    fn render_guidance(guidance: &LearningGuidance) -> String {
+        use std::fmt::Write as _;
+
+        if guidance.is_empty() {
+            return String::new();
+        }
+
+        let mut section = String::from("\n## What past self-improvement actions taught us\n");
+
+        if !guidance.effectiveness.is_empty() {
+            section.push_str(
+                "Effectiveness by action type (prefer high reward / success; avoid the rest):\n",
+            );
+            for eff in &guidance.effectiveness {
+                let _ = writeln!(
+                    section,
+                    "- {}: {} tried, {:.0}% succeeded, avg reward {:+.2}",
+                    eff.action_type,
+                    eff.attempts,
+                    eff.success_rate * 100.0,
+                    eff.avg_reward
+                );
+            }
+        }
+
+        if !guidance.recent_insights.is_empty() {
+            section.push_str("Recent outcomes:\n");
+            for insight in &guidance.recent_insights {
+                let _ = writeln!(section, "- {insight}");
+            }
+        }
+
+        section.push_str(
+            "Prefer action types and parameters that have worked; avoid those that repeatedly fail.\n",
+        );
+        section
     }
 
     fn parse_analysis_response(
@@ -373,7 +428,10 @@ mod tests {
         let analyzer = Analyzer::new(client);
         let monitor_result = create_test_monitor_result(false);
 
-        let result = analyzer.analyze(&monitor_result).await.unwrap();
+        let result = analyzer
+            .analyze(&monitor_result, &LearningGuidance::default())
+            .await
+            .unwrap();
         assert!(result.actions.is_empty());
         assert!((result.confidence - 1.0).abs() < f64::EPSILON);
     }
@@ -404,7 +462,10 @@ mod tests {
         let analyzer = Analyzer::new(client);
         let monitor_result = create_test_monitor_result(true);
 
-        let result = analyzer.analyze(&monitor_result).await.unwrap();
+        let result = analyzer
+            .analyze(&monitor_result, &LearningGuidance::default())
+            .await
+            .unwrap();
         assert_eq!(result.actions.len(), 1);
         assert_eq!(result.actions[0].action_type, ActionType::ConfigAdjust);
         assert!((result.confidence - 0.85).abs() < f64::EPSILON);
@@ -431,7 +492,10 @@ mod tests {
         let analyzer = Analyzer::new(client).with_max_actions(2);
         let monitor_result = create_test_monitor_result(true);
 
-        let result = analyzer.analyze(&monitor_result).await.unwrap();
+        let result = analyzer
+            .analyze(&monitor_result, &LearningGuidance::default())
+            .await
+            .unwrap();
         assert_eq!(result.actions.len(), 2);
     }
 
@@ -445,7 +509,9 @@ mod tests {
         let analyzer = Analyzer::new(client);
         let monitor_result = create_test_monitor_result(true);
 
-        let result = analyzer.analyze(&monitor_result).await;
+        let result = analyzer
+            .analyze(&monitor_result, &LearningGuidance::default())
+            .await;
         // Should fail to parse
         assert!(result.is_err());
     }
@@ -474,7 +540,10 @@ mod tests {
         let analyzer = Analyzer::new(client);
         let monitor_result = create_test_monitor_result(true);
 
-        let result = analyzer.analyze(&monitor_result).await.unwrap();
+        let result = analyzer
+            .analyze(&monitor_result, &LearningGuidance::default())
+            .await
+            .unwrap();
         assert!(result.actions[0].parameters.is_some());
     }
 
@@ -554,7 +623,9 @@ Done."#;
         let analyzer = Analyzer::new(client);
         let monitor_result = create_test_monitor_result(true);
 
-        let result = analyzer.analyze(&monitor_result).await;
+        let result = analyzer
+            .analyze(&monitor_result, &LearningGuidance::default())
+            .await;
         assert!(result.is_err());
     }
 
@@ -570,7 +641,10 @@ Done."#;
         let analyzer = Analyzer::new(client);
         let monitor_result = create_test_monitor_result(true);
 
-        let result = analyzer.analyze(&monitor_result).await.unwrap();
+        let result = analyzer
+            .analyze(&monitor_result, &LearningGuidance::default())
+            .await
+            .unwrap();
         assert_eq!(result.actions.len(), 1);
         assert!(result.actions[0].id.starts_with("fallback-"));
     }
@@ -757,7 +831,9 @@ Done."#;
         let analyzer = Analyzer::new(client);
         let monitor_result = create_test_monitor_result(true);
 
-        let result = analyzer.analyze(&monitor_result).await;
+        let result = analyzer
+            .analyze(&monitor_result, &LearningGuidance::default())
+            .await;
         assert!(matches!(result, Err(ModeError::JsonParseFailed { .. })));
     }
 
@@ -773,7 +849,10 @@ Done."#;
         let analyzer = Analyzer::new(client);
         let monitor_result = create_test_monitor_result(true);
 
-        let result = analyzer.analyze(&monitor_result).await.unwrap();
+        let result = analyzer
+            .analyze(&monitor_result, &LearningGuidance::default())
+            .await
+            .unwrap();
         assert_eq!(result.summary, "Analysis complete");
         assert!((result.confidence - 0.7).abs() < f64::EPSILON);
     }
@@ -814,7 +893,7 @@ Done."#;
             action_recommended: true,
         };
 
-        let prompt = analyzer.build_analysis_prompt(&monitor_result);
+        let prompt = analyzer.build_analysis_prompt(&monitor_result, &LearningGuidance::default());
 
         assert!(prompt.contains("Success Rate: 75.0%"));
         assert!(prompt.contains("Average Latency: 150ms")); // {:.0} rounds 150.5 to 150
@@ -823,5 +902,53 @@ Done."#;
         assert!(prompt.contains("metric2"));
         assert!(prompt.contains("High"));
         assert!(prompt.contains("Warning"));
+        // Empty guidance → no learning-feedback section (first-cycle behavior).
+        assert!(!prompt.contains("What past self-improvement actions taught us"));
+    }
+
+    #[test]
+    fn test_build_analysis_prompt_omits_guidance_when_empty() {
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+        let monitor_result = create_test_monitor_result(true);
+
+        let prompt = analyzer.build_analysis_prompt(&monitor_result, &LearningGuidance::default());
+        assert!(!prompt.contains("What past self-improvement actions taught us"));
+        assert!(!prompt.contains("Effectiveness by action type"));
+    }
+
+    #[test]
+    fn test_build_analysis_prompt_renders_guidance_when_present() {
+        use crate::self_improvement::learner::{ActionEffectiveness, LearningGuidance};
+
+        let client = MockAnthropicClientTrait::new();
+        let analyzer = Analyzer::new(client);
+        let monitor_result = create_test_monitor_result(true);
+
+        let guidance = LearningGuidance {
+            effectiveness: vec![
+                ActionEffectiveness {
+                    action_type: "config_adjust".to_string(),
+                    attempts: 5,
+                    success_rate: 0.2,
+                    avg_reward: -0.4,
+                },
+                ActionEffectiveness {
+                    action_type: "threshold_adjust".to_string(),
+                    attempts: 3,
+                    success_rate: 1.0,
+                    avg_reward: 0.55,
+                },
+            ],
+            recent_insights: vec!["config_adjust action failed: bad parameter".to_string()],
+        };
+
+        let prompt = analyzer.build_analysis_prompt(&monitor_result, &guidance);
+        assert!(prompt.contains("What past self-improvement actions taught us"));
+        // Effectiveness lines (percent + signed avg reward).
+        assert!(prompt.contains("config_adjust: 5 tried, 20% succeeded, avg reward -0.40"));
+        assert!(prompt.contains("threshold_adjust: 3 tried, 100% succeeded, avg reward +0.55"));
+        // Recent outcome surfaced.
+        assert!(prompt.contains("config_adjust action failed: bad parameter"));
     }
 }
