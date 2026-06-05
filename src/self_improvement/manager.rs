@@ -778,7 +778,7 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
         Ok(action_record_id)
     }
 
-    /// The honest recorded outcome for an executed action.
+    /// The accurate recorded outcome for an executed action.
     ///
     /// A failed action is `Failed`. A successful action is `Completed` only when
     /// its effect actually reaches the running system — a `LogObservation`
@@ -1382,8 +1382,8 @@ mod tests {
         manager.persist_cycle_audit(&cycle).await.expect("persist");
 
         // Advisory default: a successful config_adjust only recorded a
-        // recommendation (nothing applied), so the honest status is Recommended,
-        // not Executed/Completed.
+        // recommendation (nothing applied), so the accurate status is
+        // Recommended, not Executed/Completed.
         let diags = storage
             .get_diagnoses_by_status(DiagnosisStatus::Recommended)
             .await
@@ -1543,7 +1543,7 @@ mod tests {
     #[tokio::test]
     async fn test_apply_mode_config_action_is_completed() {
         // With override application enabled, a successful config_adjust reaches
-        // the live server (at restart), so it is honestly Completed / Executed.
+        // the live server (at restart), so it is genuinely Completed / Executed.
         let storage = create_test_storage().await;
         let config = SelfImprovementConfig {
             apply_config_overrides: true,
@@ -1968,7 +1968,7 @@ mod tests {
 
         // No longer pending; the override and action outcome were persisted; the
         // cached count refreshed to 0. Advisory default: nothing was applied to
-        // live config, so the honest status is Recommended, not Executed.
+        // live config, so the accurate status is Recommended, not Executed.
         let diag = storage
             .get_diagnosis("diag-1")
             .await

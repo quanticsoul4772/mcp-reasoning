@@ -55,7 +55,7 @@ pub enum ActionStatus {
     /// (a logged observation, or a config change applied to the live `Config`).
     Completed,
     /// Action ran and a recommendation was recorded, but nothing was applied to
-    /// the running server (advisory mode). Honest counterpart to `Completed` for
+    /// the running server (advisory mode). Accurate counterpart to `Completed` for
     /// config/threshold/prompt actions that only persist a recommendation.
     Recommended,
     /// Action failed during execution.
