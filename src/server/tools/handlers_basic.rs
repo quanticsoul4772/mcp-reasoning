@@ -753,13 +753,23 @@ impl super::ReasoningServer {
         let timeout_ms = self.state.config.timeout_for_thinking_budget(NO_THINKING);
         let timeout_duration = Duration::from_millis(timeout_ms);
 
+        // Resolve the previous tool for chain-aware routing: an explicit
+        // `previous_tool` wins; otherwise derive it from the session's last
+        // recorded tool, so the recorded transition matrix steers routing without
+        // the caller having to thread the prior tool by hand.
+        let previous_tool = req.previous_tool.clone().or_else(|| {
+            req.session_id
+                .as_deref()
+                .and_then(|sid| self.state.metrics.last_tool_for_session(sid))
+        });
+
         let result = match tokio::time::timeout(
             timeout_duration,
             mode.route(
                 &req.content,
                 req.problem_type_hint,
                 req.min_confidence,
-                req.previous_tool,
+                previous_tool,
                 &self.state.metrics,
             ),
         )

@@ -17,6 +17,7 @@ async fn test_meta_basic() {
         problem_type_hint: None,
         min_confidence: None,
         previous_tool: None,
+        session_id: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     assert!(!resp.selected_tool.is_empty());
@@ -31,6 +32,7 @@ async fn test_meta_with_problem_type_hint() {
         problem_type_hint: Some("math".to_string()),
         min_confidence: Some(0.1),
         previous_tool: None,
+        session_id: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // API will fail (no real key), falls back to auto
@@ -47,6 +49,7 @@ async fn test_meta_with_code_hint() {
         problem_type_hint: Some("code_review".to_string()),
         min_confidence: Some(0.5),
         previous_tool: None,
+        session_id: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // API fails → fallback response: selected_tool is "auto"
@@ -62,6 +65,7 @@ async fn test_meta_empty_content() {
         problem_type_hint: None,
         min_confidence: Some(0.8),
         previous_tool: None,
+        session_id: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // Empty content → API fails → fallback
@@ -76,6 +80,7 @@ async fn test_meta_high_confidence_threshold() {
         problem_type_hint: Some("planning".to_string()),
         min_confidence: Some(0.99),
         previous_tool: None,
+        session_id: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // Should always fall back since API is unavailable in tests
@@ -1169,6 +1174,40 @@ async fn test_metrics_chains_query_returns_transition_matrix() {
     let transitions = &chains["transitions"];
     assert_eq!(transitions["linear"]["divergent"]["count"], 1);
     assert_eq!(transitions["divergent"]["decision"]["count"], 1);
+}
+
+#[tokio::test]
+async fn test_meta_auto_derives_previous_tool_from_session() {
+    let server = create_test_server().await;
+
+    // Build a strong decision -> linear chain (4 successful observations).
+    for i in 0..4 {
+        let s = format!("seed-{i}");
+        server.state.metrics.record_tool_use(&s, "decision", true);
+        server.state.metrics.record_tool_use(&s, "linear", true);
+    }
+    // The active session's last recorded tool is "decision", so meta should
+    // derive previous_tool="decision" from the session id alone.
+    server
+        .state
+        .metrics
+        .record_tool_use("meta-s1", "decision", true);
+
+    let req = MetaRequest {
+        content: "route this".to_string(),
+        // Hint skips API classification; this type has no effectiveness data,
+        // so routing falls through to the tool-chain branch.
+        problem_type_hint: Some("brand_new_type".to_string()),
+        min_confidence: None,
+        previous_tool: None, // not passed explicitly — must be session-derived
+        session_id: Some("meta-s1".to_string()),
+    };
+    let resp = server.reasoning_meta(Parameters(req)).await;
+
+    // The chain (decision -> linear) drives the route without an explicit
+    // previous_tool — the feature fires from session context alone.
+    assert_eq!(resp.selected_tool, "linear");
+    assert!(!resp.fallback_to_auto);
 }
 
 #[tokio::test]
