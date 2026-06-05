@@ -1405,6 +1405,11 @@ pub struct MetricsResponse {
     pub invocations: Option<Vec<Invocation>>,
     /// Configuration info.
     pub config: Option<serde_json::Value>,
+    /// Tool-chain composition data (query="chains"): the observed A→B transition
+    /// matrix with success rates, common multi-tool sequences, and entry/terminal
+    /// tools. Present only for the "chains" query.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chains: Option<serde_json::Value>,
 }
 
 // ============================================================================
@@ -2254,6 +2259,7 @@ mod tests {
             mode_stats: None,
             invocations: None,
             config: None,
+            chains: None,
         };
         let contents = response.into_contents();
         assert_eq!(contents.len(), 1);

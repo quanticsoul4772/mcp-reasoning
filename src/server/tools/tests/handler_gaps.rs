@@ -16,6 +16,7 @@ async fn test_meta_basic() {
         content: "Analyze tradeoffs between approaches step by step".to_string(),
         problem_type_hint: None,
         min_confidence: None,
+        previous_tool: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     assert!(!resp.selected_tool.is_empty());
@@ -29,6 +30,7 @@ async fn test_meta_with_problem_type_hint() {
         content: "What is 2+2?".to_string(),
         problem_type_hint: Some("math".to_string()),
         min_confidence: Some(0.1),
+        previous_tool: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // API will fail (no real key), falls back to auto
@@ -44,6 +46,7 @@ async fn test_meta_with_code_hint() {
         content: "Review this Rust code for bugs".to_string(),
         problem_type_hint: Some("code_review".to_string()),
         min_confidence: Some(0.5),
+        previous_tool: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // API fails → fallback response: selected_tool is "auto"
@@ -58,6 +61,7 @@ async fn test_meta_empty_content() {
         content: String::new(),
         problem_type_hint: None,
         min_confidence: Some(0.8),
+        previous_tool: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // Empty content → API fails → fallback
@@ -71,6 +75,7 @@ async fn test_meta_high_confidence_threshold() {
         content: "planning task".to_string(),
         problem_type_hint: Some("planning".to_string()),
         min_confidence: Some(0.99),
+        previous_tool: None,
     };
     let resp = server.reasoning_meta(Parameters(req)).await;
     // Should always fall back since API is unavailable in tests
@@ -1131,6 +1136,59 @@ async fn test_metrics_by_mode_no_name_no_fallback() {
     assert!(resp.mode_stats.is_some());
     let stats = resp.mode_stats.unwrap();
     assert_eq!(stats.mode_name, "tree");
+}
+
+#[tokio::test]
+async fn test_metrics_chains_query_returns_transition_matrix() {
+    let server = create_test_server().await;
+    // Simulate a tool chain within one session: linear → divergent → decision.
+    server
+        .state
+        .metrics
+        .record_tool_use("chain-s1", "linear", true);
+    server
+        .state
+        .metrics
+        .record_tool_use("chain-s1", "divergent", true);
+    server
+        .state
+        .metrics
+        .record_tool_use("chain-s1", "decision", true);
+
+    let req = MetricsRequest {
+        query: "chains".to_string(),
+        mode_name: None,
+        tool_name: None,
+        session_id: None,
+        success_only: None,
+        limit: None,
+    };
+    let resp = server.reasoning_metrics(Parameters(req)).await;
+
+    let chains = resp.chains.expect("chains query returns chain data");
+    let transitions = &chains["transitions"];
+    assert_eq!(transitions["linear"]["divergent"]["count"], 1);
+    assert_eq!(transitions["divergent"]["decision"]["count"], 1);
+}
+
+#[tokio::test]
+async fn test_metrics_unknown_query_lists_chains_option() {
+    let server = create_test_server().await;
+    let req = MetricsRequest {
+        query: "nonsense".to_string(),
+        mode_name: None,
+        tool_name: None,
+        session_id: None,
+        success_only: None,
+        limit: None,
+    };
+    let resp = server.reasoning_metrics(Parameters(req)).await;
+    let config = resp.config.expect("unknown query returns config error");
+    let err = config["error"].as_str().unwrap_or("");
+    assert!(
+        err.contains("chains"),
+        "error should advertise chains: {err}"
+    );
 }
 
 // ============================================================================

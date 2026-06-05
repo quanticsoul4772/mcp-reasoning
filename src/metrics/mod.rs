@@ -37,6 +37,11 @@ use std::time::Instant;
 /// Maximum number of transitions to keep in circular buffer.
 const MAX_TRANSITIONS: usize = 10_000;
 
+/// Maximum number of sessions tracked for last-tool chain linking. When this
+/// cap is exceeded the per-session map is cleared (sessions are short-lived, so
+/// dropping stale entries only costs a missed first-hop link, not correctness).
+const MAX_TRACKED_SESSIONS: usize = 10_000;
+
 /// A single metric event recording.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricEvent {
@@ -293,6 +298,10 @@ pub struct MetricsCollector {
     events: RwLock<Vec<MetricEvent>>,
     fallbacks: RwLock<Vec<FallbackEvent>>,
     transitions: RwLock<Vec<ToolTransition>>,
+    /// Last tool seen per session id, used to derive A→B transitions. Keyed on
+    /// the *effective* (output-preferred) session id so the next call — which
+    /// the client continues with that id — links back to this tool.
+    last_tool_by_session: RwLock<HashMap<String, String>>,
 }
 
 impl MetricsCollector {
@@ -485,6 +494,9 @@ impl MetricsCollector {
         if let Ok(mut transitions) = self.transitions.write() {
             transitions.clear();
         }
+        if let Ok(mut last) = self.last_tool_by_session.write() {
+            last.clear();
+        }
     }
 
     // ========================================================================
@@ -501,6 +513,49 @@ impl MetricsCollector {
                 transitions.remove(0);
             }
             transitions.push(transition);
+        }
+    }
+
+    /// Record that `tool` executed within `session_id`, deriving a tool-chain
+    /// transition from the previous tool seen in the same session.
+    ///
+    /// This is the production entry point that turns per-tool invocations into
+    /// the A→B transition matrix consumed by [`Self::chain_summary`]. Pass the
+    /// *effective* session id (the one the response carries / the client will
+    /// continue with) so consecutive calls link correctly.
+    ///
+    /// Behavior:
+    /// - Empty `session_id` or `tool` is ignored (stateless invocations).
+    /// - Self-transitions (the same tool twice in a row, e.g. multi-operation
+    ///   tools like `tree` create→focus) are skipped so the matrix stays focused
+    ///   on cross-tool composition.
+    /// - `success` is the outcome of `tool` (the destination of the transition).
+    pub fn record_tool_use(&self, session_id: &str, tool: &str, success: bool) {
+        if session_id.is_empty() || tool.is_empty() {
+            return;
+        }
+
+        let previous = match self.last_tool_by_session.write() {
+            Ok(mut last) => {
+                if last.len() >= MAX_TRACKED_SESSIONS && !last.contains_key(session_id) {
+                    tracing::debug!(
+                        tracked = last.len(),
+                        "record_tool_use: session map at cap, clearing stale entries"
+                    );
+                    last.clear();
+                }
+                last.insert(session_id.to_string(), tool.to_string())
+            }
+            Err(poison) => {
+                tracing::error!(error = %poison, "record_tool_use: last-tool lock poisoned");
+                return;
+            }
+        };
+
+        if let Some(from_tool) = previous {
+            if from_tool != tool {
+                self.record_transition(ToolTransition::new(from_tool, tool, session_id, success));
+            }
         }
     }
 
@@ -1177,6 +1232,72 @@ mod tests {
     // ========================================================================
     // Tool Transition Tracking Tests
     // ========================================================================
+
+    #[test]
+    fn test_record_tool_use_derives_transition() {
+        let collector = MetricsCollector::new();
+        collector.record_tool_use("s1", "linear", true);
+        collector.record_tool_use("s1", "divergent", true);
+        collector.record_tool_use("s1", "decision", false);
+
+        let summary = collector.chain_summary();
+        let linear = summary
+            .transitions
+            .get("linear")
+            .expect("linear has transitions");
+        assert_eq!(linear.get("divergent").map(|s| s.count), Some(1));
+
+        let divergent = summary
+            .transitions
+            .get("divergent")
+            .expect("divergent has transitions");
+        let to_decision = divergent.get("decision").expect("divergent->decision");
+        assert_eq!(to_decision.count, 1);
+        assert!((to_decision.success_rate - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_record_tool_use_skips_self_and_empty() {
+        let collector = MetricsCollector::new();
+        // Self-transitions (multi-operation tool) are not recorded.
+        collector.record_tool_use("s1", "tree", true);
+        collector.record_tool_use("s1", "tree", true);
+        // Empty session id / tool are ignored entirely.
+        collector.record_tool_use("", "linear", true);
+        collector.record_tool_use("s2", "", true);
+
+        assert!(collector.chain_summary().transitions.is_empty());
+    }
+
+    #[test]
+    fn test_record_tool_use_isolates_sessions() {
+        let collector = MetricsCollector::new();
+        collector.record_tool_use("s1", "linear", true);
+        collector.record_tool_use("s2", "tree", true);
+        // s2's first tool must not link to s1's last tool.
+        collector.record_tool_use("s2", "decision", true);
+
+        let summary = collector.chain_summary();
+        assert!(summary.transitions.get("linear").is_none());
+        assert_eq!(
+            summary
+                .transitions
+                .get("tree")
+                .and_then(|m| m.get("decision"))
+                .map(|s| s.count),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn test_clear_resets_session_tracking() {
+        let collector = MetricsCollector::new();
+        collector.record_tool_use("s1", "linear", true);
+        collector.clear();
+        // After clear, the previous tool is forgotten: no transition forms.
+        collector.record_tool_use("s1", "divergent", true);
+        assert!(collector.chain_summary().transitions.is_empty());
+    }
 
     #[test]
     fn test_tool_transition_new() {
