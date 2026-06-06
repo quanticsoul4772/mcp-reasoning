@@ -32,6 +32,10 @@
 // Enable the coverage attribute when running with nightly for llvm-cov exclusions
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #![forbid(unsafe_code)]
+// Production code must not panic via unwrap/expect; test modules opt out with
+// a local `#[allow(clippy::unwrap_used, clippy::expect_used)]`. This makes the
+// "no unwrap/expect in production" guarantee compiler-enforced, not convention.
+#![deny(clippy::unwrap_used, clippy::expect_used)]
 #![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]

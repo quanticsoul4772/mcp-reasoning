@@ -8,6 +8,8 @@
 
 // Enable the coverage attribute when running with nightly for llvm-cov exclusions
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+// The binary entry point is a production path too — no panics via unwrap/expect.
+#![deny(clippy::unwrap_used, clippy::expect_used)]
 
 use mcp_reasoning::anthropic::AnthropicClient;
 use mcp_reasoning::config::Config;
