@@ -7,9 +7,20 @@
 //! in which case the honest outcome is to keep the harness as a measurement tool
 //! and *not* close the loop around it.
 //!
-//! See `docs/design/EVAL_HARNESS_PLAN.md` for the staged plan. This module is
-//! PR1: the statistical foundation ([`stats`]), pure and unblocked by the rest.
-//! Later PRs add the task/dataset model, scorers, the real-mode solver, and the
-//! reward-function rewrite that consumes these primitives.
+//! See `docs/design/EVAL_HARNESS_PLAN.md` for the staged plan.
+//!
+//! - PR1: the statistical foundation ([`stats`]).
+//! - PR2: the data model ([`task`]), programmatic scoring ([`scorer`]), and the
+//!   aggregated [`report`].
+//!
+//! Later PRs add the real-mode solver + runner and the reward-function rewrite
+//! that consumes these primitives.
 
+pub mod report;
+pub mod scorer;
 pub mod stats;
+pub mod task;
+
+pub use report::EvalReport;
+pub use scorer::{ExactMatch, Score, Scorer};
+pub use task::{AnswerKind, Dataset, DatasetError, EvalTask};
