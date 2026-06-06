@@ -5,6 +5,7 @@ use crate::error::enhanced::ComplexityMetrics;
 use crate::error::ModeError;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::AutoMode;
+use crate::server::metadata_builders;
 use crate::server::requests::{
     ConfidenceRouteRequest, DivergentRequest, LinearRequest, TreeRequest,
 };
@@ -232,6 +233,26 @@ impl super::ReasoningServer {
             "Tool invocation completed"
         );
 
+        let metadata = match metadata_builders::build_metadata_for_confidence_route(
+            &self.state.metadata_builder,
+            req.content.len(),
+            execute_mode,
+            (!auto_session_id.is_empty()).then(|| auto_session_id.clone()),
+            elapsed_ms,
+        )
+        .await
+        {
+            Ok(m) => Some(m),
+            Err(e) => {
+                tracing::warn!(
+                    tool = "reasoning_confidence_route",
+                    error = %e,
+                    "Metadata enrichment failed, returning response without metadata"
+                );
+                None
+            }
+        };
+
         ConfidenceRouteResponse {
             executed_mode: execute_mode.to_string(),
             auto_suggested_mode: auto_suggested,
@@ -239,7 +260,7 @@ impl super::ReasoningServer {
             routing_decision: routing_decision.to_string(),
             routing_reason,
             result: result_value,
-            metadata: None,
+            metadata,
             next_call,
         }
     }

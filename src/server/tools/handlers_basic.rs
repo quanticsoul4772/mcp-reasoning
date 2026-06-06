@@ -862,6 +862,29 @@ impl super::ReasoningServer {
         }
         self.state.metrics.record(metric);
 
+        let metadata = if success {
+            match metadata_builders::build_metadata_for_meta(
+                &self.state.metadata_builder,
+                req.content.len(),
+                req.session_id.clone(),
+                elapsed_ms,
+            )
+            .await
+            {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    tracing::warn!(
+                        tool = "reasoning_meta",
+                        error = %e,
+                        "Metadata enrichment failed, returning response without metadata"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         match result {
             Ok(route) => MetaResponse {
                 selected_tool: route.selected_tool,
@@ -870,7 +893,7 @@ impl super::ReasoningServer {
                 reasoning: route.reasoning,
                 fallback_to_auto: route.fallback_to_auto,
                 candidates_evaluated: route.candidates.len(),
-                metadata: None,
+                metadata,
             },
             Err(e) => MetaResponse {
                 selected_tool: "auto".to_string(),
