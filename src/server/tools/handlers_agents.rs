@@ -31,6 +31,9 @@ impl super::ReasoningServer {
             self.state
                 .metrics
                 .record(MetricEvent::new("agent_invoke", timer.elapsed_ms(), false));
+            self.state
+                .metrics
+                .record_tool_use(&session_id, "reasoning_agent_invoke", false);
             return AgentInvokeResponse {
                 agent_id: req.agent_id.clone(),
                 session_id,
@@ -50,6 +53,9 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("agent_invoke", timer.elapsed_ms(), true));
+        self.state
+            .metrics
+            .record_tool_use(&session_id, "reasoning_agent_invoke", true);
 
         AgentInvokeResponse {
             agent_id: req.agent_id,
@@ -119,6 +125,9 @@ impl super::ReasoningServer {
             self.state
                 .metrics
                 .record(MetricEvent::new("skill_run", timer.elapsed_ms(), false));
+            self.state
+                .metrics
+                .record_tool_use(&session_id, "reasoning_skill_run", false);
             return SkillRunResponse {
                 skill_id: req.skill_id.clone(),
                 session_id,
@@ -140,6 +149,9 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("skill_run", timer.elapsed_ms(), true));
+        self.state
+            .metrics
+            .record_tool_use(&session_id, "reasoning_skill_run", true);
 
         SkillRunResponse {
             skill_id: req.skill_id,
@@ -171,6 +183,9 @@ impl super::ReasoningServer {
             self.state
                 .metrics
                 .record(MetricEvent::new("team_run", timer.elapsed_ms(), false));
+            self.state
+                .metrics
+                .record_tool_use(&session_id, "reasoning_team_run", false);
             return TeamRunResponse {
                 team_id: req.team_id.clone(),
                 session_id,
@@ -189,6 +204,9 @@ impl super::ReasoningServer {
         self.state
             .metrics
             .record(MetricEvent::new("team_run", timer.elapsed_ms(), true));
+        self.state
+            .metrics
+            .record_tool_use(&session_id, "reasoning_team_run", true);
 
         TeamRunResponse {
             team_id: req.team_id,
@@ -364,6 +382,9 @@ impl super::ReasoningServer {
     }
 
     pub(super) async fn handle_crew_invoke(&self, req: CrewInvokeRequest) -> CrewInvokeResponse {
+        // Note: crew_invoke has no session_id (it spawns a fire-and-forget
+        // background process keyed by run_id), so it does not participate in the
+        // per-session tool-chain matrix — same reasoning as search/relate.
         let run_id = uuid::Uuid::new_v4().to_string();
 
         // Validate crew_type
