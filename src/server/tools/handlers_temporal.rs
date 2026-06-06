@@ -13,6 +13,7 @@ use crate::modes::{
     TemporalStructure, TimelineEvent, TimelineMode,
 };
 use crate::prompts::ReasoningMode;
+use crate::server::metadata_builders;
 use crate::server::requests::{CounterfactualRequest, MctsRequest, TimelineRequest};
 use crate::server::responses::{
     AssociationInfo, BacktrackSuggestion, BranchComparison, BranchDifferenceInfo, BranchEventInfo,
@@ -620,7 +621,7 @@ impl super::ReasoningServer {
         let timeout_duration = Duration::from_millis(timeout_ms);
         let op_for_timeout = operation.clone();
 
-        let (response, success) = match tokio::time::timeout(timeout_duration, async {
+        let (mut response, success) = match tokio::time::timeout(timeout_duration, async {
             match op_for_timeout.as_str() {
             "create" => match mode.create(content, req.session_id).await {
                 Ok(resp) => {
@@ -924,8 +925,9 @@ impl super::ReasoningServer {
             }
         };
 
+        let elapsed_ms = timer.elapsed_ms();
         self.state.metrics.record(
-            MetricEvent::new("timeline", timer.elapsed_ms(), success)
+            MetricEvent::new("timeline", elapsed_ms, success)
                 .with_operation(&operation)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
@@ -934,6 +936,26 @@ impl super::ReasoningServer {
             ReasoningMode::Timeline.tool_name(),
             success,
         );
+
+        if success {
+            let session_id = (!input_session_id.is_empty()).then(|| input_session_id.clone());
+            match metadata_builders::build_metadata_for_timeline(
+                &self.state.metadata_builder,
+                content.len(),
+                &operation,
+                session_id,
+                elapsed_ms,
+            )
+            .await
+            {
+                Ok(metadata) => response.metadata = Some(metadata),
+                Err(e) => tracing::warn!(
+                    tool = "reasoning_timeline",
+                    error = %e,
+                    "Metadata enrichment failed, returning response without metadata"
+                ),
+            }
+        }
 
         response
     }
@@ -971,7 +993,7 @@ impl super::ReasoningServer {
             .timeout_for_thinking_budget(Some(thinking_budget));
         let timeout_duration = Duration::from_millis(timeout_ms);
 
-        let (response, success) = match operation {
+        let (mut response, success) = match operation {
             "explore" => {
                 let explore_content = with_mcts_params(
                     content,
@@ -1233,8 +1255,9 @@ impl super::ReasoningServer {
             ),
         };
 
+        let elapsed_ms = timer.elapsed_ms();
         self.state.metrics.record(
-            MetricEvent::new("mcts", timer.elapsed_ms(), success)
+            MetricEvent::new("mcts", elapsed_ms, success)
                 .with_operation(operation)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent))
                 .with_convergence(response.convergence.as_ref().map(|c| c.converged)),
@@ -1244,6 +1267,26 @@ impl super::ReasoningServer {
             ReasoningMode::Mcts.tool_name(),
             success,
         );
+
+        if success {
+            let session_id = (!response.session_id.is_empty()).then(|| response.session_id.clone());
+            match metadata_builders::build_metadata_for_mcts(
+                &self.state.metadata_builder,
+                content.len(),
+                operation,
+                session_id,
+                elapsed_ms,
+            )
+            .await
+            {
+                Ok(metadata) => response.metadata = Some(metadata),
+                Err(e) => tracing::warn!(
+                    tool = "reasoning_mcts",
+                    error = %e,
+                    "Metadata enrichment failed, returning response without metadata"
+                ),
+            }
+        }
 
         response
     }
@@ -1308,7 +1351,7 @@ impl super::ReasoningServer {
         };
         let success = result.is_ok();
 
-        let response = match result {
+        let mut response = match result {
             Ok(resp) => {
                 let validation = verify_causal_model(
                     &resp.causal_model,
@@ -1410,8 +1453,9 @@ impl super::ReasoningServer {
             },
         };
 
+        let elapsed_ms = timer.elapsed_ms();
         self.state.metrics.record(
-            MetricEvent::new("counterfactual", timer.elapsed_ms(), success)
+            MetricEvent::new("counterfactual", elapsed_ms, success)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
         self.state.metrics.record_tool_use(
@@ -1419,6 +1463,26 @@ impl super::ReasoningServer {
             ReasoningMode::Counterfactual.tool_name(),
             success,
         );
+
+        if success {
+            let session_id = response.session_id.clone();
+            match metadata_builders::build_metadata_for_counterfactual(
+                &self.state.metadata_builder,
+                content.len(),
+                depth,
+                session_id,
+                elapsed_ms,
+            )
+            .await
+            {
+                Ok(metadata) => response.metadata = Some(metadata),
+                Err(e) => tracing::warn!(
+                    tool = "reasoning_counterfactual",
+                    error = %e,
+                    "Metadata enrichment failed, returning response without metadata"
+                ),
+            }
+        }
 
         response
     }

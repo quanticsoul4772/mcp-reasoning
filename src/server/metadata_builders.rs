@@ -89,7 +89,6 @@ pub async fn build_metadata_for_divergent(
 }
 
 /// Build metadata for decision analysis response.
-#[allow(dead_code)]
 pub async fn build_metadata_for_decision(
     builder: &MetadataBuilder,
     content_length: usize,
@@ -302,6 +301,189 @@ pub async fn build_metadata_for_reflection(
         tool_history: vec![],
         goal: None,
         thinking_budget: thinking_budget_label("reasoning_reflection"),
+        session_state: None,
+    };
+
+    builder.build(&metadata_req).await
+}
+
+/// Build metadata for evidence evaluation response.
+pub async fn build_metadata_for_evidence(
+    builder: &MetadataBuilder,
+    content_length: usize,
+    evidence_type: &str,
+    session_id: Option<String>,
+    elapsed_ms: u64,
+) -> Result<ResponseMetadata, AppError> {
+    let complexity = ComplexityMetrics {
+        content_length,
+        thinking_budget: None,
+        num_perspectives: None,
+        num_branches: None,
+    };
+
+    builder
+        .timing_db()
+        .record_execution(
+            "reasoning_evidence",
+            Some(evidence_type),
+            elapsed_ms,
+            complexity.clone(),
+        )
+        .await?;
+
+    let metadata_req = MetadataRequest {
+        tool_name: "reasoning_evidence".into(),
+        mode_name: Some(evidence_type.into()),
+        complexity,
+        result_context: ResultContext {
+            num_outputs: 1,
+            has_branches: false,
+            session_id,
+            complexity: if evidence_type == "probabilistic" {
+                "complex".into()
+            } else {
+                "moderate".into()
+            },
+        },
+        tool_history: vec![],
+        goal: None,
+        thinking_budget: Some("deep".into()),
+        session_state: None,
+    };
+
+    builder.build(&metadata_req).await
+}
+
+/// Build metadata for timeline reasoning response.
+pub async fn build_metadata_for_timeline(
+    builder: &MetadataBuilder,
+    content_length: usize,
+    operation: &str,
+    session_id: Option<String>,
+    elapsed_ms: u64,
+) -> Result<ResponseMetadata, AppError> {
+    let complexity = ComplexityMetrics {
+        content_length,
+        thinking_budget: None,
+        num_perspectives: None,
+        num_branches: None,
+    };
+
+    builder
+        .timing_db()
+        .record_execution(
+            "reasoning_timeline",
+            Some(operation),
+            elapsed_ms,
+            complexity.clone(),
+        )
+        .await?;
+
+    let metadata_req = MetadataRequest {
+        tool_name: "reasoning_timeline".into(),
+        mode_name: Some(operation.into()),
+        complexity,
+        result_context: ResultContext {
+            num_outputs: 1,
+            has_branches: operation == "branch",
+            session_id,
+            complexity: match operation {
+                "compare" | "merge" => "complex".into(),
+                _ => "moderate".into(),
+            },
+        },
+        tool_history: vec![],
+        goal: None,
+        thinking_budget: Some("maximum".into()),
+        session_state: None,
+    };
+
+    builder.build(&metadata_req).await
+}
+
+/// Build metadata for Monte Carlo Tree Search response.
+pub async fn build_metadata_for_mcts(
+    builder: &MetadataBuilder,
+    content_length: usize,
+    operation: &str,
+    session_id: Option<String>,
+    elapsed_ms: u64,
+) -> Result<ResponseMetadata, AppError> {
+    let complexity = ComplexityMetrics {
+        content_length,
+        thinking_budget: None,
+        num_perspectives: None,
+        num_branches: None,
+    };
+
+    builder
+        .timing_db()
+        .record_execution(
+            "reasoning_mcts",
+            Some(operation),
+            elapsed_ms,
+            complexity.clone(),
+        )
+        .await?;
+
+    let metadata_req = MetadataRequest {
+        tool_name: "reasoning_mcts".into(),
+        mode_name: Some(operation.into()),
+        complexity,
+        result_context: ResultContext {
+            num_outputs: 1,
+            has_branches: true,
+            session_id,
+            complexity: "complex".into(),
+        },
+        tool_history: vec![],
+        goal: None,
+        thinking_budget: Some("maximum".into()),
+        session_state: None,
+    };
+
+    builder.build(&metadata_req).await
+}
+
+/// Build metadata for counterfactual (causal) reasoning response.
+pub async fn build_metadata_for_counterfactual(
+    builder: &MetadataBuilder,
+    content_length: usize,
+    level: &str,
+    session_id: Option<String>,
+    elapsed_ms: u64,
+) -> Result<ResponseMetadata, AppError> {
+    let complexity = ComplexityMetrics {
+        content_length,
+        thinking_budget: None,
+        num_perspectives: None,
+        num_branches: None,
+    };
+
+    builder
+        .timing_db()
+        .record_execution(
+            "reasoning_counterfactual",
+            Some(level),
+            elapsed_ms,
+            complexity.clone(),
+        )
+        .await?;
+
+    let metadata_req = MetadataRequest {
+        tool_name: "reasoning_counterfactual".into(),
+        mode_name: Some(level.into()),
+        complexity,
+        result_context: ResultContext {
+            num_outputs: 1,
+            has_branches: false,
+            session_id,
+            complexity: "complex".into(),
+        },
+        tool_history: vec![],
+        goal: None,
+        thinking_budget: Some("maximum".into()),
         session_state: None,
     };
 
@@ -642,6 +824,55 @@ mod tests {
         // Zero iterations should be capped to 1
         let result =
             build_metadata_for_reflection(&builder, 500, "process", 0, 0.8, None, 40).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_build_metadata_for_evidence_assess() {
+        let builder = create_test_builder().await;
+        let result =
+            build_metadata_for_evidence(&builder, 1200, "assess", Some("ev-1".into()), 90).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().timing.estimated_duration_ms > 0);
+    }
+
+    #[tokio::test]
+    async fn test_build_metadata_for_evidence_probabilistic() {
+        let builder = create_test_builder().await;
+        let result = build_metadata_for_evidence(&builder, 2000, "probabilistic", None, 150).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_build_metadata_for_timeline_ops() {
+        let builder = create_test_builder().await;
+        for op in ["create", "branch", "compare", "merge"] {
+            let result =
+                build_metadata_for_timeline(&builder, 1000, op, Some("tl-1".into()), 100).await;
+            assert!(result.is_ok(), "op {op} failed");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_build_metadata_for_mcts() {
+        let builder = create_test_builder().await;
+        let result =
+            build_metadata_for_mcts(&builder, 1500, "explore", Some("mcts-1".into()), 200).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().timing.estimated_duration_ms > 0);
+    }
+
+    #[tokio::test]
+    async fn test_build_metadata_for_counterfactual() {
+        let builder = create_test_builder().await;
+        let result = build_metadata_for_counterfactual(
+            &builder,
+            1800,
+            "counterfactual",
+            Some("cf-1".into()),
+            250,
+        )
+        .await;
         assert!(result.is_ok());
     }
 
