@@ -199,7 +199,8 @@ src/
     ├── mod.rs           # Re-exports
     ├── system.rs        # SelfImprovementSystem orchestrator
     ├── manager.rs       # Cycle management + state machine
-    ├── monitor.rs       # Phase 1: Metric collection
+    ├── monitor.rs       # Phase 1: Metric collection (success/latency/baseline +
+    │                    #   low-success tool-chain transitions as anti-pattern triggers)
     ├── analyzer.rs      # Phase 2: LLM diagnosis
     ├── executor.rs      # Phase 3: Action execution + rollback
     ├── learner.rs       # Phase 4: Reward calculation

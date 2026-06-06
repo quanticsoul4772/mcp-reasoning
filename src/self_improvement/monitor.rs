@@ -189,6 +189,12 @@ impl Monitor {
             self.check_baseline_deviation(&summary, baseline, &mut triggers);
         }
 
+        // Flag low-success tool-chain transitions (anti-patterns). Previously
+        // these were surfaced only to the suggestion engine; routing them
+        // through the monitor lets the diagnosis loop see them, record them in
+        // the audit trail, and act where applicable.
+        self.check_chain_anti_patterns(collector, &mut triggers);
+
         let action_recommended =
             !triggers.is_empty() && triggers.iter().any(|t| t.severity != Severity::Info);
 
@@ -196,6 +202,31 @@ impl Monitor {
             metrics: self.summary_to_metrics(&summary),
             triggers,
             action_recommended,
+        }
+    }
+
+    /// Turn observed low-success tool-chain transitions into triggers.
+    ///
+    /// Consumes the anti-patterns already detected by
+    /// [`MetricsCollector::chain_summary`] (well-observed transitions whose
+    /// destination tool fails too often) and severity-grades each against the
+    /// per-mode success threshold, so a persistent "after A, B usually fails"
+    /// pattern becomes a first-class trigger rather than dead data.
+    fn check_chain_anti_patterns(
+        &self,
+        collector: &MetricsCollector,
+        triggers: &mut Vec<LegacyTriggerMetric>,
+    ) {
+        for anti in collector.chain_summary().anti_patterns {
+            let severity =
+                self.calculate_severity(anti.success_rate, self.config.mode_success_threshold);
+            triggers.push(LegacyTriggerMetric::new(
+                format!("chain_{}_to_{}", anti.from_tool, anti.to_tool),
+                anti.success_rate,
+                self.config.mode_success_threshold,
+                severity,
+                anti.detail,
+            ));
         }
     }
 
@@ -557,5 +588,71 @@ mod tests {
         if !result.triggers.is_empty() && all_info {
             assert!(!result.action_recommended);
         }
+    }
+
+    #[test]
+    fn test_monitor_flags_chain_anti_pattern() {
+        use crate::metrics::ToolTransition;
+
+        let config = MonitorConfig {
+            min_invocations: 5,
+            ..Default::default()
+        };
+        let monitor = Monitor::new(config);
+        let collector = MetricsCollector::new();
+
+        // Satisfy min_invocations with healthy events so the ONLY issue is the
+        // chain anti-pattern (no overall/per-mode/latency triggers).
+        for _ in 0..10 {
+            collector.record(MetricEvent::new("tree", 100, true));
+        }
+
+        // reasoning_tree -> reasoning_mcts mostly fails: 1 success, 3 failures
+        // (25% over n=4), past the anti-pattern occurrence/ success thresholds.
+        collector.record_transition(ToolTransition::new(
+            "reasoning_tree",
+            "reasoning_mcts",
+            "s1",
+            true,
+        ));
+        for _ in 0..3 {
+            collector.record_transition(ToolTransition::new(
+                "reasoning_tree",
+                "reasoning_mcts",
+                "s1",
+                false,
+            ));
+        }
+
+        let result = monitor.check(&collector);
+
+        let chain = result
+            .triggers
+            .iter()
+            .find(|t| t.name == "chain_reasoning_tree_to_reasoning_mcts")
+            .expect("expected a chain anti-pattern trigger");
+        assert!(chain.value < 0.5, "value should be the low success rate");
+        assert_ne!(
+            chain.severity,
+            Severity::Info,
+            "25% success vs 0.7 threshold should escalate"
+        );
+        assert!(result.action_recommended);
+    }
+
+    #[test]
+    fn test_monitor_no_chain_trigger_without_anti_patterns() {
+        let config = MonitorConfig {
+            min_invocations: 5,
+            ..Default::default()
+        };
+        let monitor = Monitor::new(config);
+        let collector = MetricsCollector::new();
+        for _ in 0..10 {
+            collector.record(MetricEvent::new("linear", 100, true));
+        }
+
+        let result = monitor.check(&collector);
+        assert!(!result.triggers.iter().any(|t| t.name.starts_with("chain_")));
     }
 }

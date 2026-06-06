@@ -14,7 +14,7 @@ This document outlines the design for integrating the existing self-improvement 
 src/self_improvement/
 ├── mod.rs              # Re-exports
 ├── system.rs           # SelfImprovementSystem orchestrator
-├── monitor.rs          # Phase 1: Metric collection
+├── monitor.rs          # Phase 1: Metric collection (incl. tool-chain anti-patterns)
 ├── analyzer.rs         # Phase 2: LLM-based diagnosis
 ├── executor.rs         # Phase 3: Action execution
 ├── learner.rs          # Phase 4: Lesson extraction
