@@ -310,8 +310,8 @@ Claude (Desktop/Code)
 MCP Reasoning Server (Rust)
     ↓
 ┌─────────────────┐
-│  15 Tools       │
-│  ├─ Core (6)    │ ← Linear, Tree, Divergent, Reflection, Checkpoint, Auto
+│  17 Tools       │
+│  ├─ Core (8)    │ ← Linear, Tree, Divergent, Reflection, Checkpoint, Auto, Meta, Confidence_route
 │  ├─ Graph (1)   │ ← Graph-of-Thoughts
 │  ├─ Analysis (3)│ ← Detect, Decision, Evidence
 │  ├─ Advanced (3)│ ← Timeline, MCTS, Counterfactual
