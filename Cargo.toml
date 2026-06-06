@@ -2,6 +2,7 @@
 name = "mcp-reasoning"
 version = "0.2.0"
 edition = "2021"
+rust-version = "1.75"
 authors = ["quanticsoul4772"]
 description = "MCP server providing structured reasoning capabilities via direct Anthropic Claude API"
 repository = "https://github.com/quanticsoul4772/mcp-reasoning"

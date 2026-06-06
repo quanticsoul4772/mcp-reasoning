@@ -24,6 +24,8 @@ Provides Claude with structured reasoning modes:
 - **Reflection** - Meta-cognitive quality improvement
 - **Checkpoint** - Save and restore reasoning state
 - **Auto** - Automatically select the best reasoning mode
+- **Meta** - Empirically select the best mode from historical performance data
+- **Confidence Route** - Confidence-aware routing: execute the auto-selected mode or escalate to tree
 - **Preset** - Pre-configured multi-step workflows
 - **Metrics** - Track usage and performance
 
@@ -228,13 +230,14 @@ Response includes:
 
 ### Built-in Workflows
 
-Five pre-configured workflows that chain multiple tools:
+Six pre-configured workflows that chain multiple tools:
 
 - `code-review` - Analyze code with bias detection
 - `debug-analysis` - Hypothesis-driven debugging
 - `architecture-decision` - Multi-factor architectural analysis
 - `strategic-decision` - Stakeholder-aware planning
 - `evidence-conclusion` - Research synthesis
+- `brainstorming` - Creative exploration (divergent → tree → summarize → reflection)
 
 Ask Claude: *"Run the architecture-decision preset to evaluate switching to Kubernetes"*
 
@@ -360,9 +363,8 @@ cargo llvm-cov
 ### Code Quality
 
 - Zero `unsafe` code (enforced via `#![forbid(unsafe_code)]`)
-- No `.unwrap()` or `.expect()` in production paths
-- Max 500 lines per file
-- `clippy -- -D warnings`
+- No `.unwrap()` or `.expect()` in production paths (enforced via `#![deny(clippy::unwrap_used, clippy::expect_used)]`)
+- `clippy -- -D warnings`, `cargo fmt`
 
 ### Contributing
 
