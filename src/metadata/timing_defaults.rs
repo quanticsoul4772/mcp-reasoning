@@ -37,37 +37,57 @@ pub fn get_default_timing(tool: &str, complexity: &ComplexityMetrics) -> u64 {
 /// Get base execution time for a tool in milliseconds.
 fn get_base_time(tool: &str) -> u64 {
     match tool {
-        // Instant tools (<1s)
+        // Instant tools (<1s): local registry / DB reads, no LLM call.
         "reasoning_checkpoint"
         | "reasoning_si_status"
         | "reasoning_si_diagnoses"
+        | "reasoning_si_overrides"
         | "reasoning_si_approve"
         | "reasoning_si_reject"
         | "reasoning_si_rollback"
-        | "reasoning_si_trigger" => 100,
+        | "reasoning_si_trigger"
+        | "reasoning_agent_list"
+        | "reasoning_team_list" => 100,
 
-        // Fast tools (1-5s)
-        "reasoning_metrics" => 500,
+        // Fast tools (~0.5s): in-memory metric/DB queries, no LLM call.
+        "reasoning_metrics" | "reasoning_agent_metrics" | "reasoning_list_sessions" => 500,
+
+        // Session resume: DB read, plus an optional summarization call when
+        // compress=true (default off), so allow a little headroom.
+        "reasoning_resume" => 2_000,
+
+        // Semantic memory: Voyage embedding + recall (+ rerank for search).
+        "reasoning_search" => 4_000,
+        "reasoning_relate" => 5_000,
 
         // Standard tools (8-15s)
         "reasoning_linear" => 12_000,
         "reasoning_auto" => 10_000,
+        // Meta: a single problem-classification call, then returns a tool pick.
+        "reasoning_meta" => 8_000,
 
         // Medium tools (15-30s)
         "reasoning_tree" => 18_000,
         "reasoning_decision" => 20_000,
         "reasoning_evidence" => 22_000,
         "reasoning_detect" => 16_000,
+        // Confidence routing detects a mode and then executes it (often
+        // linear/tree, sometimes escalates), so it carries an execution cost.
+        "reasoning_confidence_route" => 25_000,
 
         // Heavy tools (30-60s)
         "reasoning_divergent" => 45_000,
         "reasoning_reflection" => 35_000,
         "reasoning_timeline" => 40_000,
+        // A single agent / skill run is an LLM-backed reasoning step.
+        "reasoning_agent_invoke" | "reasoning_skill_run" => 30_000,
 
         // Very heavy tools (60-120s)
         "reasoning_graph" => 75_000,
         "reasoning_mcts" => 90_000,
         "reasoning_counterfactual" => 65_000,
+        // Teams / crews coordinate multiple agents (many LLM calls).
+        "reasoning_team_run" | "reasoning_crew_invoke" => 90_000,
 
         // Preset execution (variable)
         "reasoning_preset" => 30_000,
@@ -146,6 +166,41 @@ mod tests {
         let complexity = simple_complexity();
         assert_eq!(get_default_timing("reasoning_linear", &complexity), 12_000);
         assert_eq!(get_default_timing("reasoning_auto", &complexity), 10_000);
+    }
+
+    #[test]
+    fn test_previously_unmapped_tools_have_explicit_estimates() {
+        let c = simple_complexity();
+        // Each of these used to fall through to the generic 15_000 fallback.
+        let expected: &[(&str, u64)] = &[
+            ("reasoning_si_overrides", 100),
+            ("reasoning_agent_list", 100),
+            ("reasoning_team_list", 100),
+            ("reasoning_agent_metrics", 500),
+            ("reasoning_list_sessions", 500),
+            ("reasoning_resume", 2_000),
+            ("reasoning_search", 4_000),
+            ("reasoning_relate", 5_000),
+            ("reasoning_meta", 8_000),
+            ("reasoning_confidence_route", 25_000),
+            ("reasoning_agent_invoke", 30_000),
+            ("reasoning_skill_run", 30_000),
+            ("reasoning_team_run", 90_000),
+            ("reasoning_crew_invoke", 90_000),
+        ];
+        for (tool, want) in expected {
+            assert_eq!(
+                get_default_timing(tool, &c),
+                *want,
+                "unexpected base estimate for {tool}"
+            );
+            // None of them should land on the unknown-tool fallback.
+            assert_ne!(
+                get_default_timing(tool, &c),
+                15_000,
+                "{tool} still falls through to the fallback"
+            );
+        }
     }
 
     #[test]
