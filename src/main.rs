@@ -92,8 +92,10 @@ fn print_version() {
     println!("mcp-reasoning {}", env!("CARGO_PKG_VERSION"));
     println!("Rust MCP server for structured reasoning");
     println!();
-    println!("15 reasoning tools:");
-    println!("  Core: linear, tree, divergent, reflection, checkpoint, auto");
+    println!("17 reasoning tools:");
+    println!(
+        "  Core: linear, tree, divergent, reflection, checkpoint, auto, meta, confidence_route"
+    );
     println!("  Graph: graph (8 operations)");
     println!("  Analysis: detect, decision, evidence");
     println!("  Advanced: timeline, mcts, counterfactual");
