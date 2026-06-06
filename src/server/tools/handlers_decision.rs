@@ -5,6 +5,7 @@ use crate::error::enhanced::ComplexityMetrics;
 use crate::metrics::{MetricEvent, Timer};
 use crate::modes::{DecisionMode, DecisionValidation, EvidenceAnalysis, EvidenceMode};
 use crate::prompts::ReasoningMode;
+use crate::server::metadata_builders;
 use crate::server::requests::{DecisionRequest, EvidenceRequest};
 use crate::server::responses::{
     BayesianBreakdown, BayesianEvidence, ComparisonInfo, CredibilityBreakdown, CriterionInfo,
@@ -161,7 +162,7 @@ impl super::ReasoningServer {
         let timeout_duration = Duration::from_millis(timeout_ms);
         let decision_type_for_timeout = decision_type.to_string();
 
-        let (response, success) = match tokio::time::timeout(timeout_duration, async {
+        let (mut response, success) = match tokio::time::timeout(timeout_duration, async {
             match decision_type_for_timeout.as_str() {
                 "weighted" => match mode.weighted(content, req.session_id).await {
                     Ok(resp) => {
@@ -519,8 +520,9 @@ impl super::ReasoningServer {
             }
         };
 
+        let elapsed_ms = timer.elapsed_ms();
         self.state.metrics.record(
-            MetricEvent::new("decision", timer.elapsed_ms(), success)
+            MetricEvent::new("decision", elapsed_ms, success)
                 .with_operation(decision_type)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
@@ -529,6 +531,28 @@ impl super::ReasoningServer {
             ReasoningMode::Decision.tool_name(),
             success,
         );
+
+        if success {
+            let num_options = req.options.as_ref().map_or(0, Vec::len);
+            let session_id = (!input_session_id.is_empty()).then(|| input_session_id.clone());
+            match metadata_builders::build_metadata_for_decision(
+                &self.state.metadata_builder,
+                content.len(),
+                decision_type,
+                num_options,
+                session_id,
+                elapsed_ms,
+            )
+            .await
+            {
+                Ok(metadata) => response.metadata = Some(metadata),
+                Err(e) => tracing::warn!(
+                    tool = "reasoning_decision",
+                    error = %e,
+                    "Metadata enrichment failed, returning response without metadata"
+                ),
+            }
+        }
 
         response
     }
@@ -555,7 +579,7 @@ impl super::ReasoningServer {
         let timeout_duration = Duration::from_millis(timeout_ms);
         let evidence_type_for_timeout = evidence_type.to_string();
 
-        let (response, success) = match tokio::time::timeout(timeout_duration, async {
+        let (mut response, success) = match tokio::time::timeout(timeout_duration, async {
             match evidence_type_for_timeout.as_str() {
                 "assess" => match mode.assess(content, req.session_id).await {
                     Ok(resp) => {
@@ -779,8 +803,9 @@ impl super::ReasoningServer {
             }
         };
 
+        let elapsed_ms = timer.elapsed_ms();
         self.state.metrics.record(
-            MetricEvent::new("evidence", timer.elapsed_ms(), success)
+            MetricEvent::new("evidence", elapsed_ms, success)
                 .with_operation(evidence_type)
                 .with_validation(response.validation.as_ref().map(|v| v.consistent)),
         );
@@ -789,6 +814,26 @@ impl super::ReasoningServer {
             ReasoningMode::Evidence.tool_name(),
             success,
         );
+
+        if success {
+            let session_id = (!input_session_id.is_empty()).then(|| input_session_id.clone());
+            match metadata_builders::build_metadata_for_evidence(
+                &self.state.metadata_builder,
+                content.len(),
+                evidence_type,
+                session_id,
+                elapsed_ms,
+            )
+            .await
+            {
+                Ok(metadata) => response.metadata = Some(metadata),
+                Err(e) => tracing::warn!(
+                    tool = "reasoning_evidence",
+                    error = %e,
+                    "Metadata enrichment failed, returning response without metadata"
+                ),
+            }
+        }
 
         response
     }

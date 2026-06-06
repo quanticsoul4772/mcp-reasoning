@@ -1,8 +1,12 @@
 [package]
 name = "mcp-reasoning"
 version = "0.2.0"
+# MSRV is dependency-driven: sqlx 0.9 requires rustc 1.94, darling 0.23
+# requires 1.88, and an edition2024 dep requires cargo 1.85. 1.94 is the
+# binding floor. Keep this honest so clippy's `incompatible_msrv` lint and
+# the MSRV CI job reflect what actually builds.
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.94"
 authors = ["quanticsoul4772"]
 description = "MCP server providing structured reasoning capabilities via direct Anthropic Claude API"
 repository = "https://github.com/quanticsoul4772/mcp-reasoning"

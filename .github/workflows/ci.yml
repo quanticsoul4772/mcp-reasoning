@@ -50,6 +50,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-features
 
+  # Verify the crate still builds on its declared MSRV (Cargo.toml
+  # `rust-version`). The other jobs run @stable, which is newer than the
+  # MSRV, so without this job the real floor can drift (a dependency bump
+  # or a newer std API) and only surface later via clippy's
+  # `incompatible_msrv` lint. Building on the pinned MSRV fails fast.
+  # The floor is currently dependency-driven (sqlx 0.9 needs 1.94); bump
+  # this in lockstep with Cargo.toml `rust-version`.
+  msrv:
+    name: MSRV (1.94)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-features
+
   # Cross-platform tests only run on push to main/master, not on every
   # PR. Rust cross-platform regressions are rare; Linux CI catches
   # nearly all real issues. Windows bills at 2x and macOS at 10x the
