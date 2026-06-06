@@ -613,17 +613,25 @@ mod tests {
     }
 
     #[test]
-    fn test_measured_improvement() {
+    fn test_measured_improvement_is_a_placeholder_pending_real_sensor() {
+        // The executor still fabricates `measured_improvement` as a fraction of
+        // the estimate; PR5 replaces it with a real measured paired delta from the
+        // harness. This test no longer pins that fabricated magnitude as correct
+        // (it used to assert ~80% of expected, codifying the bug). It asserts only
+        // that the executor produces a finite value to feed the reward function.
+        // The reward (PR4) rewards absolute measured improvement clearing the MDE,
+        // so the fabricated value's ratio to `expected` is no longer "success."
+        // See docs/design/EVAL_HARNESS_PLAN.md (PR5).
         let mut executor = Executor::new();
-        let mut action = create_test_action(ActionType::ConfigAdjust);
-        action = action.with_parameters(serde_json::json!({"key": "value"}));
+        let action = create_test_action(ActionType::ConfigAdjust)
+            .with_parameters(serde_json::json!({"key": "value"}));
 
         let result = executor.execute(action);
 
-        // ConfigAdjust estimates 80% of expected improvement
-        assert!(result.measured_improvement.is_some());
-        let measured = result.measured_improvement.unwrap();
-        assert!(measured > 0.0 && measured < 0.15);
+        let measured = result
+            .measured_improvement
+            .expect("config adjust reports a measured value");
+        assert!(measured.is_finite());
     }
 
     #[test]
