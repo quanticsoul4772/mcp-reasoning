@@ -29,7 +29,9 @@ pub struct Score {
 }
 
 /// Scores a model output against a task's target.
-pub trait Scorer {
+///
+/// `Send + Sync` so a `&dyn Scorer` can be held across the runner's `.await`s.
+pub trait Scorer: Send + Sync {
     /// Score `output` for `task`.
     fn score(&self, task: &EvalTask, output: &str) -> Score;
 }

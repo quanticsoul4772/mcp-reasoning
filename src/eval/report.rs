@@ -6,6 +6,8 @@
 
 use std::collections::HashSet;
 
+use serde::Serialize;
+
 use crate::eval::scorer::Score;
 use crate::eval::stats::{self};
 use crate::eval::task::EvalTask;
@@ -16,7 +18,8 @@ pub const DEFAULT_ALPHA: f64 = 0.05;
 pub const DEFAULT_POWER: f64 = 0.80;
 
 /// Summary of one mode's run over a dataset.
-#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::derive_partial_eq_without_eq)] // f64 fields preclude `Eq`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct EvalReport {
     /// Number of scored items.
     pub n: usize,

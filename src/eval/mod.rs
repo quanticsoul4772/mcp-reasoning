@@ -12,15 +12,21 @@
 //! - PR1: the statistical foundation ([`stats`]).
 //! - PR2: the data model ([`task`]), programmatic scoring ([`scorer`]), and the
 //!   aggregated [`report`].
+//! - PR3: the real-mode [`solver`] adapters and the [`runner`] that drives a
+//!   solver over a dataset and aggregates a report. The opt-in `eval` binary is
+//!   the live entry point; it is never run in normal CI.
 //!
-//! Later PRs add the real-mode solver + runner and the reward-function rewrite
-//! that consumes these primitives.
+//! A later PR adds the reward-function rewrite that consumes these primitives.
 
 pub mod report;
+pub mod runner;
 pub mod scorer;
+pub mod solver;
 pub mod stats;
 pub mod task;
 
 pub use report::EvalReport;
+pub use runner::{run_eval, RunOutcome, TaskResult};
 pub use scorer::{ExactMatch, Score, Scorer};
+pub use solver::{LinearSolver, MockSolver, Solver, SolverError, SolverOutput};
 pub use task::{AnswerKind, Dataset, DatasetError, EvalTask};
