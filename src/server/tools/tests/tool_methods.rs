@@ -640,3 +640,37 @@ async fn test_reasoning_crew_invoke_all_valid_types_recognized() {
         );
     }
 }
+
+#[tokio::test]
+async fn test_agent_and_preset_tools_record_chain_transitions() {
+    let server = create_test_server().await;
+    let sid = "chain-d-session".to_string();
+
+    // Two different agent/team tools in one session form a linkable transition
+    // (recorded regardless of whether the agent/team exists).
+    server
+        .reasoning_agent_invoke(Parameters(AgentInvokeRequest {
+            agent_id: "analyst".to_string(),
+            task: "investigate".to_string(),
+            session_id: Some(sid.clone()),
+        }))
+        .await;
+    server
+        .reasoning_team_run(Parameters(TeamRunRequest {
+            team_id: "research".to_string(),
+            task: "investigate".to_string(),
+            session_id: Some(sid.clone()),
+        }))
+        .await;
+
+    let summary = server.state.metrics.chain_summary();
+    let from_agent = summary
+        .transitions
+        .get("reasoning_agent_invoke")
+        .expect("agent_invoke recorded a transition");
+    assert_eq!(
+        from_agent.get("reasoning_team_run").map(|s| s.count),
+        Some(1),
+        "agent_invoke -> team_run should be tracked"
+    );
+}

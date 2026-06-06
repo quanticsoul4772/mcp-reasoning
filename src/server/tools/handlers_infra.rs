@@ -9,6 +9,10 @@ impl super::ReasoningServer {
     pub(super) async fn handle_preset(&self, req: PresetRequest) -> PresetResponse {
         let timer = Timer::start();
         let operation = req.operation.clone();
+        // Effective session id for tool-chain linking (req.session_id is moved
+        // into the per-operation responses below). Empty for `list` (terminal,
+        // no session) — record_tool_use ignores empty ids.
+        let input_session_id = req.session_id.clone().unwrap_or_default();
 
         let (response, success) = match operation.as_str() {
             "list" => {
@@ -175,6 +179,9 @@ impl super::ReasoningServer {
         self.state.metrics.record(
             MetricEvent::new("preset", timer.elapsed_ms(), success).with_operation(&operation),
         );
+        self.state
+            .metrics
+            .record_tool_use(&input_session_id, "reasoning_preset", success);
 
         response
     }
