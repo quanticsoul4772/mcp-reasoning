@@ -113,11 +113,19 @@ impl ReasoningMode {
     /// Returns the recommended thinking budget for this mode.
     #[must_use]
     pub const fn thinking_budget(&self) -> Option<u32> {
+        // Must match each mode's actual `with_*_thinking()` call in `src/modes/*`
+        // (what is really sent to the API), since the agent/skill executors use
+        // this to budget a mode invoked indirectly — it must equal the direct path.
         match self {
             Self::Linear | Self::Tree | Self::Auto | Self::Checkpoint => None,
-            Self::Divergent | Self::Graph | Self::Detect => Some(4096),
-            Self::Reflection | Self::Decision | Self::Evidence => Some(8192),
-            Self::Counterfactual | Self::Mcts | Self::Timeline => Some(16384),
+            Self::Graph => Some(4096),
+            Self::Divergent
+            | Self::Reflection
+            | Self::Decision
+            | Self::Evidence
+            | Self::Detect
+            | Self::Timeline => Some(8192),
+            Self::Counterfactual | Self::Mcts => Some(16384),
         }
     }
 
@@ -585,20 +593,23 @@ mod tests {
         // No thinking
         assert_eq!(ReasoningMode::Linear.thinking_budget(), None);
         assert_eq!(ReasoningMode::Tree.thinking_budget(), None);
+        assert_eq!(ReasoningMode::Auto.thinking_budget(), None);
+        assert_eq!(ReasoningMode::Checkpoint.thinking_budget(), None);
 
-        // Standard (4096)
-        assert_eq!(ReasoningMode::Divergent.thinking_budget(), Some(4096));
+        // Standard (4096) — only graph (with_standard_thinking)
         assert_eq!(ReasoningMode::Graph.thinking_budget(), Some(4096));
 
-        // Deep (8192)
+        // Deep (8192) — with_deep_thinking
+        assert_eq!(ReasoningMode::Divergent.thinking_budget(), Some(8192));
         assert_eq!(ReasoningMode::Reflection.thinking_budget(), Some(8192));
         assert_eq!(ReasoningMode::Decision.thinking_budget(), Some(8192));
         assert_eq!(ReasoningMode::Evidence.thinking_budget(), Some(8192));
+        assert_eq!(ReasoningMode::Detect.thinking_budget(), Some(8192));
+        assert_eq!(ReasoningMode::Timeline.thinking_budget(), Some(8192));
 
-        // Maximum (16384)
+        // Maximum (16384) — with_maximum_thinking
         assert_eq!(ReasoningMode::Counterfactual.thinking_budget(), Some(16384));
         assert_eq!(ReasoningMode::Mcts.thinking_budget(), Some(16384));
-        assert_eq!(ReasoningMode::Timeline.thinking_budget(), Some(16384));
     }
 
     // ParseModeError tests
