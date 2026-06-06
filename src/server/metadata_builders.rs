@@ -5,6 +5,28 @@ use crate::metadata::{
     ComplexityMetrics, MetadataBuilder, MetadataRequest, ResponseMetadata, ResultContext,
 };
 
+/// The extended-thinking budget label a reasoning tool actually runs at — the
+/// single source of truth for the response metadata's `context.thinking_budget`.
+///
+/// These mirror the `with_*_thinking()` call in each mode (`src/modes/*`), which
+/// is what is really sent to the API: `standard`=4096, `deep`=8192,
+/// `maximum`=16384. `None` means the mode uses no extended thinking
+/// (linear/tree/auto/checkpoint/meta).
+fn thinking_budget_label(tool: &str) -> Option<String> {
+    let label = match tool {
+        "reasoning_graph" => "standard",
+        "reasoning_divergent"
+        | "reasoning_reflection"
+        | "reasoning_decision"
+        | "reasoning_evidence"
+        | "reasoning_detect"
+        | "reasoning_timeline" => "deep",
+        "reasoning_mcts" | "reasoning_counterfactual" => "maximum",
+        _ => return None,
+    };
+    Some(label.to_string())
+}
+
 /// Build metadata for divergent reasoning response.
 pub async fn build_metadata_for_divergent(
     builder: &MetadataBuilder,
@@ -59,7 +81,7 @@ pub async fn build_metadata_for_divergent(
         },
         tool_history: vec![],
         goal: None,
-        thinking_budget: Some("standard".into()),
+        thinking_budget: thinking_budget_label("reasoning_divergent"),
         session_state: None,
     };
 
@@ -113,7 +135,7 @@ pub async fn build_metadata_for_decision(
         },
         tool_history: vec![],
         goal: None,
-        thinking_budget: Some("standard".into()),
+        thinking_budget: thinking_budget_label("reasoning_decision"),
         session_state: None,
     };
 
@@ -167,7 +189,7 @@ pub async fn build_metadata_for_tree(
         },
         tool_history: vec![],
         goal: None,
-        thinking_budget: Some("standard".into()),
+        thinking_budget: thinking_budget_label("reasoning_tree"),
         session_state: None,
     };
 
@@ -225,7 +247,7 @@ pub async fn build_metadata_for_graph(
         },
         tool_history: vec![],
         goal: None,
-        thinking_budget: Some("standard".into()),
+        thinking_budget: thinking_budget_label("reasoning_graph"),
         session_state: None,
     };
 
@@ -279,7 +301,7 @@ pub async fn build_metadata_for_reflection(
         },
         tool_history: vec![],
         goal: None,
-        thinking_budget: Some("standard".into()),
+        thinking_budget: thinking_budget_label("reasoning_reflection"),
         session_state: None,
     };
 
@@ -621,5 +643,62 @@ mod tests {
         let result =
             build_metadata_for_reflection(&builder, 500, "process", 0, 0.8, None, 40).await;
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_thinking_budget_label_matches_actual_mode_budgets() {
+        // Deep modes (with_deep_thinking, 8192).
+        for tool in [
+            "reasoning_divergent",
+            "reasoning_reflection",
+            "reasoning_decision",
+            "reasoning_evidence",
+            "reasoning_detect",
+            "reasoning_timeline",
+        ] {
+            assert_eq!(
+                thinking_budget_label(tool).as_deref(),
+                Some("deep"),
+                "{tool}"
+            );
+        }
+        // Standard (with_standard_thinking, 4096).
+        assert_eq!(
+            thinking_budget_label("reasoning_graph").as_deref(),
+            Some("standard")
+        );
+        // Maximum (with_maximum_thinking, 16384).
+        for tool in ["reasoning_mcts", "reasoning_counterfactual"] {
+            assert_eq!(
+                thinking_budget_label(tool).as_deref(),
+                Some("maximum"),
+                "{tool}"
+            );
+        }
+        // No extended thinking.
+        for tool in ["reasoning_linear", "reasoning_tree", "reasoning_auto"] {
+            assert!(thinking_budget_label(tool).is_none(), "{tool}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_reflection_metadata_reports_deep_budget() {
+        // Regression: reflection runs at deep (8192), not the previously
+        // hardcoded "standard".
+        let builder = create_test_builder().await;
+        let metadata = build_metadata_for_reflection(&builder, 1000, "process", 2, 0.75, None, 100)
+            .await
+            .expect("metadata");
+        assert_eq!(metadata.context.thinking_budget.as_deref(), Some("deep"));
+    }
+
+    #[tokio::test]
+    async fn test_tree_metadata_reports_no_budget() {
+        // Tree uses no extended thinking — the label must be absent, not "standard".
+        let builder = create_test_builder().await;
+        let metadata = build_metadata_for_tree(&builder, 800, "create", 3, None, 100)
+            .await
+            .expect("metadata");
+        assert!(metadata.context.thinking_budget.is_none());
     }
 }
