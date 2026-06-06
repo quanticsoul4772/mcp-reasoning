@@ -76,15 +76,24 @@ impl SuggestionEngine {
     /// - **Promote** destinations at or above `HIGH_SUCCESS_RATE` to the front
     ///   (most-observed first), annotating the reason with the evidence and
     ///   adding ones the static rules missed.
+    ///
+    /// `suppressed` is the set of destination tools the self-improvement loop has
+    /// actively blocked from `current_tool` (sustained anti-patterns); these are
+    /// removed unconditionally, a stricter guard than the `LOW_SUCCESS_RATE`
+    /// heuristic above.
     #[must_use]
     pub fn suggest_next_tools_blended(
         &self,
         current_tool: &str,
         result_context: &ResultContext,
         empirical: &[(String, TransitionStats)],
+        suppressed: &[String],
     ) -> Vec<ToolSuggestion> {
         let mut suggestions = self.suggest_next_tools(current_tool, result_context);
         Self::apply_empirical(&mut suggestions, empirical);
+        if !suppressed.is_empty() {
+            suggestions.retain(|s| !suppressed.iter().any(|t| t == &s.tool));
+        }
         suggestions
     }
 
@@ -621,7 +630,7 @@ mod tests {
         };
 
         let static_only = engine.suggest_next_tools("reasoning_tree", &ctx);
-        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &[]);
+        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &[], &[]);
 
         assert_eq!(static_only, blended);
     }
@@ -636,7 +645,7 @@ mod tests {
 
         // Only 2 observations (< MIN_TRANSITION_SAMPLES): no effect.
         let empirical = vec![("reasoning_mcts".to_string(), stats(2, 1.0))];
-        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &empirical);
+        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &empirical, &[]);
 
         assert!(!blended.iter().any(|s| s.tool == "reasoning_mcts"));
     }
@@ -651,7 +660,7 @@ mod tests {
 
         // A tool the static rules don't suggest, strongly observed to follow.
         let empirical = vec![("reasoning_mcts".to_string(), stats(10, 0.9))];
-        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &empirical);
+        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &empirical, &[]);
 
         assert_eq!(
             blended.first().map(|s| s.tool.as_str()),
@@ -671,7 +680,7 @@ mod tests {
 
         // reasoning_decision is a static suggestion after tree; back it with data.
         let empirical = vec![("reasoning_decision".to_string(), stats(8, 0.75))];
-        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &empirical);
+        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &empirical, &[]);
 
         let decision = blended
             .iter()
@@ -695,7 +704,7 @@ mod tests {
 
         // reasoning_decision is normally suggested after tree, but it fails a lot.
         let empirical = vec![("reasoning_decision".to_string(), stats(10, 0.2))];
-        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &empirical);
+        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &empirical, &[]);
 
         assert!(!blended.iter().any(|s| s.tool == "reasoning_decision"));
     }
@@ -717,8 +726,37 @@ mod tests {
             ("reasoning_counterfactual".to_string(), stats(5, 0.9)),
             ("reasoning_linear".to_string(), stats(4, 0.9)),
         ];
-        let blended = engine.suggest_next_tools_blended("reasoning_divergent", &ctx, &empirical);
+        let blended =
+            engine.suggest_next_tools_blended("reasoning_divergent", &ctx, &empirical, &[]);
 
         assert!(blended.len() <= MAX_SUGGESTIONS);
+    }
+
+    #[test]
+    fn test_blended_hard_blocks_suppressed_destination() {
+        let engine = create_test_engine();
+        let ctx = ResultContext {
+            has_branches: true,
+            ..Default::default()
+        };
+        // reasoning_decision is a static suggestion after tree; suppression removes it.
+        let suppressed = vec!["reasoning_decision".to_string()];
+        let blended = engine.suggest_next_tools_blended("reasoning_tree", &ctx, &[], &suppressed);
+        assert!(!blended.iter().any(|s| s.tool == "reasoning_decision"));
+    }
+
+    #[test]
+    fn test_suppression_overrides_empirical_promotion() {
+        let engine = create_test_engine();
+        let ctx = ResultContext {
+            has_branches: true,
+            ..Default::default()
+        };
+        // Even a strongly-promoted empirical transition is removed when suppressed.
+        let empirical = vec![("reasoning_mcts".to_string(), stats(10, 0.9))];
+        let suppressed = vec!["reasoning_mcts".to_string()];
+        let blended =
+            engine.suggest_next_tools_blended("reasoning_tree", &ctx, &empirical, &suppressed);
+        assert!(!blended.iter().any(|s| s.tool == "reasoning_mcts"));
     }
 }

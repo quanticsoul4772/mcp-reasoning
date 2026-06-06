@@ -94,10 +94,18 @@ impl MetadataBuilder {
             .as_ref()
             .map(|m| m.transition_stats_from(&request.tool_name))
             .unwrap_or_default();
+        // Destinations the self-improvement loop has actively suppressed from
+        // this tool (sustained anti-patterns) — hard-blocked from suggestions.
+        let suppressed = self
+            .metrics
+            .as_ref()
+            .map(|m| m.suppressed_destinations_from(&request.tool_name))
+            .unwrap_or_default();
         let next_tools = self.suggestion_engine.suggest_next_tools_blended(
             &request.tool_name,
             &request.result_context,
             &empirical,
+            &suppressed,
         );
 
         // Prefer the session's actual tool sequence (reconstructed from observed

@@ -369,17 +369,36 @@ impl super::ReasoningServer {
             }
             "chains" => {
                 let summary = self.state.metrics.chain_summary();
+                let suppressed = self.state.metrics.suppressed_transitions();
                 match serde_json::to_value(&summary) {
-                    Ok(value) => (
-                        MetricsResponse {
-                            summary: None,
-                            mode_stats: None,
-                            invocations: None,
-                            config: None,
-                            chains: Some(value),
-                        },
-                        true,
-                    ),
+                    Ok(mut value) => {
+                        // Surface what the self-improvement loop is actively
+                        // blocking right now (its suppression set), alongside the
+                        // detected anti-patterns.
+                        if let Some(obj) = value.as_object_mut() {
+                            obj.insert(
+                                "suppressed_transitions".to_string(),
+                                serde_json::Value::Array(
+                                    suppressed
+                                        .iter()
+                                        .map(|(from, to)| {
+                                            serde_json::json!({ "from": from, "to": to })
+                                        })
+                                        .collect(),
+                                ),
+                            );
+                        }
+                        (
+                            MetricsResponse {
+                                summary: None,
+                                mode_stats: None,
+                                invocations: None,
+                                config: None,
+                                chains: Some(value),
+                            },
+                            true,
+                        )
+                    }
                     Err(e) => {
                         // Don't hide a serialization failure behind an empty value:
                         // surface it to the caller and mark the query unsuccessful.

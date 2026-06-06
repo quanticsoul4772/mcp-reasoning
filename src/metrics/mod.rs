@@ -30,7 +30,7 @@
 #![allow(clippy::cast_lossless, clippy::cast_possible_wrap)]
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::Instant;
@@ -339,6 +339,12 @@ pub struct MetricsCollector {
     /// Monotonic counter stamped on each `last_tool_by_session` write, so the
     /// least-recently-used session can be evicted individually at the cap.
     tool_use_seq: AtomicU64,
+    /// Tool-chain transitions (`from_tool` → `to_tool`) that the self-improvement
+    /// loop has actively suppressed because they are sustained anti-patterns.
+    /// The suggestion engine hard-blocks these (a stricter guard than the live
+    /// heuristic). Replaced wholesale each SI cycle, so it auto-releases a pair
+    /// once it is no longer an anti-pattern.
+    suppressed_transitions: RwLock<HashSet<(String, String)>>,
 }
 
 impl MetricsCollector {
@@ -534,6 +540,9 @@ impl MetricsCollector {
         if let Ok(mut last) = self.last_tool_by_session.write() {
             last.clear();
         }
+        if let Ok(mut suppressed) = self.suppressed_transitions.write() {
+            suppressed.clear();
+        }
     }
 
     // ========================================================================
@@ -680,6 +689,69 @@ impl MetricsCollector {
             history.push(t.to_tool.clone());
         }
         history
+    }
+
+    // ------------------------------------------------------------------
+    // Self-correcting transition suppression
+    // ------------------------------------------------------------------
+
+    /// Self-correcting step for the self-improvement loop: recompute the current
+    /// tool-chain anti-patterns and make them the active suppression set, so the
+    /// suggestion engine stops recommending sustained low-success transitions.
+    ///
+    /// The set is replaced wholesale (not merged), so a pair is **automatically
+    /// released** once it is no longer an anti-pattern (its data improved or aged
+    /// out of the transition buffer). Returns the anti-patterns that are now
+    /// suppressed, for logging/audit. Safe and reversible: it only gates
+    /// suggestions, never touches config, prompts, or stored state.
+    pub fn apply_chain_self_correction(&self) -> Vec<ChainAntiPattern> {
+        let anti_patterns = self.chain_summary().anti_patterns;
+        let pairs: HashSet<(String, String)> = anti_patterns
+            .iter()
+            .map(|a| (a.from_tool.clone(), a.to_tool.clone()))
+            .collect();
+        match self.suppressed_transitions.write() {
+            Ok(mut set) => *set = pairs,
+            Err(poison) => {
+                tracing::error!(error = %poison, "apply_chain_self_correction: lock poisoned");
+            }
+        }
+        anti_patterns
+    }
+
+    /// Whether the `from_tool` → `to_tool` transition is currently suppressed.
+    #[must_use]
+    pub fn is_transition_suppressed(&self, from_tool: &str, to_tool: &str) -> bool {
+        self.suppressed_transitions
+            .read()
+            .is_ok_and(|set| set.contains(&(from_tool.to_string(), to_tool.to_string())))
+    }
+
+    /// Destinations currently suppressed when coming from `from_tool`, for the
+    /// suggestion engine to hard-block.
+    #[must_use]
+    pub fn suppressed_destinations_from(&self, from_tool: &str) -> Vec<String> {
+        self.suppressed_transitions.read().map_or_else(
+            |_| Vec::new(),
+            |set| {
+                set.iter()
+                    .filter(|(from, _)| from == from_tool)
+                    .map(|(_, to)| to.clone())
+                    .collect()
+            },
+        )
+    }
+
+    /// All currently suppressed transitions (sorted), for inspection/metrics.
+    #[must_use]
+    pub fn suppressed_transitions(&self) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = self
+            .suppressed_transitions
+            .read()
+            .map(|set| set.iter().cloned().collect())
+            .unwrap_or_default();
+        out.sort();
+        out
     }
 
     /// The last tool recorded in `session_id`, if any.
@@ -1494,6 +1566,68 @@ mod tests {
         let to_decision = divergent.get("decision").expect("divergent->decision");
         assert_eq!(to_decision.count, 1);
         assert!((to_decision.success_rate - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_apply_chain_self_correction_suppresses_then_releases() {
+        let collector = MetricsCollector::new();
+        // Anti-pattern: reasoning_tree -> reasoning_mcts at 25% over n=4.
+        collector.record_transition(ToolTransition::new(
+            "reasoning_tree",
+            "reasoning_mcts",
+            "s1",
+            true,
+        ));
+        for _ in 0..3 {
+            collector.record_transition(ToolTransition::new(
+                "reasoning_tree",
+                "reasoning_mcts",
+                "s1",
+                false,
+            ));
+        }
+
+        let suppressed = collector.apply_chain_self_correction();
+        assert_eq!(suppressed.len(), 1);
+        assert!(collector.is_transition_suppressed("reasoning_tree", "reasoning_mcts"));
+        assert_eq!(
+            collector.suppressed_destinations_from("reasoning_tree"),
+            vec!["reasoning_mcts".to_string()]
+        );
+        assert_eq!(
+            collector.suppressed_transitions(),
+            vec![("reasoning_tree".to_string(), "reasoning_mcts".to_string())]
+        );
+
+        // The transition recovers (many successes); re-running self-correction
+        // auto-releases it (the set is replaced, not merged).
+        for _ in 0..10 {
+            collector.record_transition(ToolTransition::new(
+                "reasoning_tree",
+                "reasoning_mcts",
+                "s1",
+                true,
+            ));
+        }
+        let still = collector.apply_chain_self_correction();
+        assert!(still.is_empty());
+        assert!(!collector.is_transition_suppressed("reasoning_tree", "reasoning_mcts"));
+        assert!(collector
+            .suppressed_destinations_from("reasoning_tree")
+            .is_empty());
+    }
+
+    #[test]
+    fn test_clear_resets_suppressed_transitions() {
+        let collector = MetricsCollector::new();
+        collector.record_transition(ToolTransition::new("a", "b", "s1", false));
+        for _ in 0..3 {
+            collector.record_transition(ToolTransition::new("a", "b", "s1", false));
+        }
+        collector.apply_chain_self_correction();
+        assert!(collector.is_transition_suppressed("a", "b"));
+        collector.clear();
+        assert!(!collector.is_transition_suppressed("a", "b"));
     }
 
     #[test]
