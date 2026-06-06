@@ -394,6 +394,13 @@ impl ErrorEnhancer {
             ("reasoning_counterfactual", _) => {
                 r#"{ "content": "Causal scenario: what if X had not happened?" }"#
             }
+            ("reasoning_resume", _) => r#"{ "session_id": "<id from reasoning_list_sessions>" }"#,
+            ("reasoning_search", _) => {
+                r#"{ "query": "topic to find across past sessions", "limit": 10 }"#
+            }
+            ("reasoning_relate", _) => {
+                r#"{ "session_id": "<id from reasoning_list_sessions>", "depth": 2 }"#
+            }
             _ => return None,
         };
         Some(format!("{failed_tool} {args}"))
@@ -481,6 +488,35 @@ mod tests {
         let ctx = create_test_context("reasoning_linear");
         let enhanced = enhancer.enhance("Service unavailable", ctx);
         assert_eq!(enhanced.category, ErrorCategory::ApiUnavailable);
+    }
+
+    #[test]
+    fn test_memory_tool_not_found_yields_example_alternative() {
+        let enhancer = ErrorEnhancer::new();
+        // resume/relate with a bad id categorize as InvalidRequest ("not found")
+        // and should surface a copyable corrected invocation.
+        for tool in ["reasoning_resume", "reasoning_relate"] {
+            let enhanced = enhancer.enhance("session not found", create_test_context(tool));
+            assert_eq!(enhanced.category, ErrorCategory::InvalidRequest);
+            assert!(
+                enhanced
+                    .alternatives
+                    .iter()
+                    .any(|a| a.reason.contains("session_id")),
+                "{tool} should suggest a corrected example with session_id"
+            );
+        }
+    }
+
+    #[test]
+    fn test_search_invalid_yields_example_alternative() {
+        let enhancer = ErrorEnhancer::new();
+        let enhanced = enhancer.enhance("invalid query", create_test_context("reasoning_search"));
+        assert_eq!(enhanced.category, ErrorCategory::InvalidRequest);
+        assert!(enhanced
+            .alternatives
+            .iter()
+            .any(|a| a.reason.contains("query")));
     }
 
     #[test]

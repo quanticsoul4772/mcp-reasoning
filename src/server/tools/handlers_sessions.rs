@@ -1,3 +1,4 @@
+use crate::error::enhanced::ComplexityMetrics;
 use crate::metrics::{MetricEvent, Timer};
 use crate::server::requests::{
     ListSessionsRequest, RelateSessionsRequest, ResumeSessionRequest, SearchSessionsRequest,
@@ -143,10 +144,17 @@ impl super::ReasoningServer {
                 ResumeSessionResponse {
                     session_id: req.session_id,
                     created_at: String::new(),
-                    summary: format!(
-                        "resume failed: {e}. \
-                         Verify the session_id is from a previous reasoning session. \
-                         Use reasoning_list_sessions to find valid session IDs."
+                    summary: super::error_help::with_recovery_suggestions(
+                        format!(
+                            "resume failed: {e}. \
+                             Verify the session_id is from a previous reasoning session. \
+                             Use reasoning_list_sessions to find valid session IDs."
+                        ),
+                        "reasoning_resume",
+                        None,
+                        &e.to_string(),
+                        ComplexityMetrics::default(),
+                        self.state.config.request_timeout_ms,
                     ),
                     thought_chain: vec![],
                     key_conclusions: vec![],
@@ -243,7 +251,14 @@ impl super::ReasoningServer {
                 SearchSessionsResponse {
                     results: vec![],
                     count: 0,
-                    error: Some(format!("search failed: {e}")),
+                    error: Some(super::error_help::with_recovery_suggestions(
+                        format!("search failed: {e}"),
+                        "reasoning_search",
+                        None,
+                        &e.to_string(),
+                        ComplexityMetrics::from_content(req.query.len()),
+                        self.state.config.request_timeout_ms,
+                    )),
                     metadata: None,
                 }
             }
@@ -337,7 +352,14 @@ impl super::ReasoningServer {
                 RelateSessionsResponse {
                     nodes: vec![],
                     edges: vec![],
-                    error: Some(format!("relationship analysis failed: {e}")),
+                    error: Some(super::error_help::with_recovery_suggestions(
+                        format!("relationship analysis failed: {e}"),
+                        "reasoning_relate",
+                        None,
+                        &e.to_string(),
+                        ComplexityMetrics::default(),
+                        self.state.config.request_timeout_ms,
+                    )),
                     metadata: None,
                 }
             }
