@@ -52,6 +52,8 @@ impl SuggestionEngine {
             "reasoning_evidence" => self.suggest_after_evidence(result_context),
             // New handlers (7 tools)
             "reasoning_auto" => self.suggest_after_auto(result_context),
+            "reasoning_meta" => self.suggest_after_meta(result_context),
+            "reasoning_confidence_route" => self.suggest_after_confidence_route(result_context),
             "reasoning_detect" => self.suggest_after_detect(result_context),
             "reasoning_timeline" => self.suggest_after_timeline(result_context),
             "reasoning_counterfactual" => self.suggest_after_counterfactual(result_context),
@@ -327,6 +329,37 @@ impl SuggestionEngine {
         ]
     }
 
+    fn suggest_after_meta(&self, _ctx: &ResultContext) -> Vec<ToolSuggestion> {
+        // Meta only recommends a tool; the natural next step is to actually run
+        // reasoning. reasoning_auto executes the best-fit mode if the caller
+        // wants the server to act on the recommendation immediately.
+        vec![ToolSuggestion {
+            tool: "reasoning_auto".into(),
+            reason:
+                "Execute the recommended reasoning approach (auto picks and runs the best mode)"
+                    .into(),
+            estimated_duration_ms: 10_000,
+        }]
+    }
+
+    fn suggest_after_confidence_route(&self, ctx: &ResultContext) -> Vec<ToolSuggestion> {
+        // Confidence routing already executed a mode, so mirror the post-auto
+        // flow: review then save. Offer a deeper second look on complex results.
+        let mut suggestions = vec![ToolSuggestion {
+            tool: "reasoning_checkpoint".into(),
+            reason: "Save the routed reasoning result".into(),
+            estimated_duration_ms: 100,
+        }];
+        if ctx.complexity != "simple" {
+            suggestions.push(ToolSuggestion {
+                tool: "reasoning_reflection".into(),
+                reason: "Evaluate the routed result and surface blind spots".into(),
+                estimated_duration_ms: 25_000,
+            });
+        }
+        suggestions
+    }
+
     fn suggest_after_detect(&self, ctx: &ResultContext) -> Vec<ToolSuggestion> {
         let mut suggestions = vec![];
 
@@ -510,6 +543,36 @@ mod tests {
 
         assert!(suggestions.iter().any(|s| s.tool == "reasoning_checkpoint"));
         assert!(suggestions.iter().any(|s| s.tool == "reasoning_reflection"));
+    }
+
+    #[test]
+    fn test_suggest_after_meta() {
+        let engine = create_test_engine();
+        let ctx = ResultContext::default();
+
+        let suggestions = engine.suggest_next_tools("reasoning_meta", &ctx);
+        // Meta only recommends; point the caller at executing the recommendation.
+        assert!(suggestions.iter().any(|s| s.tool == "reasoning_auto"));
+    }
+
+    #[test]
+    fn test_suggest_after_confidence_route_complex_adds_reflection() {
+        let engine = create_test_engine();
+        let simple = ResultContext {
+            complexity: "simple".into(),
+            ..Default::default()
+        };
+        let complex = ResultContext {
+            complexity: "complex".into(),
+            ..Default::default()
+        };
+
+        let s = engine.suggest_next_tools("reasoning_confidence_route", &simple);
+        assert!(s.iter().any(|x| x.tool == "reasoning_checkpoint"));
+        assert!(!s.iter().any(|x| x.tool == "reasoning_reflection"));
+
+        let c = engine.suggest_next_tools("reasoning_confidence_route", &complex);
+        assert!(c.iter().any(|x| x.tool == "reasoning_reflection"));
     }
 
     #[test]

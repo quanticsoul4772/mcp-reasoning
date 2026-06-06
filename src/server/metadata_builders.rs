@@ -490,6 +490,96 @@ pub async fn build_metadata_for_counterfactual(
     builder.build(&metadata_req).await
 }
 
+/// Build metadata for the empirical mode selector (`reasoning_meta`).
+pub async fn build_metadata_for_meta(
+    builder: &MetadataBuilder,
+    content_length: usize,
+    session_id: Option<String>,
+    elapsed_ms: u64,
+) -> Result<ResponseMetadata, AppError> {
+    let complexity = ComplexityMetrics {
+        content_length,
+        thinking_budget: None,
+        num_perspectives: None,
+        num_branches: None,
+    };
+
+    builder
+        .timing_db()
+        .record_execution("reasoning_meta", None, elapsed_ms, complexity.clone())
+        .await?;
+
+    let metadata_req = MetadataRequest {
+        tool_name: "reasoning_meta".into(),
+        mode_name: None,
+        complexity,
+        result_context: ResultContext {
+            num_outputs: 1,
+            has_branches: false,
+            session_id,
+            complexity: "simple".into(),
+        },
+        tool_history: vec![],
+        goal: None,
+        thinking_budget: None,
+        session_state: None,
+    };
+
+    builder.build(&metadata_req).await
+}
+
+/// Build metadata for confidence-aware routing (`reasoning_confidence_route`),
+/// which executes the selected `executed_mode`.
+pub async fn build_metadata_for_confidence_route(
+    builder: &MetadataBuilder,
+    content_length: usize,
+    executed_mode: &str,
+    session_id: Option<String>,
+    elapsed_ms: u64,
+) -> Result<ResponseMetadata, AppError> {
+    let complexity = ComplexityMetrics {
+        content_length,
+        thinking_budget: None,
+        num_perspectives: None,
+        num_branches: None,
+    };
+
+    builder
+        .timing_db()
+        .record_execution(
+            "reasoning_confidence_route",
+            Some(executed_mode),
+            elapsed_ms,
+            complexity.clone(),
+        )
+        .await?;
+
+    // The routed mode reflects how hard the problem was judged to be.
+    let complexity_level = match executed_mode {
+        "tree" | "divergent" => "complex",
+        "linear" => "simple",
+        _ => "moderate",
+    };
+
+    let metadata_req = MetadataRequest {
+        tool_name: "reasoning_confidence_route".into(),
+        mode_name: Some(executed_mode.into()),
+        complexity,
+        result_context: ResultContext {
+            num_outputs: 1,
+            has_branches: executed_mode == "tree",
+            session_id,
+            complexity: complexity_level.into(),
+        },
+        tool_history: vec![],
+        goal: None,
+        thinking_budget: None,
+        session_state: None,
+    };
+
+    builder.build(&metadata_req).await
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -860,6 +950,32 @@ mod tests {
             build_metadata_for_mcts(&builder, 1500, "explore", Some("mcts-1".into()), 200).await;
         assert!(result.is_ok());
         assert!(result.unwrap().timing.estimated_duration_ms > 0);
+    }
+
+    #[tokio::test]
+    async fn test_build_metadata_for_meta() {
+        let builder = create_test_builder().await;
+        let result = build_metadata_for_meta(&builder, 800, Some("meta-1".into()), 40).await;
+        assert!(result.is_ok());
+        let meta = result.unwrap();
+        assert!(meta.timing.estimated_duration_ms > 0);
+        // The meta suggestion arm points at executing the recommendation.
+        assert!(meta
+            .suggestions
+            .next_tools
+            .iter()
+            .any(|s| s.tool == "reasoning_auto"));
+    }
+
+    #[tokio::test]
+    async fn test_build_metadata_for_confidence_route() {
+        let builder = create_test_builder().await;
+        for mode in ["linear", "tree", "divergent"] {
+            let result =
+                build_metadata_for_confidence_route(&builder, 1200, mode, Some("cr-1".into()), 120)
+                    .await;
+            assert!(result.is_ok(), "mode {mode} failed");
+        }
     }
 
     #[tokio::test]
