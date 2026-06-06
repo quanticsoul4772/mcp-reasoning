@@ -48,3 +48,6 @@ nul
 # Build archives
 *.tar.gz
 *.zip
+
+# Local scratch / research notes (not versioned)
+claudedocs/
