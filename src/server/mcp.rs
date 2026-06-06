@@ -117,7 +117,10 @@ impl McpServer {
         )
         .with_metrics(Arc::clone(&metrics));
 
-        // Create progress notification channel
+        // Create the progress broadcast bus. The sender lives in AppState so modes
+        // can emit milestones; the per-call MCP forwarder (tools/progress_bridge.rs)
+        // subscribes its own receiver for each streaming tool call, so this startup
+        // receiver is intentionally dropped.
         let (progress_tx, _progress_rx) = super::progress::create_progress_channel();
 
         // Create app state with shared metrics and self-improvement handle

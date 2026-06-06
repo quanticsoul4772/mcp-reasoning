@@ -276,7 +276,7 @@ async fn test_counterfactual_interventional_depth() {
         session_id: Some("cf-s1".to_string()),
         progress_token: None,
     };
-    let resp = server.reasoning_counterfactual(Parameters(req)).await;
+    let resp = server.handle_counterfactual(req).await;
     assert_eq!(resp.original_scenario, "Company hired 10 engineers");
     assert_eq!(resp.intervention_applied, "Hired 20 instead");
     assert_eq!(resp.analysis_depth, "interventional");
@@ -292,7 +292,7 @@ async fn test_counterfactual_causal_depth() {
         session_id: None,
         progress_token: None,
     };
-    let resp = server.reasoning_counterfactual(Parameters(req)).await;
+    let resp = server.handle_counterfactual(req).await;
     assert_eq!(resp.analysis_depth, "causal");
     // No session_id → None in response
     assert_eq!(resp.original_scenario, "A decision was made");
@@ -308,7 +308,7 @@ async fn test_counterfactual_no_depth() {
         session_id: None,
         progress_token: None,
     };
-    let resp = server.reasoning_counterfactual(Parameters(req)).await;
+    let resp = server.handle_counterfactual(req).await;
     // Defaults to "counterfactual"
     assert_eq!(resp.analysis_depth, "counterfactual");
 }
@@ -323,7 +323,7 @@ async fn test_counterfactual_with_progress_token() {
         session_id: Some("prog-cf-test".to_string()),
         progress_token: Some("prog-token-123".to_string()),
     };
-    let resp = server.reasoning_counterfactual(Parameters(req)).await;
+    let resp = server.handle_counterfactual(req).await;
     assert_eq!(resp.original_scenario, "scenario A");
     // In error path, session_id is passed through
     assert!(resp.confidence >= 0.0);
@@ -349,7 +349,7 @@ async fn test_mcts_no_operation_defaults_explore() {
         auto_execute: None,
         progress_token: None,
     };
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
     // None defaults to "explore" in handler
     assert_eq!(resp.session_id, "mcts-default");
 }
@@ -370,7 +370,7 @@ async fn test_mcts_no_content() {
         auto_execute: None,
         progress_token: None,
     };
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
     assert_eq!(resp.session_id, "mcts-empty");
 }
 
@@ -390,7 +390,7 @@ async fn test_mcts_with_progress_token() {
         auto_execute: None,
         progress_token: Some("mcts-token-abc".to_string()),
     };
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
     assert_eq!(resp.session_id, "mcts-prog");
 }
 
@@ -410,7 +410,7 @@ async fn test_mcts_auto_backtrack_no_session() {
         auto_execute: Some(true),
         progress_token: None,
     };
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
     // session_id is None → defaults to empty string in error path
     assert!(resp.session_id.is_empty() || !resp.session_id.is_empty());
 }
@@ -490,7 +490,7 @@ async fn test_reflection_process_no_content() {
         quality_threshold: None,
         progress_token: None,
     };
-    let resp = server.reasoning_reflection(Parameters(req)).await;
+    let resp = server.handle_reflection(req).await;
     // Empty content → API fails → weaknesses set
     assert_eq!(resp.quality_score, 0.0);
     assert!(resp.weaknesses.is_some());
@@ -508,7 +508,7 @@ async fn test_reflection_process_with_progress_token() {
         quality_threshold: Some(0.8),
         progress_token: Some("reflect-prog-1".to_string()),
     };
-    let resp = server.reasoning_reflection(Parameters(req)).await;
+    let resp = server.handle_reflection(req).await;
     // API fails → error path
     assert_eq!(resp.quality_score, 0.0);
 }
@@ -525,7 +525,7 @@ async fn test_reflection_evaluate_no_session() {
         quality_threshold: None,
         progress_token: None,
     };
-    let resp = server.reasoning_reflection(Parameters(req)).await;
+    let resp = server.handle_reflection(req).await;
     assert_eq!(resp.quality_score, 0.0);
     assert!(resp.weaknesses.is_some());
     let weaknesses = resp.weaknesses.unwrap();
@@ -547,7 +547,7 @@ async fn test_divergent_with_rebellion() {
         force_rebellion: Some(true),
         progress_token: None,
     };
-    let resp = server.reasoning_divergent(Parameters(req)).await;
+    let resp = server.handle_divergent(req).await;
     // API fails → error path with synthesis containing error message
     assert_eq!(resp.session_id, "div-rebel");
     assert!(resp
@@ -568,7 +568,7 @@ async fn test_divergent_no_options() {
         force_rebellion: None,
         progress_token: None,
     };
-    let resp = server.reasoning_divergent(Parameters(req)).await;
+    let resp = server.handle_divergent(req).await;
     // session_id=None → empty string in error path
     assert!(resp.session_id.is_empty() || !resp.session_id.is_empty());
     assert!(resp.synthesis.is_some());
@@ -585,7 +585,7 @@ async fn test_divergent_with_progress_token() {
         force_rebellion: Some(false),
         progress_token: Some("div-progress-abc".to_string()),
     };
-    let resp = server.reasoning_divergent(Parameters(req)).await;
+    let resp = server.handle_divergent(req).await;
     assert_eq!(resp.session_id, "div-prog");
 }
 

@@ -42,7 +42,7 @@ async fn test_reasoning_divergent_tool() {
         force_rebellion: Some(false),
         progress_token: None,
     };
-    let resp = server.reasoning_divergent(Parameters(req)).await;
+    let resp = server.handle_divergent(req).await;
     assert_eq!(resp.session_id, "s1");
 }
 
@@ -53,14 +53,14 @@ async fn test_reasoning_divergent_requires_voyage_key() {
     // (in synthesis) and no perspectives, rather than self-assessed scores.
     let server = create_test_server().await;
     let resp = server
-        .reasoning_divergent(Parameters(DivergentRequest {
+        .handle_divergent(DivergentRequest {
             content: "anything".to_string(),
             session_id: None,
             num_perspectives: Some(2),
             challenge_assumptions: None,
             force_rebellion: None,
             progress_token: None,
-        }))
+        })
         .await;
     assert!(resp.perspectives.is_empty());
     let synth = resp.synthesis.expect("config error surfaced");
@@ -79,7 +79,7 @@ async fn test_reasoning_reflection_tool() {
         quality_threshold: Some(0.8),
         progress_token: None,
     };
-    let resp = server.reasoning_reflection(Parameters(req)).await;
+    let resp = server.handle_reflection(req).await;
     assert!(resp.quality_score >= 0.0);
 }
 
@@ -257,7 +257,7 @@ async fn test_reasoning_mcts_tool() {
         auto_execute: Some(false),
         progress_token: None,
     };
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
     assert_eq!(resp.session_id, "s1");
 }
 
@@ -271,7 +271,7 @@ async fn test_reasoning_counterfactual_tool() {
         session_id: Some("s1".to_string()),
         progress_token: None,
     };
-    let resp = server.reasoning_counterfactual(Parameters(req)).await;
+    let resp = server.handle_counterfactual(req).await;
     // Stub uses input values for output
     assert_eq!(resp.original_scenario, "base");
     assert_eq!(resp.intervention_applied, "change");

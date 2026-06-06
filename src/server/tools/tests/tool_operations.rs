@@ -301,7 +301,7 @@ async fn test_reflection_evaluate_operation() {
         quality_threshold: None,
         progress_token: None,
     };
-    let resp = server.reasoning_reflection(Parameters(req)).await;
+    let resp = server.handle_reflection(req).await;
     // Evaluate will fail (no API) but exercises the code path
     let _ = resp.quality_score;
 }
@@ -318,7 +318,7 @@ async fn test_reflection_unknown_operation() {
         quality_threshold: None,
         progress_token: None,
     };
-    let resp = server.reasoning_reflection(Parameters(req)).await;
+    let resp = server.handle_reflection(req).await;
     assert_eq!(resp.quality_score, 0.0);
     assert!(resp.weaknesses.is_some());
 }

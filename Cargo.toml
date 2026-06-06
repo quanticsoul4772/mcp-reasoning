@@ -61,6 +61,9 @@ schemars = "1.2"
 
 [dev-dependencies]
 # Testing
+# rmcp `client` feature is test-only: it powers the in-process MCP client used to
+# assert progress notifications reach the client. Kept out of the production build.
+rmcp = { version = "1.7", features = ["client"] }
 mockall = "0.14"
 tokio-test = "0.4"
 pretty_assertions = "1"
