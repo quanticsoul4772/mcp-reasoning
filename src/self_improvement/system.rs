@@ -100,6 +100,20 @@ impl<C: AnthropicClientTrait> SelfImprovementSystem<C> {
         &mut self,
         metrics: &MetricsCollector,
     ) -> Result<CycleResult, ModeError> {
+        // Self-correcting guard: deterministically suppress sustained low-success
+        // tool-chain transitions so the suggestion engine stops recommending
+        // them. Runs every cycle, independent of the LLM analysis path, the
+        // circuit breaker, and approval gating — it only gates suggestions
+        // (never config/prompts/state) and auto-releases a pair once it is no
+        // longer an anti-pattern.
+        let suppressed = metrics.apply_chain_self_correction();
+        if !suppressed.is_empty() {
+            tracing::info!(
+                count = suppressed.len(),
+                "self-improvement suppressed low-success tool-chain transitions"
+            );
+        }
+
         // Check circuit breaker
         if !self.circuit_breaker.is_allowed() {
             return Ok(CycleResult {

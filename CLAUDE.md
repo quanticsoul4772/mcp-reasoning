@@ -187,7 +187,8 @@ src/
 ├── skills/              # Composable skill system (run/discover/builtin)
 ├── metadata/            # Tool metadata; next-tool suggestions (static rules blended
 │                        #   with observed transitions: promote high-success, suppress
-│                        #   low-success anti-patterns); timing defaults
+│                        #   low-success anti-patterns, hard-block SI-suppressed
+│                        #   transitions); timing defaults
 ├── presets/
 │   └── mod.rs           # 6 built-in presets (code-review, debug-analysis, architecture-decision,
 │                        #   strategic-decision, evidence-conclusion, brainstorming)
@@ -195,9 +196,12 @@ src/
 │                        #   record_tool_use, transition_stats_from, session_tool_history).
 │                        #   Surfaced via reasoning_metrics query="chains"; feeds the
 │                        #   SuggestionEngine so next-tool hints are data-driven.
+│                        #   apply_chain_self_correction() holds the SI suppression set
+│                        #   (sustained anti-patterns) the SuggestionEngine hard-blocks.
 └── self_improvement/
     ├── mod.rs           # Re-exports
-    ├── system.rs        # SelfImprovementSystem orchestrator
+    ├── system.rs        # SelfImprovementSystem orchestrator (run_cycle also applies the
+    │                    #   self-correcting transition suppression every cycle)
     ├── manager.rs       # Cycle management + state machine
     ├── monitor.rs       # Phase 1: Metric collection (success/latency/baseline +
     │                    #   low-success tool-chain transitions as anti-pattern triggers)
