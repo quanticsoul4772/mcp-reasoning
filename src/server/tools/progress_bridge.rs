@@ -13,7 +13,7 @@ use std::future::Future;
 use rmcp::model::{ProgressNotificationParam, ProgressToken};
 use rmcp::service::RoleServer;
 use rmcp::Peer;
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 
 use crate::server::progress::ProgressEvent;
 
@@ -68,7 +68,15 @@ impl super::ReasoningServer {
 
         loop {
             tokio::select! {
-                result = &mut fut => return result,
+                result = &mut fut => {
+                    // The handler emits its final 100% Complete milestone just
+                    // before returning, with no await after it — so it never wins
+                    // a select race and is still buffered here. Drain whatever is
+                    // pending before returning so the last tick is not lost.
+                    self.drain_progress(&peer, &mut rx, &internal_token, &client_token)
+                        .await;
+                    return result;
+                }
                 event = rx.recv() => match event {
                     Ok(ev) if ev.token == internal_token => {
                         // Best-effort: a failed notify must not fail the tool call.
@@ -81,8 +89,37 @@ impl super::ReasoningServer {
                     // Forwarder fell behind the bus; drop the gap and continue.
                     Err(RecvError::Lagged(_)) => {}
                     // Bus closed (only at shutdown): stop forwarding, finish the call.
-                    Err(RecvError::Closed) => return (&mut fut).await,
+                    Err(RecvError::Closed) => {
+                        self.drain_progress(&peer, &mut rx, &internal_token, &client_token)
+                            .await;
+                        return (&mut fut).await;
+                    }
                 },
+            }
+        }
+    }
+
+    /// Forward every still-buffered milestone for `internal_token` without
+    /// blocking, then stop. Used to flush the final tick once the handler has
+    /// returned (or the bus closed).
+    async fn drain_progress(
+        &self,
+        peer: &Peer<RoleServer>,
+        rx: &mut tokio::sync::broadcast::Receiver<ProgressEvent>,
+        internal_token: &str,
+        client_token: &ProgressToken,
+    ) {
+        loop {
+            match rx.try_recv() {
+                Ok(ev) if ev.token == internal_token => {
+                    let _ = peer
+                        .notify_progress(to_progress_param(&ev, client_token))
+                        .await;
+                }
+                Ok(_) => {}
+                // Keep draining past a lag gap; only stop when truly empty/closed.
+                Err(TryRecvError::Lagged(_)) => {}
+                Err(TryRecvError::Empty | TryRecvError::Closed) => return,
             }
         }
     }
