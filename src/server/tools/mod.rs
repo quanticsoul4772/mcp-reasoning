@@ -14,8 +14,11 @@ use std::sync::Arc;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::handler::server::ServerHandler;
-use rmcp::model::{ServerCapabilities, ServerInfo};
-use rmcp::{tool, tool_handler, tool_router};
+use rmcp::model::{Meta, ServerCapabilities, ServerInfo};
+use rmcp::service::RoleServer;
+use rmcp::{tool, tool_handler, tool_router, Peer};
+
+use progress_bridge::ensure_progress_token;
 
 use super::requests::{
     AgentInvokeRequest, AgentListRequest, AgentMetricsRequest, AutoRequest, CheckpointRequest,
@@ -51,6 +54,7 @@ mod handlers_infra;
 mod handlers_sessions;
 mod handlers_si;
 mod handlers_temporal;
+mod progress_bridge;
 
 // ============================================================================
 // Thinking Budget Constants for Timeout Selection
@@ -176,8 +180,17 @@ impl ReasoningServer {
                        Returns multiple perspectives each with their core assumptions, constraints they accept, and blind spots they carry. \
                        Does NOT converge to a single answer — use reasoning_linear or reasoning_tree after if you need a decision."
     )]
-    async fn reasoning_divergent(&self, req: Parameters<DivergentRequest>) -> DivergentResponse {
-        self.handle_divergent(req.0).await
+    async fn reasoning_divergent(
+        &self,
+        req: Parameters<DivergentRequest>,
+        peer: Peer<RoleServer>,
+        meta: Meta,
+    ) -> DivergentResponse {
+        let mut req = req.0;
+        let internal = ensure_progress_token(&mut req.progress_token, "divergent-");
+        let client = meta.get_progress_token();
+        self.with_progress(peer, client, internal, self.handle_divergent(req))
+            .await
     }
 
     #[tool(
@@ -187,8 +200,17 @@ impl ReasoningServer {
                        evaluate=assess an entire reasoning session for quality, consistency, and blind spots. \
                        Does NOT re-solve the original problem — use after reasoning_linear/tree/etc. to improve their output."
     )]
-    async fn reasoning_reflection(&self, req: Parameters<ReflectionRequest>) -> ReflectionResponse {
-        self.handle_reflection(req.0).await
+    async fn reasoning_reflection(
+        &self,
+        req: Parameters<ReflectionRequest>,
+        peer: Peer<RoleServer>,
+        meta: Meta,
+    ) -> ReflectionResponse {
+        let mut req = req.0;
+        let internal = ensure_progress_token(&mut req.progress_token, "reflection-");
+        let client = meta.get_progress_token();
+        self.with_progress(peer, client, internal, self.handle_reflection(req))
+            .await
     }
 
     #[tool(
@@ -271,8 +293,17 @@ impl ReasoningServer {
                        Use instead of reasoning_graph when candidate paths are independent and don't cross-pollinate. \
                        Returns the scored frontier, the selected next step with rationale, expanded options, and a consistency check. Each call is one evaluated search step: call repeatedly — feeding the latest results back in the content — to deepen the search."
     )]
-    async fn reasoning_mcts(&self, req: Parameters<MctsRequest>) -> MctsResponse {
-        self.handle_mcts(req.0).await
+    async fn reasoning_mcts(
+        &self,
+        req: Parameters<MctsRequest>,
+        peer: Peer<RoleServer>,
+        meta: Meta,
+    ) -> MctsResponse {
+        let mut req = req.0;
+        let internal = ensure_progress_token(&mut req.progress_token, "mcts-");
+        let client = meta.get_progress_token();
+        self.with_progress(peer, client, internal, self.handle_mcts(req))
+            .await
     }
 
     #[tool(
@@ -288,8 +319,14 @@ impl ReasoningServer {
     async fn reasoning_counterfactual(
         &self,
         req: Parameters<CounterfactualRequest>,
+        peer: Peer<RoleServer>,
+        meta: Meta,
     ) -> CounterfactualResponse {
-        self.handle_counterfactual(req.0).await
+        let mut req = req.0;
+        let internal = ensure_progress_token(&mut req.progress_token, "counterfactual-");
+        let client = meta.get_progress_token();
+        self.with_progress(peer, client, internal, self.handle_counterfactual(req))
+            .await
     }
 
     // -- Infrastructure tools --

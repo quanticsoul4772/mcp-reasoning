@@ -374,7 +374,7 @@ async fn test_mcts_explore_returns_valid_response() {
         progress_token: None,
     };
 
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
     // Handler always returns a MctsResponse (either success or error fallback)
     assert!(!resp.session_id.is_empty());
 }
@@ -407,6 +407,6 @@ async fn test_mcts_auto_backtrack_returns_valid_response() {
         progress_token: None,
     };
 
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
     assert!(!resp.session_id.is_empty());
 }

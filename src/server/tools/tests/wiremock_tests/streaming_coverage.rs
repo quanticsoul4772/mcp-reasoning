@@ -5,7 +5,6 @@
 //! [`super::anthropic_sse_response`] drives the success arms — and lets us
 //! assert the verification fires (and catches injected errors) end-to-end.
 
-use rmcp::handler::server::wrapper::Parameters;
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -82,7 +81,7 @@ async fn test_mcts_explore_streaming_success_surfaces_breakdown() {
     mount_sse(&mock_server, &mcts_explore_consistent()).await;
     let server = create_mocked_server(&mock_server).await;
 
-    let resp = server.reasoning_mcts(Parameters(mcts_req())).await;
+    let resp = server.handle_mcts(mcts_req()).await;
     // Success arm: the rich fields are surfaced (not the error fallback).
     let frontier = resp.frontier.expect("frontier surfaced");
     assert_eq!(frontier.len(), 2);
@@ -138,7 +137,7 @@ async fn test_mcts_explore_streaming_fast_mode_succeeds() {
     // A "standard" thinking budget still drives the success arm end-to-end.
     let mut req = mcts_req();
     req.thinking = Some("standard".to_string());
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
     assert_eq!(resp.frontier.expect("frontier surfaced").len(), 2);
 }
 
@@ -148,7 +147,7 @@ async fn test_mcts_explore_streaming_converges_on_dominant_candidate() {
     mount_sse(&mock_server, &mcts_explore_dominant()).await;
     let server = create_mocked_server(&mock_server).await;
 
-    let resp = server.reasoning_mcts(Parameters(mcts_req())).await;
+    let resp = server.handle_mcts(mcts_req()).await;
     let convergence = resp.convergence.expect("convergence surfaced");
     assert!(convergence.converged);
     assert!((convergence.top_gap - 0.45).abs() < 1e-9);
@@ -161,7 +160,7 @@ async fn test_mcts_explore_streaming_flags_incoherent_backprop() {
     mount_sse(&mock_server, &mcts_explore_backprop_incoherent()).await;
     let server = create_mocked_server(&mock_server).await;
 
-    let resp = server.reasoning_mcts(Parameters(mcts_req())).await;
+    let resp = server.handle_mcts(mcts_req()).await;
     let validation = resp.validation.expect("validation present");
     assert!(!validation.consistent);
     assert!(validation
@@ -188,7 +187,7 @@ async fn test_mcts_explore_streaming_flags_non_argmax_selection() {
     mount_sse(&mock_server, &bad).await;
     let server = create_mocked_server(&mock_server).await;
 
-    let resp = server.reasoning_mcts(Parameters(mcts_req())).await;
+    let resp = server.handle_mcts(mcts_req()).await;
     let validation = resp.validation.expect("validation present");
     assert!(!validation.consistent);
     assert!(validation
@@ -260,7 +259,7 @@ async fn test_mcts_auto_backtrack_flags_ignored_quality_threshold() {
     let mut req = mcts_req();
     req.operation = Some("auto_backtrack".to_string());
     req.quality_threshold = Some(0.5);
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
 
     let validation = resp.validation.expect("validation present");
     assert!(!validation.consistent);
@@ -291,7 +290,7 @@ async fn test_mcts_explore_streaming_injects_exploration_constant() {
 
     let mut req = mcts_req();
     req.exploration_constant = Some(2.0);
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
 
     // Success arm reached => the param-bearing prompt matched the mock.
     let frontier = resp.frontier.expect("frontier surfaced (param injected)");
@@ -317,7 +316,7 @@ async fn test_mcts_auto_backtrack_streaming_injects_quality_threshold() {
     let mut req = mcts_req();
     req.operation = Some("auto_backtrack".to_string());
     req.quality_threshold = Some(0.3);
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
 
     let suggestion = resp
         .backtrack_suggestion
@@ -367,7 +366,7 @@ async fn test_counterfactual_streaming_success_surfaces_ladder() {
         session_id: Some("s-stream-cf".to_string()),
         progress_token: None,
     };
-    let resp = server.reasoning_counterfactual(Parameters(req)).await;
+    let resp = server.handle_counterfactual(req).await;
 
     // Both previously-dropped rungs are surfaced.
     let assoc = resp.association.expect("association rung surfaced");

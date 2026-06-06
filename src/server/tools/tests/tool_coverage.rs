@@ -214,7 +214,7 @@ async fn test_mcts_auto_backtrack_operation() {
         auto_execute: Some(false),
         progress_token: None,
     };
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
     let _ = resp.session_id;
 }
 
@@ -234,7 +234,7 @@ async fn test_mcts_unknown_operation() {
         auto_execute: None,
         progress_token: None,
     };
-    let resp = server.reasoning_mcts(Parameters(req)).await;
+    let resp = server.handle_mcts(req).await;
     assert_eq!(resp.session_id, "s1");
 }
 

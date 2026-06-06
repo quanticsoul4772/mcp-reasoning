@@ -230,7 +230,7 @@ async fn test_divergent_success_path() {
         progress_token: None,
     };
 
-    let resp = server.reasoning_divergent(Parameters(req)).await;
+    let resp = server.handle_divergent(req).await;
     assert_eq!(resp.session_id, "s1");
 }
 
@@ -271,7 +271,7 @@ async fn test_reflection_all_operations() {
         quality_threshold: Some(0.8),
         progress_token: None,
     };
-    let resp = server.reasoning_reflection(Parameters(process_req)).await;
+    let resp = server.handle_reflection(process_req).await;
     assert!(resp.quality_score >= 0.0);
 
     // Test evaluate
@@ -303,7 +303,7 @@ async fn test_reflection_all_operations() {
         quality_threshold: None,
         progress_token: None,
     };
-    let resp = server.reasoning_reflection(Parameters(evaluate_req)).await;
+    let resp = server.handle_reflection(evaluate_req).await;
     assert!(resp.quality_score >= 0.0);
 
     // Test unknown operation
@@ -316,7 +316,7 @@ async fn test_reflection_all_operations() {
         quality_threshold: None,
         progress_token: None,
     };
-    let resp = server.reasoning_reflection(Parameters(unknown_req)).await;
+    let resp = server.handle_reflection(unknown_req).await;
     assert!(resp
         .weaknesses
         .unwrap()

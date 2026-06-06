@@ -144,7 +144,7 @@ async fn test_mcts_all_operations() {
         auto_execute: Some(false),
         progress_token: None,
     };
-    let resp = server.reasoning_mcts(Parameters(explore_req)).await;
+    let resp = server.handle_mcts(explore_req).await;
     assert_eq!(resp.session_id, "s1");
 
     // Test auto_backtrack
@@ -177,7 +177,7 @@ async fn test_mcts_all_operations() {
         auto_execute: Some(true),
         progress_token: None,
     };
-    let resp = server.reasoning_mcts(Parameters(backtrack_req)).await;
+    let resp = server.handle_mcts(backtrack_req).await;
     assert_eq!(resp.session_id, "s1");
 
     // Test unknown operation (defaults to explore)
@@ -194,7 +194,7 @@ async fn test_mcts_all_operations() {
         auto_execute: None,
         progress_token: None,
     };
-    let resp = server.reasoning_mcts(Parameters(default_req)).await;
+    let resp = server.handle_mcts(default_req).await;
     assert_eq!(resp.session_id, "s1");
 }
 
@@ -237,7 +237,7 @@ async fn test_counterfactual_success_path() {
         progress_token: None,
     };
 
-    let resp = server.reasoning_counterfactual(Parameters(req)).await;
+    let resp = server.handle_counterfactual(req).await;
     assert_eq!(resp.original_scenario, "Original scenario");
     assert_eq!(resp.intervention_applied, "What if X changed?");
 }

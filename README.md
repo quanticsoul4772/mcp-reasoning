@@ -291,7 +291,7 @@ Errors include contextual alternatives — if a tool fails due to incorrect para
 
 ### Streaming
 
-Long-running operations stream milestone progress via MCP notifications, so Claude can report partial results while reasoning continues.
+The long-running modes (`divergent`, `reflection`, `mcts`, `counterfactual`) emit milestone progress — a percentage plus a status label (e.g. "Starting API call", "Processing response") — as MCP `notifications/progress` while reasoning continues. These are sent only when the client opts in by supplying a progress token in the request `_meta` (per the MCP spec); the payload is progress status, not partial reasoning output.
 
 ### Implementation
 

@@ -14,6 +14,7 @@ mod extended;
 mod graph_coverage;
 mod handler_success;
 mod more_tests;
+mod progress_notifications;
 mod streaming_coverage;
 mod temporal;
 mod temporal_coverage;
