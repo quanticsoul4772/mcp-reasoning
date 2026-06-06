@@ -9,10 +9,17 @@ use std::collections::HashMap;
 /// Configuration for the learning system.
 #[derive(Debug, Clone)]
 pub struct LearnerConfig {
-    /// Weight for expected vs actual improvement comparison.
+    /// Sensitivity of the reward to absolute measured improvement beyond the MDE
+    /// (the slope past the threshold; see [`Learner::calculate_reward`]).
     pub improvement_weight: f64,
-    /// Minimum reward to consider action successful.
+    /// Minimum reward to consider an action successful.
     pub success_threshold: f64,
+    /// Pre-registered Minimum Detectable Effect: the smallest absolute measured
+    /// improvement that earns any reward. A change measured below this is treated
+    /// as indistinguishable from noise and is **not** rewarded. This is the gate
+    /// that stops the loop from chasing effects it cannot reliably detect; it is
+    /// a placeholder default to be calibrated against a real harness run.
+    pub mde_threshold: f64,
     /// Maximum lessons to retain.
     pub max_lessons: usize,
 }
@@ -22,6 +29,7 @@ impl Default for LearnerConfig {
         Self {
             improvement_weight: 0.7,
             success_threshold: 0.0,
+            mde_threshold: 0.05,
             max_lessons: 1000,
         }
     }
@@ -119,31 +127,48 @@ impl Learner {
         Some(LearningResult { lesson, context })
     }
 
-    /// Calculate reward for an action.
+    /// Reward returned for a failed action, independent of any measurement.
+    pub const FAILURE_PENALTY: f64 = -0.5;
+    /// Reward earned the moment a change's measured improvement reaches the MDE.
+    pub const REWARD_AT_MDE: f64 = 0.5;
+
+    /// Reward an action by its **absolute measured improvement**, gated on a
+    /// pre-registered MDE.
+    ///
+    /// This deliberately does *not* reward `actual / expected` calibration: a
+    /// change is good because it measurably helped, not because it matched a
+    /// prediction. The shape, on success:
+    ///
+    /// - measured **regression** (`< 0`) → negative reward proportional to harm;
+    /// - measured improvement **below** the MDE → `0.0` (real-but-undetectable or
+    ///   too small to matter is not a win — this is the gate);
+    /// - measured improvement **at or above** the MDE → at least
+    ///   [`Self::REWARD_AT_MDE`], rising with the absolute gain past the
+    ///   threshold and saturating at `+1.0`.
+    ///
+    /// A failed action returns [`Self::FAILURE_PENALTY`] regardless of any
+    /// measurement. `expected_improvement` is intentionally unused here.
     #[must_use]
     pub fn calculate_reward(&self, result: &ExecutionResult) -> f64 {
         if !result.success {
-            return -0.5; // Penalty for failure
+            return Self::FAILURE_PENALTY;
         }
 
-        let expected = result.action.expected_improvement;
-        let actual = result.measured_improvement.unwrap_or(0.0);
+        let measured = result.measured_improvement.unwrap_or(0.0);
+        let mde = self.config.mde_threshold.max(0.0);
 
-        if expected <= 0.0 {
-            return actual; // No expectation, return raw improvement
+        if measured < 0.0 {
+            // A measured regression actively hurt; penalize in proportion, saturating.
+            return (measured * self.config.improvement_weight).clamp(-1.0, 0.0);
         }
 
-        // Calculate reward based on how well actual matched expected
-        let ratio = actual / expected;
-
-        if ratio >= 1.0 {
-            // Met or exceeded expectations
-            (ratio.min(2.0) - 1.0) * self.config.improvement_weight + 0.5
-        } else {
-            // Below expectations
-            (ratio - 0.5) * self.config.improvement_weight
+        if measured < mde {
+            // Real but below the pre-registered MDE: not rewarded.
+            return 0.0;
         }
-        .clamp(-1.0, 1.0)
+
+        // Cleared the MDE: reward the absolute gain past the threshold, saturating.
+        (Self::REWARD_AT_MDE + (measured - mde) * self.config.improvement_weight).clamp(0.0, 1.0)
     }
 
     /// Record a lesson directly (e.g., from a rejection or external feedback).
@@ -266,38 +291,30 @@ impl Learner {
 
     fn generate_insight(&self, result: &ExecutionResult, reward: f64) -> String {
         let action_type = &result.action.action_type;
-        let expected = result.action.expected_improvement;
-        let actual = result.measured_improvement.unwrap_or(0.0);
 
         if !result.success {
             return format!("{} action failed: {}", action_type, result.message);
         }
 
-        if actual >= expected * 1.2 {
+        let measured = result.measured_improvement.unwrap_or(0.0);
+        let mde = self.config.mde_threshold.max(0.0);
+
+        if measured < 0.0 {
             format!(
-                "{} exceeded expectations: {:.1}% improvement vs {:.1}% expected",
-                action_type,
-                actual * 100.0,
-                expected * 100.0
+                "{action_type} regressed performance by {:.1}% (reward: {reward:.2})",
+                measured.abs() * 100.0
             )
-        } else if actual >= expected * 0.8 {
+        } else if measured < mde {
             format!(
-                "{} met expectations: {:.1}% improvement",
-                action_type,
-                actual * 100.0
-            )
-        } else if actual > 0.0 {
-            format!(
-                "{} underperformed: {:.1}% improvement vs {:.1}% expected (reward: {:.2})",
-                action_type,
-                actual * 100.0,
-                expected * 100.0,
-                reward
+                "{action_type} improved {:.1}% but did not clear the {:.1}% MDE — not rewarded",
+                measured * 100.0,
+                mde * 100.0
             )
         } else {
             format!(
-                "{} had no measurable impact (reward: {:.2})",
-                action_type, reward
+                "{action_type} improved {:.1}%, clearing the {:.1}% MDE (reward: {reward:.2})",
+                measured * 100.0,
+                mde * 100.0
             )
         }
     }
@@ -457,30 +474,68 @@ mod tests {
     }
 
     #[test]
-    fn test_calculate_reward_success_exceeded() {
+    fn test_calculate_reward_clears_mde() {
+        // Default MDE is 0.05; a measured 0.2 clears it and is rewarded.
         let learner = Learner::with_defaults();
         let result = create_execution_result(true, 0.1, Some(0.2));
 
         let reward = learner.calculate_reward(&result);
-        assert!(reward > 0.5);
+        assert!(reward >= Learner::REWARD_AT_MDE);
+        assert!(reward > 0.0);
     }
 
     #[test]
-    fn test_calculate_reward_success_met() {
+    fn test_calculate_reward_below_mde_is_not_rewarded() {
+        // THE gate: a real but sub-MDE improvement earns exactly zero — it is not
+        // distinguishable from noise, so the loop must not chase it. (Replaces the
+        // test that pinned `actual/expected` calibration.)
         let learner = Learner::with_defaults();
-        let result = create_execution_result(true, 0.1, Some(0.1));
+        let result = create_execution_result(true, 0.2, Some(0.03));
 
         let reward = learner.calculate_reward(&result);
-        assert!(reward >= 0.0);
+        assert!((reward - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
-    fn test_calculate_reward_success_underperformed() {
+    fn test_calculate_reward_at_mde_boundary() {
+        // Exactly at the MDE earns the floor reward.
         let learner = Learner::with_defaults();
-        let result = create_execution_result(true, 0.2, Some(0.05));
+        let result = create_execution_result(true, 0.1, Some(0.05));
 
         let reward = learner.calculate_reward(&result);
-        assert!(reward < 0.5);
+        assert!((reward - Learner::REWARD_AT_MDE).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_calculate_reward_regression_is_penalized() {
+        // A measured regression actively hurt → negative reward.
+        let learner = Learner::with_defaults();
+        let result = create_execution_result(true, 0.1, Some(-0.1));
+
+        let reward = learner.calculate_reward(&result);
+        assert!(reward < 0.0);
+    }
+
+    #[test]
+    fn test_calculate_reward_scales_with_absolute_improvement() {
+        // Larger measured improvement → strictly larger reward (until saturation).
+        let learner = Learner::with_defaults();
+        let small = learner.calculate_reward(&create_execution_result(true, 0.1, Some(0.1)));
+        let large = learner.calculate_reward(&create_execution_result(true, 0.1, Some(0.3)));
+        assert!(large > small);
+    }
+
+    #[test]
+    fn test_calculate_reward_ignores_expected_improvement() {
+        // Same measured delta, wildly different expectations → identical reward.
+        // This is the whole point: the reward is for what was measured, not for
+        // predicting it.
+        let learner = Learner::with_defaults();
+        let low_expectation =
+            learner.calculate_reward(&create_execution_result(true, 0.05, Some(0.2)));
+        let high_expectation =
+            learner.calculate_reward(&create_execution_result(true, 0.9, Some(0.2)));
+        assert!((low_expectation - high_expectation).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -489,7 +544,7 @@ mod tests {
         let result = create_execution_result(false, 0.1, None);
 
         let reward = learner.calculate_reward(&result);
-        assert!((reward - (-0.5)).abs() < f64::EPSILON);
+        assert!((reward - Learner::FAILURE_PENALTY).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -665,23 +720,29 @@ mod tests {
     fn test_insight_generation() {
         let learner = Learner::with_defaults();
 
-        // Exceeded expectations
+        // Cleared the MDE (0.2 > 0.05).
         let result1 = create_execution_result(true, 0.1, Some(0.2));
         let reward1 = learner.calculate_reward(&result1);
         let insight1 = learner.generate_insight(&result1, reward1);
-        assert!(insight1.contains("exceeded"));
+        assert!(insight1.contains("clearing the"));
 
-        // Met expectations
-        let result2 = create_execution_result(true, 0.1, Some(0.1));
+        // Improved but below the MDE (0.03 < 0.05).
+        let result2 = create_execution_result(true, 0.1, Some(0.03));
         let reward2 = learner.calculate_reward(&result2);
         let insight2 = learner.generate_insight(&result2, reward2);
-        assert!(insight2.contains("met"));
+        assert!(insight2.contains("did not clear"));
 
-        // Failed
-        let result3 = create_execution_result(false, 0.1, None);
+        // Regression.
+        let result3 = create_execution_result(true, 0.1, Some(-0.1));
         let reward3 = learner.calculate_reward(&result3);
         let insight3 = learner.generate_insight(&result3, reward3);
-        assert!(insight3.contains("failed"));
+        assert!(insight3.contains("regressed"));
+
+        // Failed.
+        let result4 = create_execution_result(false, 0.1, None);
+        let reward4 = learner.calculate_reward(&result4);
+        let insight4 = learner.generate_insight(&result4, reward4);
+        assert!(insight4.contains("failed"));
     }
 
     #[test]
