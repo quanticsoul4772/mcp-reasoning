@@ -26,7 +26,7 @@ pub mod stats;
 pub mod task;
 
 pub use report::EvalReport;
-pub use runner::{run_eval, RunOutcome, TaskResult};
+pub use runner::{run_eval, run_eval_with_progress, RunOutcome, TaskResult};
 pub use scorer::{ExactMatch, Score, Scorer};
-pub use solver::{LinearSolver, MockSolver, Solver, SolverError, SolverOutput};
+pub use solver::{LinearSolver, MockSolver, ReflectionSolver, Solver, SolverError, SolverOutput};
 pub use task::{AnswerKind, Dataset, DatasetError, EvalTask};

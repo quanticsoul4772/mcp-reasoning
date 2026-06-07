@@ -63,35 +63,56 @@ impl RunOutcome {
 /// Never panics and never short-circuits: a solver error on one task is recorded
 /// and the run continues.
 pub async fn run_eval(dataset: &Dataset, solver: &dyn Solver, scorer: &dyn Scorer) -> RunOutcome {
-    let mut results = Vec::with_capacity(dataset.len());
+    run_eval_with_progress(dataset, solver, scorer, |_, _, _| {}).await
+}
+
+/// Like [`run_eval`], but invokes `on_progress(done, total, last)` after each
+/// task completes — for streaming a live `[n/total]` counter during a long run.
+pub async fn run_eval_with_progress<F>(
+    dataset: &Dataset,
+    solver: &dyn Solver,
+    scorer: &dyn Scorer,
+    on_progress: F,
+) -> RunOutcome
+where
+    F: Fn(usize, usize, &TaskResult) + Send,
+{
+    let total = dataset.len();
+    let mut results = Vec::with_capacity(total);
     let mut report_tasks = Vec::new();
     let mut report_scores = Vec::new();
     let mut solver_errors = 0usize;
 
     for task in dataset.tasks() {
-        match solver.solve(task).await {
+        let result = match solver.solve(task).await {
             Ok(output) => {
                 let score = scorer.score(task, &output.text);
-                results.push(TaskResult {
+                let result = TaskResult {
                     task_id: task.id.clone(),
                     extracted: score.extracted.clone(),
                     score: score.value,
                     extraction_failed: score.extraction_failed,
                     error: None,
-                });
+                };
                 report_tasks.push(task.clone());
                 report_scores.push(score);
+                result
             }
             Err(e) => {
                 solver_errors += 1;
-                results.push(TaskResult {
+                TaskResult {
                     task_id: task.id.clone(),
                     extracted: None,
                     score: 0.0,
                     extraction_failed: false,
                     error: Some(e.to_string()),
-                });
+                }
             }
+        };
+        results.push(result);
+        // SAFETY: just pushed, so last() is Some.
+        if let Some(last) = results.last() {
+            on_progress(results.len(), total, last);
         }
     }
 

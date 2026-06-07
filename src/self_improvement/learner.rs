@@ -3,6 +3,7 @@
 //! Phase 4 of the 4-phase loop: Extract lessons from completed actions.
 
 use super::executor::ExecutionResult;
+use super::sensor::MeasuredDelta;
 use super::types::{ActionStatus, ActionType, Lesson, SelfImprovementAction};
 use std::collections::HashMap;
 
@@ -168,6 +169,32 @@ impl Learner {
         }
 
         // Cleared the MDE: reward the absolute gain past the threshold, saturating.
+        (Self::REWARD_AT_MDE + (measured - mde) * self.config.improvement_weight).clamp(0.0, 1.0)
+    }
+
+    /// Reward a change from a real measured paired delta, gating on the sensor's
+    /// **lower-confidence-bound** verdict ([`MeasuredDelta::clears_mde`]) rather
+    /// than the point estimate.
+    ///
+    /// This reconciles the two MDE gates: [`Self::calculate_reward`] gates on the
+    /// point estimate clearing `mde_threshold`, while the sensor gates on the
+    /// lower CB — the statistically stricter, defensible test. When a real
+    /// [`MeasuredDelta`] is available this is the entry point to use: the gate is
+    /// `clears_mde`; the point estimate only *sizes* the reward once it passes.
+    #[must_use]
+    pub fn reward_from_measured_delta(&self, delta: &MeasuredDelta, success: bool) -> f64 {
+        if !success {
+            return Self::FAILURE_PENALTY;
+        }
+        // Lower-CB gate not cleared: indistinguishable from noise → not rewarded.
+        if !delta.clears_mde {
+            return 0.0;
+        }
+        let measured = delta.estimate.mean;
+        if measured < 0.0 {
+            return (measured * self.config.improvement_weight).clamp(-1.0, 0.0);
+        }
+        let mde = self.config.mde_threshold.max(0.0);
         (Self::REWARD_AT_MDE + (measured - mde) * self.config.improvement_weight).clamp(0.0, 1.0)
     }
 
@@ -544,6 +571,39 @@ mod tests {
         let result = create_execution_result(false, 0.1, None);
 
         let reward = learner.calculate_reward(&result);
+        assert!((reward - Learner::FAILURE_PENALTY).abs() < f64::EPSILON);
+    }
+
+    fn delta(mean: f64, clears_mde: bool) -> MeasuredDelta {
+        MeasuredDelta {
+            estimate: crate::eval::stats::Estimate {
+                mean,
+                stderr: 0.02,
+                n: 50,
+            },
+            n_paired: 50,
+            clears_mde,
+        }
+    }
+
+    #[test]
+    fn test_reward_from_measured_delta_gates_on_clears_mde() {
+        let learner = Learner::with_defaults();
+        // Same point estimate (0.20), but the sensor's lower-CB gate decides.
+        let rewarded = learner.reward_from_measured_delta(&delta(0.20, true), true);
+        let gated = learner.reward_from_measured_delta(&delta(0.20, false), true);
+
+        assert!(rewarded >= Learner::REWARD_AT_MDE);
+        assert!(
+            (gated - 0.0).abs() < f64::EPSILON,
+            "a delta that does not clear the lower-CB MDE earns zero, even with a positive point estimate"
+        );
+    }
+
+    #[test]
+    fn test_reward_from_measured_delta_failure_penalty() {
+        let learner = Learner::with_defaults();
+        let reward = learner.reward_from_measured_delta(&delta(0.20, true), false);
         assert!((reward - Learner::FAILURE_PENALTY).abs() < f64::EPSILON);
     }
 
