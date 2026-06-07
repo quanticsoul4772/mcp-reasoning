@@ -222,7 +222,11 @@ impl Executor {
         InternalExecutionResult {
             success: true,
             message: format!("Config adjusted: {}", changes_made.join(", ")),
-            measured_improvement: Some(action.expected_improvement * 0.8), // Estimate
+            // The executor applies the change; it does not measure its effect. The
+            // real measured paired delta comes from the harness sensor
+            // (`self_improvement::sensor::measure_delta`), not a fabricated
+            // multiple of the estimate. `None` here means "unmeasured."
+            measured_improvement: None,
         }
     }
 
@@ -266,7 +270,8 @@ impl Executor {
         InternalExecutionResult {
             success: true,
             message: format!("Prompt '{prompt_key}' tuned"),
-            measured_improvement: Some(action.expected_improvement * 0.7),
+            // Unmeasured here — the sensor supplies the real delta (see config adjust).
+            measured_improvement: None,
         }
     }
 
@@ -319,7 +324,8 @@ impl Executor {
         InternalExecutionResult {
             success: true,
             message: format!("Threshold adjusted: {}", changes_made.join(", ")),
-            measured_improvement: Some(action.expected_improvement * 0.75),
+            // Unmeasured here — the sensor supplies the real delta (see config adjust).
+            measured_improvement: None,
         }
     }
 
@@ -613,25 +619,23 @@ mod tests {
     }
 
     #[test]
-    fn test_measured_improvement_is_a_placeholder_pending_real_sensor() {
-        // The executor still fabricates `measured_improvement` as a fraction of
-        // the estimate; PR5 replaces it with a real measured paired delta from the
-        // harness. This test no longer pins that fabricated magnitude as correct
-        // (it used to assert ~80% of expected, codifying the bug). It asserts only
-        // that the executor produces a finite value to feed the reward function.
-        // The reward (PR4) rewards absolute measured improvement clearing the MDE,
-        // so the fabricated value's ratio to `expected` is no longer "success."
-        // See docs/design/EVAL_HARNESS_PLAN.md (PR5).
+    fn test_executor_does_not_fabricate_a_measurement() {
+        // The executor applies the change but does NOT invent a measurement: it
+        // used to return `expected * 0.8`, a fabricated number that made the loop
+        // blind to helped-vs-hurt. The real measured paired delta now comes from
+        // `self_improvement::sensor::measure_delta` over a held-out harness slice.
+        // The executor reports `None` (unmeasured). See docs/design/EVAL_HARNESS_PLAN.md.
         let mut executor = Executor::new();
         let action = create_test_action(ActionType::ConfigAdjust)
             .with_parameters(serde_json::json!({"key": "value"}));
 
         let result = executor.execute(action);
 
-        let measured = result
-            .measured_improvement
-            .expect("config adjust reports a measured value");
-        assert!(measured.is_finite());
+        assert!(result.success);
+        assert!(
+            result.measured_improvement.is_none(),
+            "executor must not fabricate a measurement"
+        );
     }
 
     #[test]

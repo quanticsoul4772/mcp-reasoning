@@ -47,6 +47,7 @@ pub struct CircuitBreaker {
     total_failures: u64,
     total_successes: u64,
     trips: u64,
+    divergence_trips: u64,
 }
 
 impl CircuitBreaker {
@@ -62,6 +63,7 @@ impl CircuitBreaker {
             total_failures: 0,
             total_successes: 0,
             trips: 0,
+            divergence_trips: 0,
         }
     }
 
@@ -146,6 +148,24 @@ impl CircuitBreaker {
         }
     }
 
+    /// Record a proxy-vs-measured comparison and trip if they diverge.
+    ///
+    /// The self-improvement loop's `expected_improvement` is a *proxy*; the sensor
+    /// supplies the *measured* delta. When the two diverge by more than
+    /// `threshold` (absolute), the loop's predictions no longer track reality —
+    /// the exact reward-hacking signature — so the breaker trips and changes halt.
+    ///
+    /// Returns `true` if this comparison tripped the breaker.
+    pub fn record_divergence(&mut self, proxy: f64, measured: f64, threshold: f64) -> bool {
+        if (proxy - measured).abs() > threshold {
+            self.trip();
+            self.divergence_trips += 1;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Manually reset the circuit breaker.
     pub fn reset(&mut self) {
         self.state = CircuitState::Closed;
@@ -171,6 +191,7 @@ impl CircuitBreaker {
             total_failures: self.total_failures,
             total_successes: self.total_successes,
             trips: self.trips,
+            divergence_trips: self.divergence_trips,
             time_in_state: self.last_failure.map(|t| t.elapsed()),
         }
     }
@@ -226,6 +247,8 @@ pub struct CircuitBreakerStats {
     pub total_successes: u64,
     /// Number of times circuit has tripped.
     pub trips: u64,
+    /// Number of trips caused by proxy-vs-measured divergence.
+    pub divergence_trips: u64,
     /// Time since last state change (if available).
     pub time_in_state: Option<Duration>,
 }
@@ -489,6 +512,34 @@ mod tests {
         // Second call should still return true while in HalfOpen
         assert!(cb.is_allowed());
         assert_eq!(cb.state(), CircuitState::HalfOpen);
+    }
+
+    #[test]
+    fn test_divergence_tripwire_trips_when_proxy_and_measured_diverge() {
+        let mut cb = CircuitBreaker::with_defaults();
+        // Proxy predicted +0.30, measured only +0.02: a 0.28 gap > 0.2 threshold.
+        let tripped = cb.record_divergence(0.30, 0.02, 0.2);
+        assert!(tripped);
+        assert_eq!(cb.state(), CircuitState::Open);
+        assert_eq!(cb.stats().divergence_trips, 1);
+    }
+
+    #[test]
+    fn test_divergence_tripwire_holds_when_proxy_tracks_measured() {
+        let mut cb = CircuitBreaker::with_defaults();
+        // Proxy +0.10, measured +0.08: a 0.02 gap within the 0.2 threshold.
+        let tripped = cb.record_divergence(0.10, 0.08, 0.2);
+        assert!(!tripped);
+        assert_eq!(cb.state(), CircuitState::Closed);
+        assert_eq!(cb.stats().divergence_trips, 0);
+    }
+
+    #[test]
+    fn test_divergence_tripwire_is_symmetric() {
+        // A measured value far ABOVE the proxy also diverges.
+        let mut cb = CircuitBreaker::with_defaults();
+        assert!(cb.record_divergence(0.0, 0.5, 0.2));
+        assert_eq!(cb.state(), CircuitState::Open);
     }
 
     #[test]

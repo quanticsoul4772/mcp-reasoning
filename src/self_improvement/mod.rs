@@ -65,6 +65,7 @@ mod executor;
 mod learner;
 pub mod manager;
 mod monitor;
+pub mod sensor;
 pub mod storage;
 mod system;
 mod types;
@@ -88,6 +89,7 @@ pub use manager::{
     SelfImprovementManager,
 };
 pub use monitor::{Baseline, Monitor, MonitorConfig, MonitorResult};
+pub use sensor::{measure_delta, MeasuredDelta};
 pub use storage::{
     ActionRecord, ConfigOverrideRecord, DiagnosisRecord, InvocationRecord, InvocationStats,
     SelfImprovementStorage,
