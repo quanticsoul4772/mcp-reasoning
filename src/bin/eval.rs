@@ -14,10 +14,13 @@
 // Enable the coverage attribute when running with nightly for llvm-cov exclusions
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #![deny(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::cast_precision_loss)]
+
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use mcp_reasoning::anthropic::{AnthropicClient, ClientConfig};
 use mcp_reasoning::config::Config;
-use mcp_reasoning::eval::{run_eval, Dataset, ExactMatch, LinearSolver};
+use mcp_reasoning::eval::{run_eval_with_progress, Dataset, ExactMatch, LinearSolver};
 use mcp_reasoning::storage::SqliteStorage;
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -72,7 +75,27 @@ async fn main() {
         "running 'linear' over {} task(s) from {dataset_path} (live API)...",
         dataset.len()
     );
-    let outcome = run_eval(&dataset, &solver, &scorer).await;
+    // Stream a live progress counter to stderr so a long run is monitorable.
+    let correct = AtomicU32::new(0);
+    let outcome = run_eval_with_progress(&dataset, &solver, &scorer, |done, total, r| {
+        if r.error.is_none() && r.score > 0.0 {
+            correct.fetch_add(1, Ordering::Relaxed);
+        }
+        let acc = f64::from(correct.load(Ordering::Relaxed)) / done as f64;
+        let flag = if r.extraction_failed {
+            " INVALID"
+        } else if r.error.is_some() {
+            " ERROR"
+        } else {
+            ""
+        };
+        eprintln!(
+            "[{done}/{total}] {} -> {} (running acc {acc:.3}){flag}",
+            r.task_id,
+            r.extracted.as_deref().unwrap_or("-"),
+        );
+    })
+    .await;
 
     if want_json {
         match outcome.to_json() {

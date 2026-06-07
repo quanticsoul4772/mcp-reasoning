@@ -51,3 +51,9 @@ nul
 
 # Local scratch / research notes (not versioned)
 claudedocs/
+
+# eval run output dumps (transient)
+/run_out.json
+/aime_out.json
+/aime1k_out.json
+/eval/data/aime_1k.jsonl

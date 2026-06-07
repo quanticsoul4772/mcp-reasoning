@@ -16,7 +16,7 @@ use thiserror::Error;
 
 use crate::error::ModeError;
 use crate::eval::task::EvalTask;
-use crate::modes::LinearMode;
+use crate::modes::{LinearMode, ReflectionMode};
 use crate::traits::{AnthropicClientTrait, StorageTrait};
 
 /// The output of running a solver on one task: the text to be scored, plus
@@ -94,6 +94,70 @@ where
     #[allow(clippy::unnecessary_literal_bound)]
     fn mode(&self) -> &str {
         "linear"
+    }
+}
+
+/// Solver wrapping the real [`ReflectionMode`] path, parameterized by the
+/// `reflection_quality_threshold` under test.
+///
+/// The threshold gates how many refinement passes run (the loop stops once a
+/// pass's quality meets it), so changing it changes the final answer — making it
+/// a real SI-tunable lever the loop genuinely controls (a `ThresholdAdjust`
+/// action over `reflection_quality_threshold`), unlike a hardcoded token cap.
+/// `max_iterations` must be > 1 or the threshold has no effect (it only gates the
+/// early stop).
+pub struct ReflectionSolver<S, C>
+where
+    S: StorageTrait,
+    C: AnthropicClientTrait,
+{
+    mode: ReflectionMode<S, C>,
+    quality_threshold: f64,
+    max_iterations: u32,
+}
+
+impl<S, C> ReflectionSolver<S, C>
+where
+    S: StorageTrait,
+    C: AnthropicClientTrait,
+{
+    /// Build a reflection solver with the `quality_threshold` under test.
+    pub fn new(storage: S, client: C, quality_threshold: f64, max_iterations: u32) -> Self {
+        Self {
+            mode: ReflectionMode::new(storage, client),
+            quality_threshold,
+            max_iterations,
+        }
+    }
+}
+
+#[async_trait]
+impl<S, C> Solver for ReflectionSolver<S, C>
+where
+    S: StorageTrait + Send + Sync,
+    C: AnthropicClientTrait + Send + Sync,
+{
+    async fn solve(&self, task: &EvalTask) -> Result<SolverOutput, SolverError> {
+        let response = self
+            .mode
+            .process(
+                &task.prompt,
+                None,
+                Some(self.max_iterations),
+                Some(self.quality_threshold),
+            )
+            .await?;
+        Ok(SolverOutput {
+            text: response.refined_reasoning,
+            mode: "reflection".to_string(),
+            confidence: Some(response.quality_score),
+        })
+    }
+
+    // Literal return is correct here; see LinearSolver::mode.
+    #[allow(clippy::unnecessary_literal_bound)]
+    fn mode(&self) -> &str {
+        "reflection"
     }
 }
 
