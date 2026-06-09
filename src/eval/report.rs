@@ -37,7 +37,7 @@ pub struct EvalReport {
     pub extraction_failure_rate: f64,
     /// Minimum Detectable Effect at [`DEFAULT_ALPHA`]/[`DEFAULT_POWER`] for this
     /// `stderr`. If it exceeds the effect you pre-registered as meaningful, the
-    /// honest conclusion is "this dataset cannot test this."
+    /// correct conclusion is "this dataset cannot test this."
     pub mde: f64,
 }
 

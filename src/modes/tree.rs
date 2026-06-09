@@ -284,6 +284,9 @@ where
 {
     storage: S,
     client: C,
+    /// Opt-in self-heal detection sink (spec 001): records parse failures of
+    /// this mode's own output when set.
+    defect_sink: Option<crate::self_improvement::heal::DefectSink>,
 }
 
 impl<S, C> TreeMode<S, C>
@@ -294,7 +297,19 @@ where
     /// Create a new tree mode instance.
     #[must_use]
     pub fn new(storage: S, client: C) -> Self {
-        Self { storage, client }
+        Self {
+            storage,
+            client,
+            defect_sink: None,
+        }
+    }
+
+    /// Attach a self-heal detection sink so this mode records its own parse
+    /// failures (spec 001). Opt-in: absent by default.
+    #[must_use]
+    pub fn with_defect_sink(mut self, sink: crate::self_improvement::heal::DefectSink) -> Self {
+        self.defect_sink = Some(sink);
+        self
     }
 
     /// Create a new exploration tree from content.
@@ -339,7 +354,15 @@ where
             .with_temperature(0.8);
 
         let response = self.client.complete(messages, config).await?;
-        let json = extract_json(&response.content)?;
+        let json = match extract_json(&response.content) {
+            Ok(j) => j,
+            Err(e) => {
+                if let Some(sink) = &self.defect_sink {
+                    sink.parse_failure(&response.content);
+                }
+                return Err(e);
+            }
+        };
 
         // Parse branches from response
         let branches_json = json
@@ -452,7 +475,15 @@ where
             .with_temperature(0.7);
 
         let response = self.client.complete(messages, config).await?;
-        let json = extract_json(&response.content)?;
+        let json = match extract_json(&response.content) {
+            Ok(j) => j,
+            Err(e) => {
+                if let Some(sink) = &self.defect_sink {
+                    sink.parse_failure(&response.content);
+                }
+                return Err(e);
+            }
+        };
 
         let exploration = json
             .get("exploration")
@@ -655,7 +686,15 @@ where
             .with_temperature(0.7);
 
         let response = self.client.complete(messages, config).await?;
-        let json = extract_json(&response.content)?;
+        let json = match extract_json(&response.content) {
+            Ok(j) => j,
+            Err(e) => {
+                if let Some(sink) = &self.defect_sink {
+                    sink.parse_failure(&response.content);
+                }
+                return Err(e);
+            }
+        };
 
         let key_findings: Vec<String> = json
             .get("key_findings")

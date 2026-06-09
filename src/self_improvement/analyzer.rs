@@ -2,6 +2,7 @@
 //!
 //! Phase 2 of the 4-phase loop: LLM-based diagnosis and action proposal.
 
+use super::heal::DefectRecord;
 use super::learner::LearningGuidance;
 use super::monitor::MonitorResult;
 use super::types::{ActionType, LegacyTriggerMetric, SelfImprovementAction, Severity};
@@ -17,6 +18,21 @@ pub struct AnalysisResult {
     pub summary: String,
     /// Confidence in the analysis (0.0-1.0).
     pub confidence: f64,
+}
+
+/// A defect localized to a source location (spec 001, T018).
+///
+/// The repair pipeline uses this to focus where a fix is generated. It is
+/// advisory: a hint guiding the diagnosis, never an authorization to edit (the
+/// integrity guard in `heal::guard` still governs what may be touched).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Localization {
+    /// The component (tool/mode) held responsible. Defaults to the defect's own
+    /// component when the model does not refine it.
+    pub component: String,
+    /// A human-readable source-span hint: the file and function/area to inspect
+    /// first. Advisory only.
+    pub source_hint: String,
 }
 
 /// Analyzer for diagnosing issues and proposing actions.
@@ -71,6 +87,98 @@ impl<C: AnthropicClientTrait> Analyzer<C> {
         self.parse_analysis_response(&response.content, monitor_result)
     }
 
+    /// Localize a recurring defect to the source location most likely responsible
+    /// (spec 001, T018). LLM diagnosis over the failure class + redacted input
+    /// excerpt; the returned [`Localization`] focuses where the repair pipeline
+    /// generates a fix.
+    ///
+    /// The excerpt is already redacted at the detection seam (FR-016), so no raw
+    /// or secret-bearing input reaches the model here.
+    pub async fn localize(&self, defect: &DefectRecord) -> Result<Localization, ModeError> {
+        localize(&self.client, defect).await
+    }
+}
+
+/// Localize a recurring defect to its likely source location (spec 001, T018),
+/// using only a client handle — so the heal cycle can call it with the same
+/// client it threads into the repair pipeline (no `Analyzer` instance required).
+///
+/// The excerpt is already redacted at the detection seam (FR-016), so no raw or
+/// secret-bearing input reaches the model here.
+///
+/// # Errors
+/// Returns [`ModeError`] if the model call fails or the response is unparseable /
+/// missing the `source_hint`.
+pub async fn localize<C: AnthropicClientTrait>(
+    client: &C,
+    defect: &DefectRecord,
+) -> Result<Localization, ModeError> {
+    let prompt = build_localize_prompt(defect);
+    let messages = vec![Message::user(&prompt)];
+    let config = CompletionConfig::new()
+        .with_max_tokens(512)
+        .with_temperature(0.0);
+
+    let response = client.complete(messages, config).await?;
+
+    parse_localization(&response.content, defect)
+}
+
+fn build_localize_prompt(defect: &DefectRecord) -> String {
+    format!(
+        r#"You are diagnosing a recurring self-defect in an internal Rust reasoning server.
+
+A component repeatedly produced output that failed {class} validation. Identify the
+single most likely source location to inspect for a fix.
+
+## Defect
+- Component (tool/mode): {component}
+- Failure class: {class}
+- Occurrences: {occurrences}
+- Redacted input excerpt: {excerpt}
+
+## Output
+Return ONLY a JSON object, no prose:
+{{"component": "<tool/mode responsible>", "source_hint": "<file path and function/area to inspect first>"}}
+
+The source_hint is advisory — name the file and function you would inspect first."#,
+        class = defect.failure_class,
+        component = defect.component,
+        occurrences = defect.occurrences,
+        excerpt = defect.excerpt,
+    )
+}
+
+fn parse_localization(response: &str, defect: &DefectRecord) -> Result<Localization, ModeError> {
+    let json_str = extract_json_block(response)?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json_str).map_err(|e| ModeError::JsonParseFailed {
+            message: format!("Invalid JSON: {e}"),
+        })?;
+
+    // The defect already knows its component; the model may refine it but an
+    // empty/missing value falls back to the recorded component.
+    let component = parsed["component"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&defect.component)
+        .to_string();
+
+    let source_hint = parsed["source_hint"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| ModeError::JsonParseFailed {
+            message: "localization response missing 'source_hint'".to_string(),
+        })?
+        .to_string();
+
+    Ok(Localization {
+        component,
+        source_hint,
+    })
+}
+
+impl<C: AnthropicClientTrait> Analyzer<C> {
     fn build_analysis_prompt(
         &self,
         monitor_result: &MonitorResult,
@@ -392,6 +500,7 @@ fn extract_json_block(text: &str) -> Result<String, ModeError> {
 )]
 mod tests {
     use super::*;
+    use crate::self_improvement::heal::FailureClass;
     use crate::self_improvement::types::{LegacyTriggerMetric, SystemMetrics};
     use crate::traits::{CompletionResponse, MockAnthropicClientTrait, Usage};
     use std::collections::HashMap;
@@ -418,6 +527,52 @@ mod tests {
 
     fn mock_response(content: &str) -> CompletionResponse {
         CompletionResponse::new(content, Usage::new(100, 50))
+    }
+
+    fn parse_defect() -> DefectRecord {
+        DefectRecord::observe("reasoning_linear/linear", FailureClass::Parse, "bad", 1)
+    }
+
+    #[tokio::test]
+    async fn localize_returns_component_and_source_hint() {
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Ok(mock_response(
+                r#"{"component": "reasoning_linear/linear", "source_hint": "src/modes/linear.rs: the extract_json call in process()"}"#,
+            ))
+        });
+
+        let analyzer = Analyzer::new(client);
+        let result = analyzer.localize(&parse_defect()).await.unwrap();
+        assert_eq!(result.component, "reasoning_linear/linear");
+        assert!(result.source_hint.contains("linear.rs"));
+    }
+
+    #[tokio::test]
+    async fn localize_falls_back_to_defect_component_when_model_omits_it() {
+        let mut client = MockAnthropicClientTrait::new();
+        client.expect_complete().returning(|_, _| {
+            Ok(mock_response(
+                r#"{"component": "", "source_hint": "somewhere in the JSON extraction path"}"#,
+            ))
+        });
+
+        let analyzer = Analyzer::new(client);
+        let result = analyzer.localize(&parse_defect()).await.unwrap();
+        // Empty component → the recorded defect component is used.
+        assert_eq!(result.component, "reasoning_linear/linear");
+    }
+
+    #[tokio::test]
+    async fn localize_errors_when_source_hint_absent() {
+        let mut client = MockAnthropicClientTrait::new();
+        client
+            .expect_complete()
+            .returning(|_, _| Ok(mock_response(r#"{"component": "x"}"#)));
+
+        let analyzer = Analyzer::new(client);
+        let err = analyzer.localize(&parse_defect()).await.unwrap_err();
+        assert!(matches!(err, ModeError::JsonParseFailed { .. }));
     }
 
     #[tokio::test]

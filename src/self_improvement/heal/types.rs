@@ -59,6 +59,29 @@ pub enum ProposalReview {
     Rejected,
 }
 
+impl ProposalReview {
+    /// Stable lowercase string form for persistence.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Proposed => "proposed",
+            Self::Approved => "approved",
+            Self::Rejected => "rejected",
+        }
+    }
+
+    /// Parse the persisted form; an unrecognized value falls back to `Proposed`
+    /// (the safe default — never an accidental approval).
+    #[must_use]
+    pub fn from_db(s: &str) -> Self {
+        match s {
+            "approved" => Self::Approved,
+            "rejected" => Self::Rejected,
+            _ => Self::Proposed,
+        }
+    }
+}
+
 /// A detected failure of the server's own output (FR-002).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DefectRecord {
@@ -132,8 +155,12 @@ impl DefectRecord {
 pub struct FixProposal {
     /// Proposal id.
     pub id: String,
-    /// The defect this addresses.
+    /// The defect this addresses (the defect's content-hash id).
     pub defect_id: String,
+    /// The `(component, failure_class)` signature of the defect class this guards.
+    /// An accepted proposal becomes a [`KnowledgeEntry`] keyed by this, so a later
+    /// defect of the same class can reuse the fix (FR-011).
+    pub failure_signature: String,
     /// Generated branch name.
     pub branch: String,
     /// Human summary of the change.
@@ -177,6 +204,24 @@ pub struct KnowledgeEntry {
     pub accepted_at: i64,
 }
 
+impl KnowledgeEntry {
+    /// Build the durable knowledge mapping for an accepted proposal (FR-011, T030).
+    ///
+    /// Keyed by the proposal's `failure_signature` so a later defect of the same
+    /// class can reuse it. The caller must have verified admissibility + operator
+    /// approval before recording acceptance.
+    #[must_use]
+    pub fn from_accepted_proposal(proposal: &FixProposal, accepted_at: i64) -> Self {
+        Self {
+            id: format!("knowledge-{}", proposal.id),
+            failure_signature: proposal.failure_signature.clone(),
+            fix_summary: proposal.change_summary.clone(),
+            test_ref: proposal.reproducing_test_ref.clone(),
+            accepted_at,
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -218,10 +263,24 @@ mod tests {
     }
 
     #[test]
+    fn proposal_review_str_roundtrips_and_defaults_safely() {
+        for r in [
+            ProposalReview::Proposed,
+            ProposalReview::Approved,
+            ProposalReview::Rejected,
+        ] {
+            assert_eq!(ProposalReview::from_db(r.as_str()), r);
+        }
+        // An unknown value never becomes an accidental approval.
+        assert_eq!(ProposalReview::from_db("garbage"), ProposalReview::Proposed);
+    }
+
+    #[test]
     fn admissibility_requires_all_three() {
         let mut p = FixProposal {
             id: "p1".into(),
             defect_id: "d1".into(),
+            failure_signature: "c::parse".into(),
             branch: "heal/d1".into(),
             change_summary: "fix".into(),
             reproducing_test_ref: "t".into(),

@@ -177,7 +177,12 @@ impl super::ReasoningServer {
         let mut mode = TreeMode::new(
             Arc::clone(&self.state.storage),
             Arc::clone(&self.state.client),
-        );
+        )
+        .with_defect_sink(crate::self_improvement::heal::DefectSink::new(
+            Arc::clone(&self.state.metrics),
+            Arc::clone(&self.state.defect_log),
+            "reasoning_tree/tree",
+        ));
 
         let session_id = req.session_id.clone().unwrap_or_default();
 

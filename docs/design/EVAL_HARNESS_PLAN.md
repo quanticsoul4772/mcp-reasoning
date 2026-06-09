@@ -36,7 +36,7 @@ accepted only when a *paired* measured delta clears the MDE.
 **Probable finding, stated up front (not buried in §7).** An *affordable* live-API dataset
 (tens to low-hundreds of items) has an MDE far larger than the effects SI changes plausibly
 produce — a config nudge, a threshold tweak, a prompt tune are small effects. §7 itself
-implies ~1,000 items to detect a 3-pt effect at 80% power. So the most likely honest result
+implies ~1,000 items to detect a 3-pt effect at 80% power. So the most likely result
 is **"no SI-tunable change clears the MDE at acceptable cost,"** which de-scopes — possibly
 kills — the self-improvement *loop*: the correct move would then be to **freeze the loop and
 keep the harness as a measurement/reporting tool**, not rewire the sensor into it.

@@ -96,4 +96,16 @@ mod tests {
         assert_eq!(metrics.parse_failure_count("reasoning_linear/linear"), 1);
         assert_eq!(metrics.schema_violation_count("reasoning_linear/linear"), 1);
     }
+
+    #[test]
+    fn debug_redacts_to_component_only() {
+        let sink = DefectSink::new(
+            Arc::new(MetricsCollector::new()),
+            Arc::new(DefectLog::new(DEFAULT_RECURRENCE_THRESHOLD)),
+            "reasoning_tree/tree",
+        );
+        let shown = format!("{sink:?}");
+        assert!(shown.contains("reasoning_tree/tree"));
+        assert!(shown.contains("DefectSink"));
+    }
 }

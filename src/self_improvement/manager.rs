@@ -936,7 +936,11 @@ impl<C: AnthropicClientTrait + Send + 'static> SelfImprovementManager<C> {
             ActionType::ConfigAdjust | ActionType::ThresholdAdjust => {
                 params.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
             }
-            ActionType::PromptTune | ActionType::LogObservation => Vec::new(),
+            // ProposePR carries no applyable `Config` field — its artifact is a PR,
+            // recorded elsewhere — so there is nothing to persist as an override.
+            ActionType::PromptTune | ActionType::LogObservation | ActionType::ProposePR => {
+                Vec::new()
+            }
         };
 
         for (key, value) in overrides {

@@ -12,12 +12,19 @@
 
 pub mod detect;
 pub mod guard;
+pub mod plan;
+pub mod pr;
 pub mod redact;
 pub mod sink;
 pub mod types;
 
 pub use detect::{DefectLog, DEFAULT_RECURRENCE_THRESHOLD};
 pub use guard::{is_protected, protected_paths};
+pub use plan::{
+    blast_radius, classify, is_drift_class, partition_drift, rank_and_cap, severity,
+    DEFAULT_DRIFT_THRESHOLD,
+};
+pub use pr::{gh_available, pr_create_args};
 pub use redact::{redact, RedactedInput};
 pub use sink::DefectSink;
 pub use types::{

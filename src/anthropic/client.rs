@@ -42,6 +42,9 @@ pub struct AnthropicClient {
     client: Client,
     api_key: String,
     config: ClientConfig,
+    /// Optional metrics handle. When set, each call records its pinned model
+    /// identifier so a model-version change can be detected (spec 001, FR-017).
+    metrics: Option<Arc<crate::metrics::MetricsCollector>>,
 }
 
 impl AnthropicClient {
@@ -60,12 +63,31 @@ impl AnthropicClient {
             client,
             api_key: api_key.into(),
             config,
+            metrics: None,
         })
     }
 
     /// Create a client with default configuration.
     pub fn with_api_key(api_key: impl Into<String>) -> Result<Self, AnthropicError> {
         Self::new(api_key, ClientConfig::default())
+    }
+
+    /// Attach a metrics handle so each call records its pinned model identifier
+    /// and a model-version change is detected when it shifts (spec 001, FR-017).
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Arc<crate::metrics::MetricsCollector>) -> Self {
+        self.metrics = Some(metrics);
+        self
+    }
+
+    /// Record the pinned model identifier for a call, if metrics are attached.
+    fn observe_model(&self, model: &str) {
+        if let Some(metrics) = &self.metrics {
+            let now_millis = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+            metrics.record_model_version(model, now_millis);
+        }
     }
 
     /// Get the base URL.
@@ -83,6 +105,7 @@ impl AnthropicClient {
     /// Send a completion request with retry logic.
     pub async fn complete(&self, request: ApiRequest) -> Result<ReasoningResponse, AnthropicError> {
         Self::validate_request(&request)?;
+        self.observe_model(&request.model);
         self.execute_with_retry(request).await
     }
 
@@ -100,6 +123,7 @@ impl AnthropicClient {
         request: ApiRequest,
     ) -> Result<mpsc::Receiver<Result<StreamEvent, AnthropicError>>, AnthropicError> {
         Self::validate_request(&request)?;
+        self.observe_model(&request.model);
         let request = request.with_streaming(true);
 
         let (tx, rx) = mpsc::channel(32);
@@ -268,6 +292,10 @@ impl AnthropicClient {
         &self,
         request: ApiRequest,
     ) -> Result<ReasoningResponse, AnthropicError> {
+        // Cap on a single retry wait so one large `retry-after` cannot block a
+        // run indefinitely.
+        const MAX_RETRY_DELAY_MS: u64 = 120_000;
+
         let mut last_error = None;
         let mut delay = self.config.retry_delay_ms;
 
@@ -275,7 +303,6 @@ impl AnthropicClient {
             if attempt > 0 {
                 tracing::warn!(attempt, delay_ms = delay, "Retrying Anthropic request");
                 tokio::time::sleep(Duration::from_millis(delay)).await;
-                delay *= 2; // Exponential backoff
             }
 
             match self.execute_once(&request).await {
@@ -284,6 +311,18 @@ impl AnthropicClient {
                     if !e.is_retryable() {
                         return Err(e);
                     }
+                    // Honor the server's `retry-after` on a 429 — the previous
+                    // blind exponential backoff gave up during the real cooldown
+                    // window, dropping calls and biasing eval results; otherwise
+                    // fall back to exponential backoff.
+                    delay = match &e {
+                        AnthropicError::RateLimited {
+                            retry_after_seconds,
+                        } => retry_after_seconds
+                            .saturating_mul(1000)
+                            .clamp(self.config.retry_delay_ms, MAX_RETRY_DELAY_MS),
+                        _ => delay.saturating_mul(2).min(MAX_RETRY_DELAY_MS),
+                    };
                     tracing::warn!(error = %e, attempt, "Retryable error occurred");
                     last_error = Some(e);
                 }
@@ -782,6 +821,53 @@ mod tests {
         let response = result.unwrap();
         assert!(response.parsed.is_some());
         assert_eq!(response.parsed.unwrap()["value"], 123);
+    }
+
+    #[tokio::test]
+    async fn complete_records_model_version_and_detects_swap() {
+        use crate::metrics::MetricsCollector;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_response_body("ok")))
+            .mount(&server)
+            .await;
+
+        let metrics = Arc::new(MetricsCollector::new());
+        let config = ClientConfig::default()
+            .with_base_url(server.uri())
+            .with_max_retries(0)
+            .with_timeout_ms(5_000);
+        let client = AnthropicClient::new("test-api-key", config)
+            .unwrap()
+            .with_metrics(Arc::clone(&metrics));
+
+        // First call pins the baseline — no drift event.
+        client
+            .complete(ApiRequest::new(
+                "model-a",
+                1000,
+                vec![ApiMessage::user("hi")],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(metrics.current_model().as_deref(), Some("model-a"));
+        assert!(metrics.model_version_changes().is_empty());
+
+        // A call with a different pinned model emits a change event (FR-017).
+        client
+            .complete(ApiRequest::new(
+                "model-b",
+                1000,
+                vec![ApiMessage::user("hi")],
+            ))
+            .await
+            .unwrap();
+        let changes = metrics.model_version_changes();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].from.as_deref(), Some("model-a"));
+        assert_eq!(changes[0].to, "model-b");
     }
 
     #[tokio::test]

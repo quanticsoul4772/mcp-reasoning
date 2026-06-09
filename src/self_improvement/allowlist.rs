@@ -57,6 +57,10 @@ impl Default for AllowlistConfig {
         allowed_action_types.insert(ActionType::PromptTune);
         allowed_action_types.insert(ActionType::ThresholdAdjust);
         allowed_action_types.insert(ActionType::LogObservation);
+        // ProposePR is permitted as an action type but is NOT auto-applied: it only
+        // ever opens an operator-reviewed PR (require_approval gates execution, and
+        // the PR itself requires a human merge). It takes no tunable parameters.
+        allowed_action_types.insert(ActionType::ProposePR);
 
         let mut allowed_parameters = std::collections::HashMap::new();
 
@@ -290,6 +294,9 @@ mod tests {
         assert!(allowlist.is_action_type_allowed(&ActionType::PromptTune));
         assert!(allowlist.is_action_type_allowed(&ActionType::ThresholdAdjust));
         assert!(allowlist.is_action_type_allowed(&ActionType::LogObservation));
+        // ProposePR is a permitted action type (its safety comes from approval +
+        // PR review, not from being disallowed).
+        assert!(allowlist.is_action_type_allowed(&ActionType::ProposePR));
     }
 
     #[test]

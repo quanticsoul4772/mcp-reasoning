@@ -180,6 +180,26 @@ impl SqliteStorage {
                 message: format!("Failed to run migration 008: {e}"),
             })?;
 
+        // Migration 009: Persist self-heal knowledge entries (spec 001, FR-011)
+        let schema_009 = include_str!("../../migrations/009_heal_knowledge.sql");
+        sqlx::query(schema_009)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::MigrationFailed {
+                version: "009".to_string(),
+                message: format!("Failed to run migration 009: {e}"),
+            })?;
+
+        // Migration 010: Persist self-heal fix proposals (spec 001, US3)
+        let schema_010 = include_str!("../../migrations/010_heal_fix_proposals.sql");
+        sqlx::query(schema_010)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::MigrationFailed {
+                version: "010".to_string(),
+                message: format!("Failed to run migration 010: {e}"),
+            })?;
+
         Ok(())
     }
 

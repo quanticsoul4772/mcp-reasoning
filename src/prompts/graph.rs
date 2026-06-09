@@ -184,7 +184,7 @@ Respond with a JSON object in this exact format:
 Important:
 - Be genuinely critical, not superficially so
 - The refined version should address the critique
-- Improvement delta should be honest"#
+- Improvement delta should be accurate"#
 }
 
 /// Prompt for graph mode (prune operation).
@@ -261,7 +261,7 @@ Respond with a JSON object in this exact format:
 Important:
 - Prioritize quality over quantity in conclusions
 - The synthesis should tell a coherent story
-- Be honest about reasoning quality"#
+- Be accurate about reasoning quality"#
 }
 
 /// Prompt for graph mode (state operation).
