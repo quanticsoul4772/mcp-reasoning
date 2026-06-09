@@ -119,7 +119,15 @@ where
 {
     storage: S,
     client: C,
+    temperature: f64,
+    prompt_override: Option<String>,
+    /// Opt-in self-heal detection sink (spec 001, T011/T012). When set, parse
+    /// and schema failures of this mode's own output are recorded.
+    defect_sink: Option<crate::self_improvement::heal::DefectSink>,
 }
+
+/// Default sampling temperature for linear reasoning.
+const DEFAULT_TEMPERATURE: f64 = 0.7;
 
 impl<S, C> LinearMode<S, C>
 where
@@ -129,7 +137,43 @@ where
     /// Create a new linear mode instance.
     #[must_use]
     pub fn new(storage: S, client: C) -> Self {
-        Self { storage, client }
+        Self {
+            storage,
+            client,
+            temperature: DEFAULT_TEMPERATURE,
+            prompt_override: None,
+            defect_sink: None,
+        }
+    }
+
+    /// Attach a self-heal detection sink so this mode records its own parse and
+    /// schema failures (spec 001). Opt-in: absent by default.
+    #[must_use]
+    pub fn with_defect_sink(mut self, sink: crate::self_improvement::heal::DefectSink) -> Self {
+        self.defect_sink = Some(sink);
+        self
+    }
+
+    /// Override the reasoning prompt (default: [`get_prompt_for_mode`] for Linear).
+    ///
+    /// The override **must keep the JSON-object instruction** (`analysis` +
+    /// `confidence`) the parser requires, and should put the worked solution —
+    /// ending with the `#### <answer>` line — in the `analysis` field. Used to
+    /// test prompt as an SI-tunable lever (`PromptTune`).
+    #[must_use]
+    pub fn with_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.prompt_override = Some(prompt.into());
+        self
+    }
+
+    /// Override the sampling temperature (default 0.7, clamped to [0, 2]).
+    ///
+    /// Higher temperature yields more diverse samples — what self-consistency
+    /// majority-voting needs to improve over a single deterministic answer.
+    #[must_use]
+    pub fn with_temperature(mut self, temperature: f64) -> Self {
+        self.temperature = temperature.clamp(0.0, 2.0);
+        self
     }
 
     /// Process content using linear reasoning.
@@ -176,7 +220,10 @@ where
         };
 
         // Build the prompt, prepending session history when present.
-        let prompt = get_prompt_for_mode(ReasoningMode::Linear, None);
+        let prompt = self
+            .prompt_override
+            .as_deref()
+            .unwrap_or_else(|| get_prompt_for_mode(ReasoningMode::Linear, None));
         let user_message = if prior_context.is_empty() {
             format!("{prompt}\n\nContent to analyze:\n{content}")
         } else {
@@ -187,30 +234,45 @@ where
         let messages = vec![Message::user(user_message)];
         let config = CompletionConfig::new()
             .with_max_tokens(4096)
-            .with_temperature(0.7);
+            .with_temperature(self.temperature as f32);
 
         let response = self.client.complete(messages, config).await?;
 
-        // Parse the response
-        let json = extract_json(&response.content)?;
+        // Parse the response; record a self-heal defect on failure (spec 001).
+        let json = match extract_json(&response.content) {
+            Ok(j) => j,
+            Err(e) => {
+                if let Some(sink) = &self.defect_sink {
+                    sink.parse_failure(&response.content);
+                }
+                return Err(e);
+            }
+        };
 
-        let analysis = json
-            .get("analysis")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| ModeError::MissingField {
+        let Some(analysis) = json.get("analysis").and_then(|v| v.as_str()) else {
+            if let Some(sink) = &self.defect_sink {
+                sink.schema_violation(&response.content);
+            }
+            return Err(ModeError::MissingField {
                 field: "analysis".to_string(),
-            })?
-            .to_string();
+            });
+        };
+        let analysis = analysis.to_string();
 
-        let confidence = json
-            .get("confidence")
-            .and_then(serde_json::Value::as_f64)
-            .ok_or_else(|| ModeError::MissingField {
+        let Some(confidence) = json.get("confidence").and_then(serde_json::Value::as_f64) else {
+            if let Some(sink) = &self.defect_sink {
+                sink.schema_violation(&response.content);
+            }
+            return Err(ModeError::MissingField {
                 field: "confidence".to_string(),
-            })?;
+            });
+        };
 
         // Validate confidence
         if !(0.0..=1.0).contains(&confidence) {
+            if let Some(sink) = &self.defect_sink {
+                sink.schema_violation(&response.content);
+            }
             return Err(ModeError::InvalidValue {
                 field: "confidence".to_string(),
                 reason: format!("must be between 0.0 and 1.0, got {confidence}"),
@@ -412,6 +474,39 @@ mod tests {
             response.next_step,
             Some("Explore solution A in detail".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn records_parse_failure_via_sink() {
+        use crate::metrics::MetricsCollector;
+        use crate::self_improvement::heal::{DefectLog, DefectSink, DEFAULT_RECURRENCE_THRESHOLD};
+        use std::sync::Arc;
+
+        let mut mock_storage = MockStorageTrait::new();
+        let mut mock_client = MockAnthropicClientTrait::new();
+        mock_storage
+            .expect_get_or_create_session()
+            .returning(|id| Ok(Session::new(id.unwrap_or_else(|| "s".to_string()))));
+        // Non-JSON prose → extract_json fails (the parse-failure path, spec 001).
+        mock_client.expect_complete().returning(move |_, _| {
+            Ok(CompletionResponse::new(
+                "I need to find the smallest integer...".to_string(),
+                Usage::new(10, 20),
+            ))
+        });
+
+        let metrics = Arc::new(MetricsCollector::new());
+        let log = Arc::new(DefectLog::new(DEFAULT_RECURRENCE_THRESHOLD));
+        let sink = DefectSink::new(
+            Arc::clone(&metrics),
+            Arc::clone(&log),
+            "reasoning_linear/linear",
+        );
+        let mode = LinearMode::new(mock_storage, mock_client).with_defect_sink(sink);
+
+        let result = mode.process("solve x", None, None).await;
+        assert!(result.is_err());
+        assert_eq!(metrics.parse_failure_count("reasoning_linear/linear"), 1);
     }
 
     #[tokio::test]

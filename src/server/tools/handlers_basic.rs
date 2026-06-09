@@ -33,7 +33,12 @@ impl super::ReasoningServer {
         let mode = LinearMode::new(
             Arc::clone(&self.state.storage),
             Arc::clone(&self.state.client),
-        );
+        )
+        .with_defect_sink(crate::self_improvement::heal::DefectSink::new(
+            Arc::clone(&self.state.metrics),
+            Arc::clone(&self.state.defect_log),
+            "reasoning_linear/linear",
+        ));
 
         let input_session_id = req.session_id.clone().unwrap_or_default();
         let session_id_for_metadata = req.session_id.clone();

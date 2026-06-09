@@ -394,3 +394,10 @@ claude mcp add mcp-reasoning \
   }
 }
 ```
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan:
+`specs/001-heal-parse-schema/plan.md` (feature: self-healing of parse/schema
+failures, operator-reviewed PRs with a reproducing-test gate).
+<!-- SPECKIT END -->

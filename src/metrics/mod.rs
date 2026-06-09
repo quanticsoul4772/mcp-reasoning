@@ -345,6 +345,12 @@ pub struct MetricsCollector {
     /// heuristic). Replaced wholesale each SI cycle, so it auto-releases a pair
     /// once it is no longer an anti-pattern.
     suppressed_transitions: RwLock<HashSet<(String, String)>>,
+    /// Per-component parse-failure counts (malformed/unparseable output) — a
+    /// self-heal detection signal (spec 001, FR-001).
+    parse_failures: RwLock<HashMap<String, u64>>,
+    /// Per-component schema-violation counts — a self-heal detection signal
+    /// (spec 001, FR-001).
+    schema_violations: RwLock<HashMap<String, u64>>,
 }
 
 impl MetricsCollector {
@@ -352,6 +358,58 @@ impl MetricsCollector {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Record a parse failure (malformed/unparseable output) for `component`
+    /// (e.g. `reasoning_linear/linear`). Self-heal detection signal (FR-001).
+    pub fn record_parse_failure(&self, component: &str) {
+        if let Ok(mut m) = self.parse_failures.write() {
+            *m.entry(component.to_string()).or_default() += 1;
+        }
+    }
+
+    /// Record a schema violation for `component`. Self-heal detection signal
+    /// (FR-001).
+    pub fn record_schema_violation(&self, component: &str) {
+        if let Ok(mut m) = self.schema_violations.write() {
+            *m.entry(component.to_string()).or_default() += 1;
+        }
+    }
+
+    /// Total parse failures recorded for `component` (0 if none).
+    #[must_use]
+    pub fn parse_failure_count(&self, component: &str) -> u64 {
+        self.parse_failures
+            .read()
+            .ok()
+            .and_then(|m| m.get(component).copied())
+            .unwrap_or(0)
+    }
+
+    /// Total schema violations recorded for `component` (0 if none).
+    #[must_use]
+    pub fn schema_violation_count(&self, component: &str) -> u64 {
+        self.schema_violations
+            .read()
+            .ok()
+            .and_then(|m| m.get(component).copied())
+            .unwrap_or(0)
+    }
+
+    /// Total parse failures across all components — a self-heal monitor signal.
+    #[must_use]
+    pub fn total_parse_failures(&self) -> u64 {
+        self.parse_failures
+            .read()
+            .map_or(0, |m| m.values().copied().sum())
+    }
+
+    /// Total schema violations across all components — a self-heal monitor signal.
+    #[must_use]
+    pub fn total_schema_violations(&self) -> u64 {
+        self.schema_violations
+            .read()
+            .map_or(0, |m| m.values().copied().sum())
     }
 
     /// Record a metric event.

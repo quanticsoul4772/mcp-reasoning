@@ -62,6 +62,7 @@ pub mod baseline;
 mod circuit_breaker;
 pub mod cli;
 mod executor;
+pub mod heal;
 mod learner;
 pub mod manager;
 mod monitor;

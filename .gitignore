@@ -57,3 +57,15 @@ claudedocs/
 /aime_out.json
 /aime1k_out.json
 /eval/data/aime_1k.jsonl
+
+# spec-kit installer (artifacts live in specs/)
+.specify/
+.claude/
+# abandoned memory-probe scratch
+scratch/
+*.out
+/mathl5_out.json
+/eval/data/aime_inband.jsonl
+/eval/data/math_hard_l5.jsonl
+/eval/data/math_l5.jsonl
+/scripts/
