@@ -12,6 +12,7 @@ use super::records::{
     InvocationStats,
 };
 use crate::error::StorageError;
+use crate::self_improvement::heal::{FixProposal, KnowledgeEntry, ProposalReview};
 use crate::self_improvement::types::{ActionStatus, DiagnosisStatus};
 
 /// Helper to create a QueryFailed error.
@@ -627,6 +628,165 @@ impl SelfImprovementStorage {
             .map_err(|e| query_error(e.to_string()))?;
 
         Ok(result.rows_affected() > 0)
+    }
+
+    // ------------------------------------------------------------------------
+    // Heal Knowledge Operations (Migration 009, spec 001 FR-011)
+    // ------------------------------------------------------------------------
+
+    /// Upsert a self-heal knowledge entry.
+    ///
+    /// Keyed on `failure_signature`, so re-accepting a fix for the same
+    /// `(component, failure_class)` class overwrites the prior mapping rather
+    /// than accumulating duplicates.
+    pub async fn upsert_knowledge_entry(&self, entry: &KnowledgeEntry) -> Result<(), StorageError> {
+        sqlx::query(
+            r"
+            INSERT INTO heal_knowledge_entries (
+                id, failure_signature, fix_summary, test_ref, accepted_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(failure_signature) DO UPDATE SET
+                id          = excluded.id,
+                fix_summary = excluded.fix_summary,
+                test_ref    = excluded.test_ref,
+                accepted_at = excluded.accepted_at
+            ",
+        )
+        .bind(&entry.id)
+        .bind(&entry.failure_signature)
+        .bind(&entry.fix_summary)
+        .bind(&entry.test_ref)
+        .bind(entry.accepted_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| query_error(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Look up an accepted knowledge entry by its failure signature, so a
+    /// recurring defect of a previously-fixed class can be recognized and
+    /// skip re-diagnosis (FR-011, SC-006).
+    pub async fn get_knowledge_by_signature(
+        &self,
+        signature: &str,
+    ) -> Result<Option<KnowledgeEntry>, StorageError> {
+        let row = sqlx::query(
+            r"
+            SELECT id, failure_signature, fix_summary, test_ref, accepted_at
+            FROM heal_knowledge_entries
+            WHERE failure_signature = ?
+            ",
+        )
+        .bind(signature)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| query_error(e.to_string()))?;
+
+        Ok(row.map(|row| KnowledgeEntry {
+            id: row.get("id"),
+            failure_signature: row.get("failure_signature"),
+            fix_summary: row.get("fix_summary"),
+            test_ref: row.get("test_ref"),
+            accepted_at: row.get("accepted_at"),
+        }))
+    }
+
+    // ------------------------------------------------------------------------
+    // Heal Fix-Proposal Operations (Migration 010, spec 001 US3)
+    // ------------------------------------------------------------------------
+
+    /// Upsert a fix proposal (keyed on `id`), so re-running the propose pipeline
+    /// for the same proposal updates its verdicts/PR URL rather than duplicating.
+    pub async fn upsert_fix_proposal(&self, p: &FixProposal) -> Result<(), StorageError> {
+        sqlx::query(
+            r"
+            INSERT INTO heal_fix_proposals (
+                id, defect_id, failure_signature, branch, change_summary, reproducing_test_ref,
+                grounded, suite_green, quality_green, pr_url, review_status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                defect_id            = excluded.defect_id,
+                failure_signature    = excluded.failure_signature,
+                branch               = excluded.branch,
+                change_summary       = excluded.change_summary,
+                reproducing_test_ref = excluded.reproducing_test_ref,
+                grounded             = excluded.grounded,
+                suite_green          = excluded.suite_green,
+                quality_green        = excluded.quality_green,
+                pr_url               = excluded.pr_url,
+                review_status        = excluded.review_status
+            ",
+        )
+        .bind(&p.id)
+        .bind(&p.defect_id)
+        .bind(&p.failure_signature)
+        .bind(&p.branch)
+        .bind(&p.change_summary)
+        .bind(&p.reproducing_test_ref)
+        .bind(i64::from(p.grounded))
+        .bind(i64::from(p.suite_green))
+        .bind(i64::from(p.quality_green))
+        .bind(&p.pr_url)
+        .bind(p.review_status.as_str())
+        .bind(Utc::now().timestamp_millis())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| query_error(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Load a fix proposal by id.
+    pub async fn get_fix_proposal(&self, id: &str) -> Result<Option<FixProposal>, StorageError> {
+        let row = sqlx::query(
+            r"
+            SELECT id, defect_id, failure_signature, branch, change_summary, reproducing_test_ref,
+                   grounded, suite_green, quality_green, pr_url, review_status
+            FROM heal_fix_proposals
+            WHERE id = ?
+            ",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| query_error(e.to_string()))?;
+
+        Ok(row.map(|row| {
+            let review_status: String = row.get("review_status");
+            FixProposal {
+                id: row.get("id"),
+                defect_id: row.get("defect_id"),
+                failure_signature: row.get("failure_signature"),
+                branch: row.get("branch"),
+                change_summary: row.get("change_summary"),
+                reproducing_test_ref: row.get("reproducing_test_ref"),
+                grounded: row.get::<i64, _>("grounded") != 0,
+                suite_green: row.get::<i64, _>("suite_green") != 0,
+                quality_green: row.get::<i64, _>("quality_green") != 0,
+                pr_url: row.get("pr_url"),
+                review_status: ProposalReview::from_db(&review_status),
+            }
+        }))
+    }
+
+    /// Record an operator review decision for a proposal. The loop never calls
+    /// this with `Approved` for itself — only an operator override does (US3).
+    pub async fn update_proposal_review(
+        &self,
+        id: &str,
+        review: ProposalReview,
+    ) -> Result<(), StorageError> {
+        sqlx::query("UPDATE heal_fix_proposals SET review_status = ? WHERE id = ?")
+            .bind(review.as_str())
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| query_error(e.to_string()))?;
+
+        Ok(())
     }
 
     // ------------------------------------------------------------------------

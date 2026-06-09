@@ -9,6 +9,7 @@ use super::records::{
     InvocationStats,
 };
 use crate::error::StorageError;
+use crate::self_improvement::heal::{FixProposal, KnowledgeEntry, ProposalReview};
 use crate::self_improvement::types::{ActionStatus, DiagnosisStatus, Severity};
 use crate::storage::SqliteStorage;
 use chrono::{Datelike, Utc};
@@ -112,6 +113,132 @@ async fn test_action_type_stats_roundtrip_and_upsert() {
     assert_eq!(loaded.len(), 1, "upsert must not duplicate the row");
     assert_eq!(loaded[0].total_executions, 8);
     assert_eq!(loaded[0].successful, 6);
+}
+
+#[tokio::test]
+#[serial]
+async fn test_knowledge_entry_roundtrip_and_upsert() {
+    let storage = test_storage().await;
+
+    // Missing signature returns None.
+    let missing = storage
+        .get_knowledge_by_signature("reasoning_linear/linear::parse")
+        .await
+        .expect("lookup missing");
+    assert!(missing.is_none());
+
+    let entry = KnowledgeEntry {
+        id: "k1".to_string(),
+        failure_signature: "reasoning_linear/linear::parse".to_string(),
+        fix_summary: "tolerate trailing prose around the JSON object".to_string(),
+        test_ref: "linear::tests::records_parse_failure_via_sink".to_string(),
+        accepted_at: 1_700_000_000_000,
+    };
+    storage
+        .upsert_knowledge_entry(&entry)
+        .await
+        .expect("insert knowledge");
+
+    let loaded = storage
+        .get_knowledge_by_signature("reasoning_linear/linear::parse")
+        .await
+        .expect("load knowledge")
+        .expect("entry present");
+    assert_eq!(loaded.id, "k1");
+    assert_eq!(loaded.fix_summary, entry.fix_summary);
+    assert_eq!(loaded.test_ref, entry.test_ref);
+    assert_eq!(loaded.accepted_at, 1_700_000_000_000);
+
+    // Re-accepting the same signature overwrites, never duplicates.
+    let updated = KnowledgeEntry {
+        id: "k2".to_string(),
+        fix_summary: "broaden the parser to accept fenced blocks".to_string(),
+        accepted_at: 1_700_000_111_111,
+        ..entry
+    };
+    storage
+        .upsert_knowledge_entry(&updated)
+        .await
+        .expect("upsert knowledge");
+
+    let loaded = storage
+        .get_knowledge_by_signature("reasoning_linear/linear::parse")
+        .await
+        .expect("reload knowledge")
+        .expect("entry still present");
+    assert_eq!(loaded.id, "k2");
+    assert_eq!(
+        loaded.fix_summary,
+        "broaden the parser to accept fenced blocks"
+    );
+    assert_eq!(loaded.accepted_at, 1_700_000_111_111);
+}
+
+#[tokio::test]
+#[serial]
+async fn test_fix_proposal_roundtrip_and_review_update() {
+    let storage = test_storage().await;
+
+    assert!(storage
+        .get_fix_proposal("p1")
+        .await
+        .expect("lookup missing")
+        .is_none());
+
+    let proposal = FixProposal {
+        id: "p1".to_string(),
+        defect_id: "abc123hash".to_string(),
+        failure_signature: "reasoning_linear/linear::parse".to_string(),
+        branch: "heal/d1".to_string(),
+        change_summary: "broaden the JSON parser".to_string(),
+        reproducing_test_ref: "tests/heal_repro_parse.rs".to_string(),
+        grounded: true,
+        suite_green: true,
+        quality_green: true,
+        pr_url: Some("https://github.com/o/r/pull/9".to_string()),
+        review_status: ProposalReview::Proposed,
+    };
+    storage
+        .upsert_fix_proposal(&proposal)
+        .await
+        .expect("insert proposal");
+
+    let loaded = storage
+        .get_fix_proposal("p1")
+        .await
+        .expect("load proposal")
+        .expect("present");
+    assert_eq!(loaded, proposal);
+    assert!(loaded.is_admissible());
+
+    // Operator review transition persists (US3: the loop never self-approves —
+    // this is the operator override path).
+    storage
+        .update_proposal_review("p1", ProposalReview::Approved)
+        .await
+        .expect("approve");
+    let approved = storage
+        .get_fix_proposal("p1")
+        .await
+        .expect("reload")
+        .expect("present");
+    assert_eq!(approved.review_status, ProposalReview::Approved);
+
+    // Upsert overwrites in place (no duplicate row): flip a verdict.
+    let updated = FixProposal {
+        suite_green: false,
+        review_status: ProposalReview::Rejected,
+        ..proposal
+    };
+    storage.upsert_fix_proposal(&updated).await.expect("upsert");
+    let reloaded = storage
+        .get_fix_proposal("p1")
+        .await
+        .expect("reload after upsert")
+        .expect("present");
+    assert!(!reloaded.suite_green);
+    assert!(!reloaded.is_admissible());
+    assert_eq!(reloaded.review_status, ProposalReview::Rejected);
 }
 
 #[test]

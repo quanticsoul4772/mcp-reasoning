@@ -62,9 +62,13 @@ pub mod baseline;
 mod circuit_breaker;
 pub mod cli;
 mod executor;
+pub mod heal;
+pub mod heal_cycle;
+pub mod heal_review;
 mod learner;
 pub mod manager;
 mod monitor;
+pub mod repair;
 pub mod sensor;
 pub mod storage;
 mod system;
@@ -72,7 +76,7 @@ mod types;
 
 // Re-export main types
 pub use allowlist::{Allowlist, AllowlistConfig, ValidationError, ValidationErrorCode};
-pub use analyzer::{AnalysisResult, Analyzer};
+pub use analyzer::{AnalysisResult, Analyzer, Localization};
 pub use baseline::{Baseline as BaselineTracker, BaselineCollection, BaselineConfig, ToolBaseline};
 pub use circuit_breaker::{
     CircuitBreaker, CircuitBreakerConfig, CircuitBreakerStats, CircuitState,

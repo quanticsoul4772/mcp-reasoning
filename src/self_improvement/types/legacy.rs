@@ -24,6 +24,11 @@ pub enum ActionType {
     ThresholdAdjust,
     /// Log an observation for future reference.
     LogObservation,
+    /// Propose a code fix as an operator-reviewed PR (self-heal, spec 001). Unlike
+    /// the other variants this is NOT a runtime knob change applied by the
+    /// synchronous executor — it is dispatched to the async repair pipeline, which
+    /// opens a PR and never merges.
+    ProposePR,
 }
 
 impl std::fmt::Display for ActionType {
@@ -33,6 +38,7 @@ impl std::fmt::Display for ActionType {
             Self::PromptTune => write!(f, "prompt_tune"),
             Self::ThresholdAdjust => write!(f, "threshold_adjust"),
             Self::LogObservation => write!(f, "log_observation"),
+            Self::ProposePR => write!(f, "propose_pr"),
         }
     }
 }
@@ -63,6 +69,7 @@ impl std::str::FromStr for ActionType {
             "prompt_tune" => Ok(Self::PromptTune),
             "threshold_adjust" => Ok(Self::ThresholdAdjust),
             "log_observation" => Ok(Self::LogObservation),
+            "propose_pr" => Ok(Self::ProposePR),
             _ => Err(ParseActionTypeError {
                 input: s.to_string(),
             }),

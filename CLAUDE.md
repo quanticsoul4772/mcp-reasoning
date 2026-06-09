@@ -79,6 +79,14 @@ MCP_TRANSPORT=stdio                   # stdio (default) or http
 # clear config error; the other 32 tools are unaffected.
 VOYAGE_API_KEY=pa-xxx                 # Enables embeddings + reranking
 VOYAGE_MODEL=voyage-4                 # Default embedding model
+
+# Self-heal propose-PR loop (spec 001) — OFF by default. Detection always runs;
+# this only controls whether the server opens operator-reviewed PRs to fix its
+# own recurring parse/schema defects. It NEVER merges. Requires `gh` installed
+# and authenticated. The loop starts ONLY when ENABLED is true AND WORKSPACE set.
+SELF_HEAL_PROPOSE_ENABLED=false        # Default false. Set true to enable.
+SELF_HEAL_WORKSPACE=                   # Abs repo path the pipeline runs cargo/git/gh in (required to start)
+SELF_HEAL_MAX_PROPOSALS=1              # Max PRs proposed per cycle (default 1, clamped to 5)
 ```
 
 ## Architecture
@@ -394,3 +402,10 @@ claude mcp add mcp-reasoning \
   }
 }
 ```
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan:
+`specs/001-heal-parse-schema/plan.md` (feature: self-healing of parse/schema
+failures, operator-reviewed PRs with a reproducing-test gate).
+<!-- SPECKIT END -->

@@ -115,7 +115,7 @@ Respond with a JSON object in this exact format:
 Important:
 - Build upon existing context
 - Be specific about insights gained
-- Honestly assess if this path is productive
+- Candidly assess if this path is productive
 - confidence is your re-assessed score (0.0-1.0) for how promising THIS branch now
   looks after exploring it — it replaces the branch's ranking score, so move it up
   or down from the initial estimate based on what you found"#
@@ -293,7 +293,7 @@ Important:
 - Prioritize improvements by impact
 - The refined reasoning should be demonstrably better
 - quality_score (0.0-1.0): the CURRENT quality of the reasoning you analyzed, before
-  your refinement — be honest, low scores are expected for flawed reasoning
+  your refinement — be candid, low scores are expected for flawed reasoning
 - confidence_improvement (0.0-1.0): how much applying your refinement would raise it"#
 }
 
@@ -326,7 +326,7 @@ Respond with a JSON object in this exact format:
 }
 
 Important:
-- Be honest about quality - neither too harsh nor too generous
+- Be accurate about quality - neither too harsh nor too generous
 - Focus on actionable recommendations
 - Meta-observations should help improve future reasoning"#
 }

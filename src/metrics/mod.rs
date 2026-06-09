@@ -52,6 +52,11 @@ const ANTIPATTERN_MIN_OCCURRENCES: u32 = 3;
 /// i.e. it fails more often than it succeeds.
 const ANTIPATTERN_MAX_SUCCESS_RATE: f64 = 0.5;
 
+/// Cap on retained model-version-change events (spec 001, FR-017). Drift events
+/// are rare; the bound only guards against an unbounded log in a pathological
+/// flapping-config scenario. Oldest entries are dropped first.
+const MAX_MODEL_VERSION_CHANGES: usize = 1_000;
+
 /// A single metric event recording.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricEvent {
@@ -345,6 +350,36 @@ pub struct MetricsCollector {
     /// heuristic). Replaced wholesale each SI cycle, so it auto-releases a pair
     /// once it is no longer an anti-pattern.
     suppressed_transitions: RwLock<HashSet<(String, String)>>,
+    /// Per-component parse-failure counts (malformed/unparseable output) — a
+    /// self-heal detection signal (spec 001, FR-001).
+    parse_failures: RwLock<HashMap<String, u64>>,
+    /// Per-component schema-violation counts — a self-heal detection signal
+    /// (spec 001, FR-001).
+    schema_violations: RwLock<HashMap<String, u64>>,
+    /// The pinned model identifier seen on the most recent API call. Used to
+    /// detect a model-version change (spec 001, FR-017): when a broad failure
+    /// spike coincides with one of these, the classifier attributes it to model
+    /// drift rather than a code defect.
+    last_model: RwLock<Option<String>>,
+    /// Recorded model-version-change events, oldest first, bounded by
+    /// [`MAX_MODEL_VERSION_CHANGES`]. Read by the drift classifier (FR-017, D3).
+    model_version_changes: RwLock<Vec<ModelVersionChange>>,
+}
+
+/// A change in the pinned model identifier between two consecutive API calls.
+///
+/// Recorded for the drift classifier (spec 001, FR-017): it correlates a broad
+/// failure spike with one of these to route the failure to drift rather than the
+/// repair path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelVersionChange {
+    /// The model identifier in effect before the change (`None` only if the very
+    /// first observation is somehow recorded as a change; in practice always set).
+    pub from: Option<String>,
+    /// The model identifier now in effect.
+    pub to: String,
+    /// When the change was observed (Unix epoch milliseconds).
+    pub at_millis: i64,
 }
 
 impl MetricsCollector {
@@ -352,6 +387,110 @@ impl MetricsCollector {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Record a parse failure (malformed/unparseable output) for `component`
+    /// (e.g. `reasoning_linear/linear`). Self-heal detection signal (FR-001).
+    pub fn record_parse_failure(&self, component: &str) {
+        if let Ok(mut m) = self.parse_failures.write() {
+            *m.entry(component.to_string()).or_default() += 1;
+        }
+    }
+
+    /// Record a schema violation for `component`. Self-heal detection signal
+    /// (FR-001).
+    pub fn record_schema_violation(&self, component: &str) {
+        if let Ok(mut m) = self.schema_violations.write() {
+            *m.entry(component.to_string()).or_default() += 1;
+        }
+    }
+
+    /// Total parse failures recorded for `component` (0 if none).
+    #[must_use]
+    pub fn parse_failure_count(&self, component: &str) -> u64 {
+        self.parse_failures
+            .read()
+            .ok()
+            .and_then(|m| m.get(component).copied())
+            .unwrap_or(0)
+    }
+
+    /// Total schema violations recorded for `component` (0 if none).
+    #[must_use]
+    pub fn schema_violation_count(&self, component: &str) -> u64 {
+        self.schema_violations
+            .read()
+            .ok()
+            .and_then(|m| m.get(component).copied())
+            .unwrap_or(0)
+    }
+
+    /// Total parse failures across all components — a self-heal monitor signal.
+    #[must_use]
+    pub fn total_parse_failures(&self) -> u64 {
+        self.parse_failures
+            .read()
+            .map_or(0, |m| m.values().copied().sum())
+    }
+
+    /// Total schema violations across all components — a self-heal monitor signal.
+    #[must_use]
+    pub fn total_schema_violations(&self) -> u64 {
+        self.schema_violations
+            .read()
+            .map_or(0, |m| m.values().copied().sum())
+    }
+
+    /// Record the pinned `model` identifier for an API call (spec 001, FR-017).
+    ///
+    /// The first observation establishes the baseline and emits nothing. A later
+    /// call with a different identifier emits and stores a [`ModelVersionChange`]
+    /// (returned to the caller) so the drift classifier can correlate a broad
+    /// failure spike with a model swap. An unchanged identifier is a no-op.
+    pub fn record_model_version(&self, model: &str, now_millis: i64) -> Option<ModelVersionChange> {
+        let mut last = self.last_model.write().ok()?;
+        let previous = match last.as_deref() {
+            Some(prev) if prev == model => None,
+            Some(prev) => Some(prev.to_string()),
+            None => {
+                *last = Some(model.to_string());
+                None
+            }
+        };
+        // No prior model (baseline) or unchanged → no drift event.
+        let previous = previous?;
+        *last = Some(model.to_string());
+        drop(last);
+
+        let change = ModelVersionChange {
+            from: Some(previous),
+            to: model.to_string(),
+            at_millis: now_millis,
+        };
+        if let Ok(mut changes) = self.model_version_changes.write() {
+            changes.push(change.clone());
+            if changes.len() > MAX_MODEL_VERSION_CHANGES {
+                let excess = changes.len() - MAX_MODEL_VERSION_CHANGES;
+                changes.drain(0..excess);
+            }
+        }
+        Some(change)
+    }
+
+    /// The model identifier in effect on the most recent recorded call, if any.
+    #[must_use]
+    pub fn current_model(&self) -> Option<String> {
+        self.last_model.read().ok().and_then(|m| m.clone())
+    }
+
+    /// All recorded model-version-change events, oldest first (FR-017). The drift
+    /// classifier reads this to attribute a broad failure spike to model drift.
+    #[must_use]
+    pub fn model_version_changes(&self) -> Vec<ModelVersionChange> {
+        self.model_version_changes
+            .read()
+            .map(|c| c.clone())
+            .unwrap_or_default()
     }
 
     /// Record a metric event.
@@ -1313,6 +1452,64 @@ impl Default for Timer {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_version_first_observation_sets_baseline_without_event() {
+        let m = MetricsCollector::new();
+        // First call pins the baseline; it is not drift.
+        assert!(m
+            .record_model_version("claude-sonnet-4-20250514", 100)
+            .is_none());
+        assert_eq!(
+            m.current_model().as_deref(),
+            Some("claude-sonnet-4-20250514")
+        );
+        assert!(m.model_version_changes().is_empty());
+    }
+
+    #[test]
+    fn model_version_unchanged_is_noop() {
+        let m = MetricsCollector::new();
+        m.record_model_version("model-a", 100);
+        assert!(m.record_model_version("model-a", 200).is_none());
+        assert!(m.model_version_changes().is_empty());
+    }
+
+    #[test]
+    fn model_version_change_emits_and_stores_event() {
+        let m = MetricsCollector::new();
+        m.record_model_version("model-a", 100);
+        let change = m
+            .record_model_version("model-b", 250)
+            .expect("a differing model emits a change");
+        assert_eq!(change.from.as_deref(), Some("model-a"));
+        assert_eq!(change.to, "model-b");
+        assert_eq!(change.at_millis, 250);
+
+        let stored = m.model_version_changes();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0], change);
+        assert_eq!(m.current_model().as_deref(), Some("model-b"));
+    }
+
+    #[test]
+    fn model_version_records_each_distinct_swap_in_order() {
+        let m = MetricsCollector::new();
+        m.record_model_version("a", 1);
+        m.record_model_version("b", 2);
+        m.record_model_version("b", 3); // unchanged, no event
+        m.record_model_version("c", 4);
+        let changes = m.model_version_changes();
+        assert_eq!(changes.len(), 2);
+        assert_eq!(
+            (changes[0].from.as_deref(), changes[0].to.as_str()),
+            (Some("a"), "b")
+        );
+        assert_eq!(
+            (changes[1].from.as_deref(), changes[1].to.as_str()),
+            (Some("b"), "c")
+        );
+    }
 
     #[test]
     fn test_metric_event_new() {

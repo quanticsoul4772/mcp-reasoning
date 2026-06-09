@@ -118,6 +118,14 @@ impl Executor {
             ActionType::PromptTune => self.execute_prompt_tune(&action),
             ActionType::ThresholdAdjust => self.execute_threshold_adjust(&action),
             ActionType::LogObservation => self.execute_log_observation(&action),
+            // ProposePR is a code-change proposal, not a runtime knob. It is
+            // dispatched to the async repair pipeline by the cycle, never to this
+            // synchronous config executor; reaching here is a routing error.
+            ActionType::ProposePR => InternalExecutionResult {
+                success: false,
+                message: "ProposePR is dispatched to the async repair pipeline, not the synchronous executor".to_string(),
+                measured_improvement: None,
+            },
         };
 
         // Update action status
@@ -169,6 +177,14 @@ impl Executor {
             ActionType::LogObservation => {
                 // Log observations are not rollbackable
                 return Err("LogObservation actions cannot be rolled back".to_string());
+            }
+            ActionType::ProposePR => {
+                // A PR proposal is reverted by closing/declining the PR, not by
+                // this executor — it never applied anything to the running server.
+                return Err(
+                    "ProposePR proposals are reverted by closing the PR, not via executor rollback"
+                        .to_string(),
+                );
             }
         }
 
@@ -430,6 +446,37 @@ mod tests {
         let removed = config.remove("key1");
         assert!(removed.is_some());
         assert!(config.get("key1").is_none());
+    }
+
+    #[test]
+    fn propose_pr_is_not_run_by_the_sync_executor() {
+        // ProposePR is dispatched to the async repair pipeline; if it ever reaches
+        // the sync executor that is a routing error, surfaced as a failed result
+        // (never a silent success, never a panic).
+        let mut executor = Executor::new();
+        let action = create_test_action(ActionType::ProposePR);
+
+        let result = executor.execute(action);
+
+        assert!(!result.success);
+        assert!(result.message.contains("async repair pipeline"));
+        assert_eq!(result.action.status, ActionStatus::Failed);
+    }
+
+    #[test]
+    fn propose_pr_rollback_is_rejected_with_guidance() {
+        let mut executor = Executor::new();
+        // No history entry exists, but the rollback match arm is what we assert is
+        // reachable and honest; seed a record to hit the ProposePR arm directly.
+        executor.execution_history.push(ExecutionRecord {
+            action_id: "pr-1".to_string(),
+            action_type: ActionType::ProposePR,
+            previous_state: None,
+            new_state: None,
+            timestamp: 0,
+        });
+        let err = executor.rollback("pr-1").unwrap_err();
+        assert!(err.contains("closing the PR"));
     }
 
     #[test]

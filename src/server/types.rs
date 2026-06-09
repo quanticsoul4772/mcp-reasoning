@@ -41,6 +41,9 @@ pub struct AppState {
     pub config: Arc<Config>,
     /// Metrics collector for tracking tool usage.
     pub metrics: Arc<MetricsCollector>,
+    /// Shared self-heal defect log (spec 001): records parse/schema failures of
+    /// the server's own tool output and tracks recurrence across calls.
+    pub defect_log: Arc<crate::self_improvement::heal::DefectLog>,
     /// Preset registry for workflow presets.
     pub presets: Arc<PresetRegistry>,
     /// Agent registry for available agents.
@@ -114,6 +117,9 @@ impl AppState {
             voyage_client,
             config: Arc::new(config),
             metrics,
+            defect_log: Arc::new(crate::self_improvement::heal::DefectLog::new(
+                crate::self_improvement::heal::DEFAULT_RECURRENCE_THRESHOLD,
+            )),
             presets: Arc::new(preset_registry),
             agents: Arc::new(AgentRegistry::new()),
             skills: Arc::new(skill_registry),

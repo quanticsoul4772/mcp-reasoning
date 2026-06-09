@@ -51,6 +51,7 @@ fn test_action_type_from_str_roundtrips_display() {
         ActionType::PromptTune,
         ActionType::ThresholdAdjust,
         ActionType::LogObservation,
+        ActionType::ProposePR,
     ] {
         let parsed: ActionType = action_type
             .to_string()
@@ -58,6 +59,7 @@ fn test_action_type_from_str_roundtrips_display() {
             .expect("Display form must parse back");
         assert_eq!(parsed, action_type);
     }
+    assert_eq!(ActionType::ProposePR.to_string(), "propose_pr");
 
     // Unknown strings are rejected, not silently mapped.
     assert!("nonsense".parse::<ActionType>().is_err());

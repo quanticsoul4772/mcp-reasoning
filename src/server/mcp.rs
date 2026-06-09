@@ -73,22 +73,29 @@ impl McpServer {
             }
         }
 
-        // Create Anthropic client for MCP tools
+        // Initialize metrics collector (shared between MCP tools and self-improvement)
+        let metrics = Arc::new(MetricsCollector::new());
+
+        // Create Anthropic client for MCP tools. It records each call's pinned
+        // model identifier into metrics so a model-version change is detected
+        // (spec 001, FR-017) and the drift classifier can use it.
         let client_config = ClientConfig::default()
             .with_timeout_ms(config.request_timeout_maximum_ms) // Use maximum timeout for deep thinking modes
             .with_max_retries(config.max_retries);
-        let client = AnthropicClient::new(config.api_key.expose(), client_config)?;
-
-        // Initialize metrics collector (shared between MCP tools and self-improvement)
-        let metrics = Arc::new(MetricsCollector::new());
+        let client = AnthropicClient::new(config.api_key.expose(), client_config)?
+            .with_metrics(Arc::clone(&metrics));
 
         let si_client_config = ClientConfig::default()
             .with_timeout_ms(config.request_timeout_maximum_ms) // Use maximum timeout for deep thinking modes
             .with_max_retries(config.max_retries);
         let si_client = AnthropicClient::new(config.api_key.expose(), si_client_config)?;
 
-        let (si_manager, si_handle) =
-            SelfImprovementManager::new(si_config.clone(), si_client, metrics.clone(), si_storage);
+        let (si_manager, si_handle) = SelfImprovementManager::new(
+            si_config.clone(),
+            si_client,
+            metrics.clone(),
+            Arc::clone(&si_storage),
+        );
 
         // Create shutdown channel for self-improvement manager
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -133,6 +140,70 @@ impl McpServer {
             metadata_builder,
             progress_tx,
         );
+
+        // Spawn the self-heal propose loop ONLY when explicitly enabled AND a
+        // workspace is configured (Constitution IV: default-off, operator opt-in).
+        // This is the ONLY path that opens PRs against the repo; it never merges.
+        if si_config.heal_propose_enabled {
+            if let Some(workspace) = si_config
+                .heal_workspace
+                .clone()
+                .filter(|w| !w.trim().is_empty())
+            {
+                let heal_client_config = ClientConfig::default()
+                    .with_timeout_ms(config.request_timeout_maximum_ms)
+                    .with_max_retries(config.max_retries);
+                let heal_client =
+                    AnthropicClient::new(config.api_key.expose(), heal_client_config)?;
+                let heal_manager = crate::self_improvement::heal_cycle::HealManager::new(
+                    heal_client,
+                    crate::self_improvement::repair::SystemCommandRunner,
+                    Arc::clone(&si_storage),
+                    Arc::clone(&state.defect_log),
+                    std::path::PathBuf::from(&workspace),
+                    si_config.heal_max_proposals,
+                );
+                let interval_secs = si_config.cycle_interval_secs;
+                let mut heal_shutdown = shutdown_tx.subscribe();
+                tokio::spawn(async move {
+                    tracing::warn!(
+                        workspace = %workspace,
+                        max_proposals = si_config.heal_max_proposals,
+                        "Self-heal propose loop ENABLED — opens operator-reviewed PRs for recurring defects (never merges)"
+                    );
+                    let mut ticker =
+                        tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+                    loop {
+                        tokio::select! {
+                            _ = ticker.tick() => match heal_manager.tick().await {
+                                Ok(s) if s.proposed + s.not_admissible + s.reused + s.drift + s.errored > 0 => {
+                                    tracing::info!(
+                                        proposed = s.proposed,
+                                        not_admissible = s.not_admissible,
+                                        reused = s.reused,
+                                        drift = s.drift,
+                                        errored = s.errored,
+                                        "Self-heal propose cycle complete"
+                                    );
+                                }
+                                Ok(_) => {}
+                                Err(e) => tracing::error!(error = %e, "Self-heal propose cycle storage error"),
+                            },
+                            _ = heal_shutdown.changed() => {
+                                if *heal_shutdown.borrow() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    tracing::info!("Self-heal propose loop stopped");
+                });
+            } else {
+                tracing::warn!(
+                    "SELF_HEAL_PROPOSE_ENABLED is set but SELF_HEAL_WORKSPACE is empty — heal propose loop NOT started"
+                );
+            }
+        }
 
         // Spawn the background embedding worker when Voyage is configured, so the
         // embedding cost is paid ahead of the first search/relate instead of on

@@ -53,6 +53,20 @@ pub const MAX_ACTIONS_PER_CYCLE: u32 = 10;
 /// Maximum circuit breaker threshold.
 pub const MAX_CIRCUIT_BREAKER_THRESHOLD: u32 = 10;
 
+/// Default: the self-heal propose-PR path is OFF.
+///
+/// When false (default) the running server never localizes/synthesizes/opens PRs
+/// for its own defects — detection still records them, but nothing side-effects.
+/// Turning it on is an explicit operator choice and additionally requires a
+/// workspace path (Constitution IV: Bounded Reviewable Autonomy).
+pub const DEFAULT_HEAL_PROPOSE_ENABLED: bool = false;
+
+/// Default: maximum fix proposals opened per heal cycle (flood guard, FR-013).
+pub const DEFAULT_HEAL_MAX_PROPOSALS: usize = 1;
+
+/// Maximum allowed proposals per heal cycle.
+pub const MAX_HEAL_PROPOSALS: usize = 5;
+
 /// Self-improvement system configuration.
 ///
 /// **NOTE**: Self-improvement is ALWAYS enabled. It is a core feature, not optional.
@@ -97,6 +111,21 @@ pub struct SelfImprovementConfig {
     /// at startup (bounded to allowlisted, validated fields), so an approved or
     /// auto-executed config change actually takes effect on the next restart.
     pub apply_config_overrides: bool,
+
+    /// Enable the self-heal propose-PR path (spec 001). Default `false`.
+    ///
+    /// When `false`, defects are still detected and recorded but the server never
+    /// localizes/synthesizes/opens PRs. When `true` AND `heal_workspace` is set,
+    /// a background task proposes operator-reviewed PRs for recurring defects.
+    /// Never merges (D5/FR-007).
+    pub heal_propose_enabled: bool,
+
+    /// Repo working directory the heal pipeline runs `cargo`/`git`/`gh` in. The
+    /// propose path stays off unless this is set, even if `heal_propose_enabled`.
+    pub heal_workspace: Option<String>,
+
+    /// Max fix proposals opened per heal cycle (flood guard, FR-013).
+    pub heal_max_proposals: usize,
 }
 
 impl Default for SelfImprovementConfig {
@@ -109,6 +138,9 @@ impl Default for SelfImprovementConfig {
             max_actions_per_cycle: DEFAULT_MAX_ACTIONS_PER_CYCLE,
             circuit_breaker_threshold: DEFAULT_CIRCUIT_BREAKER_THRESHOLD,
             apply_config_overrides: DEFAULT_APPLY_CONFIG_OVERRIDES,
+            heal_propose_enabled: DEFAULT_HEAL_PROPOSE_ENABLED,
+            heal_workspace: None,
+            heal_max_proposals: DEFAULT_HEAL_MAX_PROPOSALS,
         }
     }
 }
@@ -239,6 +271,30 @@ impl SelfImprovementConfig {
                 v.to_lowercase() == "true"
             });
 
+        let heal_propose_enabled = env::var("SELF_HEAL_PROPOSE_ENABLED")
+            .map_or(DEFAULT_HEAL_PROPOSE_ENABLED, |v| v.to_lowercase() == "true");
+
+        let heal_workspace = env::var("SELF_HEAL_WORKSPACE")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
+
+        let heal_max_proposals =
+            env::var("SELF_HEAL_MAX_PROPOSALS").map_or(DEFAULT_HEAL_MAX_PROPOSALS, |value| {
+                match value.parse::<usize>() {
+                    Ok(parsed) => parsed.clamp(1, MAX_HEAL_PROPOSALS),
+                    Err(e) => {
+                        tracing::warn!(
+                            var = "SELF_HEAL_MAX_PROPOSALS",
+                            value = %value,
+                            error = %e,
+                            default = DEFAULT_HEAL_MAX_PROPOSALS,
+                            "Invalid environment variable value, using default"
+                        );
+                        DEFAULT_HEAL_MAX_PROPOSALS
+                    }
+                }
+            });
+
         Self {
             require_approval,
             min_invocations_for_analysis,
@@ -246,6 +302,9 @@ impl SelfImprovementConfig {
             max_actions_per_cycle,
             circuit_breaker_threshold,
             apply_config_overrides,
+            heal_propose_enabled,
+            heal_workspace,
+            heal_max_proposals,
         }
     }
 
@@ -284,6 +343,40 @@ mod tests {
         env::remove_var("SELF_IMPROVEMENT_MAX_ACTIONS");
         env::remove_var("SELF_IMPROVEMENT_CIRCUIT_BREAKER_THRESHOLD");
         env::remove_var("SELF_IMPROVEMENT_APPLY_OVERRIDES");
+        env::remove_var("SELF_HEAL_PROPOSE_ENABLED");
+        env::remove_var("SELF_HEAL_WORKSPACE");
+        env::remove_var("SELF_HEAL_MAX_PROPOSALS");
+    }
+
+    #[test]
+    #[serial]
+    fn heal_propose_is_off_by_default_and_from_clean_env() {
+        // Default: off, no workspace, single proposal (Constitution IV).
+        let d = SelfImprovementConfig::default();
+        assert!(!d.heal_propose_enabled);
+        assert!(d.heal_workspace.is_none());
+        assert_eq!(d.heal_max_proposals, DEFAULT_HEAL_MAX_PROPOSALS);
+
+        clear_si_env_vars();
+        let env_cfg = SelfImprovementConfig::from_env();
+        assert!(!env_cfg.heal_propose_enabled);
+        assert!(env_cfg.heal_workspace.is_none());
+    }
+
+    #[test]
+    #[serial]
+    fn heal_propose_opt_in_and_max_clamped_from_env() {
+        clear_si_env_vars();
+        env::set_var("SELF_HEAL_PROPOSE_ENABLED", "true");
+        env::set_var("SELF_HEAL_WORKSPACE", "/repo/path");
+        env::set_var("SELF_HEAL_MAX_PROPOSALS", "999"); // above MAX_HEAL_PROPOSALS
+
+        let cfg = SelfImprovementConfig::from_env();
+        assert!(cfg.heal_propose_enabled);
+        assert_eq!(cfg.heal_workspace.as_deref(), Some("/repo/path"));
+        assert_eq!(cfg.heal_max_proposals, MAX_HEAL_PROPOSALS);
+
+        clear_si_env_vars();
     }
 
     #[test]

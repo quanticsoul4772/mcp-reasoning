@@ -51,7 +51,12 @@ impl ExactMatch {
     }
 
     /// Extract a candidate answer: strict (`#### <answer>`) first, then flexible.
-    fn extract(output: &str, kind: AnswerKind) -> Option<String> {
+    ///
+    /// Public so callers that need the *extracted answer* (not a score) — e.g. a
+    /// self-consistency solver majority-voting over samples — reuse the exact
+    /// same two-filter extraction the scorer applies.
+    #[must_use]
+    pub fn extract(output: &str, kind: AnswerKind) -> Option<String> {
         if let Some(marker) = output.rfind(TERMINAL_MARKER) {
             let after = &output[marker + TERMINAL_MARKER.len()..];
             let strict = match kind {
