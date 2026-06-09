@@ -3,7 +3,7 @@
 //! Foundational data model and safety helpers for the operator-reviewed self-heal
 //! loop:
 //! - [`types`]: `DefectRecord`, `FixProposal`, `KnowledgeEntry` and their enums.
-//! - [`redact`]: secret-scrubbing + stable hashing of triggering input (FR-016).
+//! - [`redact()`]: secret-scrubbing + stable hashing of triggering input (FR-016).
 //! - [`guard`]: the integrity guard protecting the acceptance/measurement surface
 //!   (FR-010) so a fix can never game its own success signal.
 //!
