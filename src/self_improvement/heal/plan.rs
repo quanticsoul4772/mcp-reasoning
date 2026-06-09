@@ -1,7 +1,7 @@
 //! Plan step (spec 001, T019): rank recurring defects and cap how many are
 //! proposed per cycle.
 //!
-//! Severity is FR-014 (class weight × recurrence × blast radius, bounded [0,1]).
+//! Severity is FR-014 (class weight × recurrence × blast radius, bounded to `[0,1]`).
 //! Selection ranks by frequency × severity and keeps the top K (FR-013). Drift
 //! defects are never proposed (FR-012). Fix-confidence (FR-015) is an outcome of
 //! attempting a fix, so it is applied post-attempt and is not part of selection.
@@ -83,7 +83,7 @@ const RECUR_SAT: f64 = 10.0;
 /// Distinct-component count at which the blast factor saturates.
 const BLAST_SAT: f64 = 5.0;
 
-/// Bounded [0,1] severity (FR-014): a class-weighted blend of recurrence and
+/// Bounded `[0,1]` severity (FR-014): a class-weighted blend of recurrence and
 /// blast radius.
 ///
 /// `blast_radius` = number of distinct components exhibiting the same failure

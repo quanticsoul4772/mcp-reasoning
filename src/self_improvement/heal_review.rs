@@ -1,7 +1,7 @@
 //! Operator review + knowledge reuse for self-heal proposals (spec 001, US3).
 //!
 //! This is the acceptance side of the loop (T029–T031):
-//! - [`accept_proposal`]: an operator approves a persisted [`FixProposal`]. The
+//! - [`accept_proposal`]: an operator approves a persisted `FixProposal`. The
 //!   merge is permitted ONLY if the proposal is admissible
 //!   (`grounded ∧ suite_green ∧ quality_green`, FR-008/FR-009); on acceptance a
 //!   durable [`KnowledgeEntry`] is recorded for reuse (T030).
