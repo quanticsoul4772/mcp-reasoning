@@ -11,16 +11,13 @@
 //! path). Further per-mode adapters follow the same shape: hold the mode, call
 //! its real `process`, return the conclusion text as [`SolverOutput::text`].
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use thiserror::Error;
 
 use crate::error::ModeError;
-use crate::eval::scorer::ExactMatch;
-use crate::eval::task::{AnswerKind, EvalTask};
+use crate::eval::task::EvalTask;
 use crate::modes::{LinearMode, ReflectionMode};
-use crate::traits::{AnthropicClientTrait, CompletionConfig, Message, StorageTrait};
+use crate::traits::{AnthropicClientTrait, StorageTrait};
 
 /// The output of running a solver on one task: the text to be scored, plus
 /// which mode produced it and the mode's self-reported confidence (when any).
@@ -124,10 +121,6 @@ where
     S: StorageTrait,
     C: AnthropicClientTrait,
 {
-    /// Attempts per task before giving up — recovers reflection's intermittent
-    /// stochastic parse failures so they do not drop items from a measurement.
-    const MAX_ATTEMPTS: u32 = 4;
-
     /// Build a reflection solver with the `quality_threshold` under test.
     pub fn new(storage: S, client: C, quality_threshold: f64, max_iterations: u32) -> Self {
         Self {
@@ -145,228 +138,26 @@ where
     C: AnthropicClientTrait + Send + Sync,
 {
     async fn solve(&self, task: &EvalTask) -> Result<SolverOutput, SolverError> {
-        // Reflection's structured-JSON output is stochastic (temperature 0.7) and
-        // intermittently fails to parse on hard problems. A bounded retry recovers
-        // those transient failures so items are not spuriously dropped from a
-        // paired measurement — it is not masking a bug, it is handling a
-        // non-deterministic model response. The client already retries API/network
-        // errors underneath this.
-        let mut last_err: Option<ModeError> = None;
-        for _ in 0..Self::MAX_ATTEMPTS {
-            match self
-                .mode
-                .process(
-                    &task.prompt,
-                    None,
-                    Some(self.max_iterations),
-                    Some(self.quality_threshold),
-                )
-                .await
-            {
-                Ok(response) => {
-                    return Ok(SolverOutput {
-                        text: response.refined_reasoning,
-                        mode: "reflection".to_string(),
-                        confidence: Some(response.quality_score),
-                    })
-                }
-                Err(e) => last_err = Some(e),
-            }
-        }
-        Err(last_err.map_or_else(
-            || {
-                SolverError::Mode(ModeError::ApiUnavailable {
-                    message: "reflection produced no result".to_string(),
-                })
-            },
-            SolverError::Mode,
-        ))
-    }
-
-    // Literal return is correct here; see LinearSolver::mode.
-    #[allow(clippy::unnecessary_literal_bound)]
-    fn mode(&self) -> &str {
-        "reflection"
-    }
-}
-
-/// Self-consistency solver: runs linear `samples` (K) times and majority-votes
-/// the extracted answers.
-///
-/// K is the lever. Higher K is well-established to raise math accuracy
-/// (self-consistency), and — unlike the threshold-reading modes — the output
-/// stays cleanly `#### <answer>`-scoreable, because each sample is a clean linear
-/// solve and the majority answer is re-emitted in that format. `K = 1` is plain
-/// single-shot linear.
-pub struct SelfConsistencySolver<S, C>
-where
-    S: StorageTrait,
-    C: AnthropicClientTrait,
-{
-    mode: LinearMode<S, C>,
-    samples: u32,
-}
-
-impl<S, C> SelfConsistencySolver<S, C>
-where
-    S: StorageTrait,
-    C: AnthropicClientTrait,
-{
-    /// Build a self-consistency solver drawing `samples` (K, clamped to >= 1)
-    /// linear samples per task at the given sampling `temperature`, optionally
-    /// with a `prompt` override (for testing prompt as an SI lever). `K = 1`,
-    /// default temp, no prompt override is plain single-shot linear.
-    pub fn new(
-        storage: S,
-        client: C,
-        samples: u32,
-        temperature: f64,
-        prompt: Option<String>,
-    ) -> Self {
-        let mut mode = LinearMode::new(storage, client).with_temperature(temperature);
-        if let Some(p) = prompt {
-            mode = mode.with_prompt(p);
-        }
-        Self {
-            mode,
-            samples: samples.max(1),
-        }
-    }
-}
-
-#[async_trait]
-impl<S, C> Solver for SelfConsistencySolver<S, C>
-where
-    S: StorageTrait + Send + Sync,
-    C: AnthropicClientTrait + Send + Sync,
-{
-    async fn solve(&self, task: &EvalTask) -> Result<SolverOutput, SolverError> {
-        // Per-sample bounded retry so a transient (rate-limit/parse) failure does
-        // not lose a whole sample — critical at low K, where one failure would
-        // otherwise drop the item from a paired measurement.
-        const SAMPLE_ATTEMPTS: u32 = 3;
-        let mut counts: HashMap<String, u32> = HashMap::new();
-        let mut total = 0u32;
-        let mut last_err: Option<ModeError> = None;
-        for _ in 0..self.samples {
-            for _ in 0..SAMPLE_ATTEMPTS {
-                match self.mode.process(&task.prompt, None, None).await {
-                    Ok(resp) => {
-                        if let Some(ans) = ExactMatch::extract(&resp.content, AnswerKind::Numeric) {
-                            *counts.entry(ans).or_insert(0) += 1;
-                            total += 1;
-                        }
-                        break; // sample produced a response; stop retrying it
-                    }
-                    Err(e) => last_err = Some(e),
-                }
-            }
-        }
-        let Some((answer, votes)) = counts.into_iter().max_by_key(|(_, c)| *c) else {
-            return Err(last_err.map_or_else(
-                || {
-                    SolverError::Mode(ModeError::ApiUnavailable {
-                        message: "self-consistency produced no parseable answer".to_string(),
-                    })
-                },
-                SolverError::Mode,
-            ));
-        };
+        let response = self
+            .mode
+            .process(
+                &task.prompt,
+                None,
+                Some(self.max_iterations),
+                Some(self.quality_threshold),
+            )
+            .await?;
         Ok(SolverOutput {
-            // Re-emit the majority answer in the scoreable terminal format.
-            text: format!("#### {answer}"),
-            mode: "self_consistency".to_string(),
-            confidence: Some(f64::from(votes) / f64::from(total.max(1))),
+            text: response.refined_reasoning,
+            mode: "reflection".to_string(),
+            confidence: Some(response.quality_score),
         })
     }
 
     // Literal return is correct here; see LinearSolver::mode.
     #[allow(clippy::unnecessary_literal_bound)]
     fn mode(&self) -> &str {
-        "self_consistency"
-    }
-}
-
-/// Raw-completion solver: sends the prompt directly and returns the model's
-/// **raw text**, with no JSON envelope.
-///
-/// `LinearMode` requires a `{analysis, confidence}` JSON response and errors when
-/// the model returns prose — which it frequently does on hard problems, dropping
-/// those items from a measurement. An eval only needs the solution text ending in
-/// `#### <answer>` (the scorer extracts it from prose), so this solver bypasses
-/// the JSON requirement entirely. An optional `prefix` (e.g. a retrieved worked
-/// exemplar) is prepended to the task prompt.
-pub struct RawSolver<C>
-where
-    C: AnthropicClientTrait,
-{
-    client: C,
-    prefix: Option<String>,
-    max_tokens: u32,
-    temperature: f64,
-}
-
-impl<C> RawSolver<C>
-where
-    C: AnthropicClientTrait,
-{
-    /// Number of attempts per task before giving up (handles transient errors on
-    /// top of the client's own retry/backoff).
-    const MAX_ATTEMPTS: u32 = 4;
-
-    /// Build a raw solver. `prefix`, when set, is prepended before the task
-    /// prompt (e.g. a worked exemplar for memory injection).
-    pub fn new(client: C, prefix: Option<String>, max_tokens: u32, temperature: f64) -> Self {
-        Self {
-            client,
-            prefix,
-            max_tokens,
-            temperature,
-        }
-    }
-}
-
-#[async_trait]
-impl<C> Solver for RawSolver<C>
-where
-    C: AnthropicClientTrait + Send + Sync,
-{
-    async fn solve(&self, task: &EvalTask) -> Result<SolverOutput, SolverError> {
-        let content = self.prefix.as_ref().map_or_else(
-            || task.prompt.clone(),
-            |p| format!("{p}\n\n{}", task.prompt),
-        );
-        let mut last_err: Option<ModeError> = None;
-        for _ in 0..Self::MAX_ATTEMPTS {
-            let messages = vec![Message::user(content.clone())];
-            let config = CompletionConfig::new()
-                .with_max_tokens(self.max_tokens)
-                .with_temperature(self.temperature as f32);
-            match self.client.complete(messages, config).await {
-                Ok(resp) => {
-                    return Ok(SolverOutput {
-                        text: resp.content,
-                        mode: "raw".to_string(),
-                        confidence: None,
-                    })
-                }
-                Err(e) => last_err = Some(e),
-            }
-        }
-        Err(last_err.map_or_else(
-            || {
-                SolverError::Mode(ModeError::ApiUnavailable {
-                    message: "raw solver produced no result".to_string(),
-                })
-            },
-            SolverError::Mode,
-        ))
-    }
-
-    // Literal return is correct here; see LinearSolver::mode.
-    #[allow(clippy::unnecessary_literal_bound)]
-    fn mode(&self) -> &str {
-        "raw"
+        "reflection"
     }
 }
 
