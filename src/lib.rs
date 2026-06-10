@@ -5,7 +5,8 @@
 //!
 //! # Features
 //!
-//! - 15 consolidated reasoning tools (vs 40 in predecessor)
+//! - 35 tools: 17 core reasoning tools (a consolidated surface vs 40 in the
+//!   predecessor), 7 self-improvement, 4 session-management, 7 agent/team
 //! - Direct Anthropic API integration
 //! - Extended thinking support with configurable budgets
 //! - `SQLite` persistence for sessions and state

@@ -515,7 +515,6 @@ pub struct SelfImprovementManager<C: AnthropicClientTrait> {
     config: SelfImprovementConfig,
     system: SelfImprovementSystem<C>,
     metrics: Arc<MetricsCollector>,
-    #[allow(dead_code)]
     storage: Arc<SelfImprovementStorage>,
     command_rx: mpsc::Receiver<ManagerCommand>,
     status_tx: watch::Sender<ManagerStatus>,
