@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>mcp-reasoning</id>
-    <version>0.1.0</version>
+    <version>0.3.0</version>
     <packageSourceUrl>https://github.com/quanticsoul4772/mcp-reasoning</packageSourceUrl>
     <owners>quanticsoul4772</owners>
     <title>MCP Reasoning Server</title>

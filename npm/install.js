@@ -10,7 +10,7 @@ const { promisify } = require('util');
 
 const streamPipeline = promisify(pipeline);
 
-const VERSION = '0.1.0';
+const VERSION = '0.3.0';
 const REPO = 'quanticsoul4772/mcp-reasoning';
 
 // Platform detection

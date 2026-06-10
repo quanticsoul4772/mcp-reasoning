@@ -6,22 +6,22 @@
 class McpReasoning < Formula
   desc "MCP server providing structured reasoning capabilities for Claude"
   homepage "https://github.com/quanticsoul4772/mcp-reasoning"
-  version "0.1.0"
+  version "0.3.0"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.intel?
-      url "https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.1.0/x86_64-apple-darwin.tar.gz"
-      sha256 "b0329f6030befba49b028918549d9e480aa0f8ff8344ed77bf77dbaef7afd367"
+      url "https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.3.0/x86_64-apple-darwin.tar.gz"
+      sha256 "0635244d3e8e4eea7fad3d6b525093a5c6ad421fc8b3076cefd5275b87cc98e9"
     elsif Hardware::CPU.arm?
-      url "https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.1.0/aarch64-apple-darwin.tar.gz"
-      sha256 "9925679c4f327aba3fbeacc497cc14ecece3b5095ca1a32f06b9502e9edda9ef"
+      url "https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.3.0/aarch64-apple-darwin.tar.gz"
+      sha256 "cdd894bd623e545cdbfe05aeec6212c3e2bbf4015322eb98f1c07f9c6c73250c"
     end
   end
 
   on_linux do
-    url "https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.1.0/x86_64-unknown-linux-gnu.tar.gz"
-    sha256 "ad0a3d62b1300691ff150b938ba2c82a6681b29b05a1fbaaa42f4b520596fd8a"
+    url "https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.3.0/x86_64-unknown-linux-gnu.tar.gz"
+    sha256 "907d5ba4c591c36e20ade6fed70affdded6a1aace9f92c43b05e11b82d5a84cb"
   end
 
   def install
