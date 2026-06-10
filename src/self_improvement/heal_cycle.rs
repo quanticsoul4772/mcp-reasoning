@@ -10,14 +10,13 @@
 //! This is the orchestration brain; the live call site (gated by config, with a
 //! real workspace + `SystemCommandRunner`) wires it into the running manager.
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::Path;
 
 use crate::error::StorageError;
 use crate::self_improvement::analyzer::localize;
 use crate::self_improvement::heal::{
-    blast_radius, partition_drift, rank_and_cap, DefectLog, DefectRecord, FixProposal,
-    DEFAULT_DRIFT_THRESHOLD,
+    blast_radius, classify_eligibility, partition_drift, rank_and_cap, DefectRecord,
+    EligibilityOutcome, FixProposal, DEFAULT_DRIFT_THRESHOLD, DEFAULT_RECURRENCE_THRESHOLD,
 };
 use crate::self_improvement::heal_review::find_reusable_fix;
 use crate::self_improvement::repair::{propose_pr, CommandRunner};
@@ -34,12 +33,18 @@ pub struct ProposeCycleSummary {
     /// Defects skipped because their class is already guarded (knowledge reuse).
     pub reused: usize,
     /// Defects routed to the drift response (broad/model drift) — alerted and
-    /// recorded, never patched (FR-012).
+    /// recorded, never patched (FR-012, FR-005).
     pub drift: usize,
+    /// Defects held back from propose (varied-input / ambiguous) — recorded, not
+    /// patched (spec 002, FR-006).
+    pub held_back: usize,
     /// Defects whose localize/propose step errored (cycle continued).
     pub errored: usize,
     /// The proposals produced this cycle (persisted).
     pub proposals: Vec<FixProposal>,
+    /// `(signature, reason)` for every defect held back or routed to drift, so the
+    /// operator sees why nothing was proposed for it (FR-007/FR-009/SC-004).
+    pub held_back_reasons: Vec<(String, String)>,
 }
 
 /// Run one propose cycle over `recurring`, capped at `max_proposals` (FR-013).
@@ -55,6 +60,7 @@ pub async fn run_propose_cycle<C, R>(
     recurring: &[DefectRecord],
     workspace: &Path,
     max_proposals: usize,
+    latest_model_change: Option<i64>,
 ) -> Result<ProposeCycleSummary, StorageError>
 where
     C: AnthropicClientTrait,
@@ -75,11 +81,36 @@ where
             "self-heal: failure classified as DRIFT (broad/model) — routed away from repair, no patch (FR-012)"
         );
         summary.drift += 1;
+        summary.held_back_reasons.push((
+            d.signature(),
+            "structural drift (broad across components)".to_string(),
+        ));
     }
 
-    // Rank by frequency × severity, cap at K (FR-013); drift is already removed.
+    // Attribution gate (spec 002, US2): keep only stable-path code defects; hold
+    // back varied-input/ambiguous ones and route model-correlated ones to drift.
+    // Runs BEFORE rank_and_cap so ranking only sees eligible defects (Constitution IV).
+    let mut eligible: Vec<DefectRecord> = Vec::new();
+    for d in &code_defects {
+        let model_changed = latest_model_change.is_some_and(|t| t >= d.first_seen);
+        match classify_eligibility(d, model_changed, DEFAULT_RECURRENCE_THRESHOLD) {
+            EligibilityOutcome::Eligible => eligible.push(d.clone()),
+            EligibilityOutcome::HeldBack(reason) => {
+                tracing::info!(signature = %d.signature(), %reason, "self-heal: defect held back from propose (attribution)");
+                summary.held_back += 1;
+                summary.held_back_reasons.push((d.signature(), reason));
+            }
+            EligibilityOutcome::Drift(reason) => {
+                tracing::warn!(signature = %d.signature(), %reason, "self-heal: model-drift correlated — routed to drift (FR-005)");
+                summary.drift += 1;
+                summary.held_back_reasons.push((d.signature(), reason));
+            }
+        }
+    }
+
+    // Rank by frequency × severity, cap at K (FR-013); drift + ineligible removed.
     let selected = rank_and_cap(
-        &code_defects,
+        &eligible,
         |d| blast_radius(recurring, d.failure_class),
         max_proposals,
     );
@@ -128,71 +159,6 @@ fn branch_slug(defect_id: &str) -> String {
         "defect".to_string()
     } else {
         slug
-    }
-}
-
-/// Owns the dependencies of the propose cycle and runs it on demand.
-///
-/// Constructed (only when the propose path is explicitly enabled) at startup with
-/// a real workspace + `SystemCommandRunner`; a background task calls [`tick`] on an
-/// interval. Reading the live [`DefectLog`] each tick means newly-recurring
-/// defects are picked up without restarting.
-///
-/// [`tick`]: HealManager::tick
-pub struct HealManager<C, R> {
-    client: C,
-    runner: R,
-    storage: Arc<SelfImprovementStorage>,
-    defect_log: Arc<DefectLog>,
-    workspace: PathBuf,
-    max_proposals: usize,
-}
-
-impl<C, R> HealManager<C, R>
-where
-    C: AnthropicClientTrait,
-    R: CommandRunner,
-{
-    /// Assemble a heal manager.
-    #[must_use]
-    pub fn new(
-        client: C,
-        runner: R,
-        storage: Arc<SelfImprovementStorage>,
-        defect_log: Arc<DefectLog>,
-        workspace: PathBuf,
-        max_proposals: usize,
-    ) -> Self {
-        Self {
-            client,
-            runner,
-            storage,
-            defect_log,
-            workspace,
-            max_proposals,
-        }
-    }
-
-    /// Run one propose cycle over the defects currently marked `Recurring`. A
-    /// no-op (empty summary, no side effects) when nothing is recurring.
-    ///
-    /// # Errors
-    /// Propagates a storage failure from the cycle; LLM/repair failures are
-    /// counted in the returned summary, not propagated.
-    pub async fn tick(&self) -> Result<ProposeCycleSummary, StorageError> {
-        let recurring = self.defect_log.recurring();
-        if recurring.is_empty() {
-            return Ok(ProposeCycleSummary::default());
-        }
-        run_propose_cycle(
-            &self.client,
-            &self.runner,
-            &self.storage,
-            &recurring,
-            &self.workspace,
-            self.max_proposals,
-        )
-        .await
     }
 }
 
@@ -255,6 +221,21 @@ mod tests {
         for _ in 1..occ {
             d.record_occurrence(2);
         }
+        // Stable-path defect: all occurrences from one input → propose-eligible.
+        d.max_input_occurrences = occ;
+        d.distinct_inputs = 1;
+        d
+    }
+
+    /// A varied-input defect: recurs in aggregate but no single input repeats, so
+    /// it is held back from the propose path (spec 002, US2).
+    fn varied_defect(component: &str, class: FailureClass, occ: u32) -> DefectRecord {
+        let mut d = DefectRecord::observe(component, class, "bad input", 1);
+        for _ in 1..occ {
+            d.record_occurrence(2);
+        }
+        d.max_input_occurrences = 1;
+        d.distinct_inputs = occ;
         d
     }
 
@@ -281,7 +262,7 @@ mod tests {
         let runner = full_admissible_runner();
         let recurring = vec![defect("reasoning_linear/linear", FailureClass::Parse, 5)];
 
-        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 5)
+        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 5, None)
             .await
             .unwrap();
 
@@ -317,7 +298,7 @@ mod tests {
         let runner = ScriptedRunner::new(vec![]);
         let recurring = vec![defect("reasoning_linear/linear", FailureClass::Parse, 5)];
 
-        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 5)
+        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 5, None)
             .await
             .unwrap();
 
@@ -336,7 +317,7 @@ mod tests {
         // A drift-classed defect must never be proposed (FR-012).
         let recurring = vec![defect("reasoning_linear/linear", FailureClass::Drift, 9)];
 
-        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 5)
+        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 5, None)
             .await
             .unwrap();
 
@@ -362,7 +343,7 @@ mod tests {
             defect("reasoning_graph/graph", FailureClass::Parse, 5),
         ];
 
-        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 5)
+        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 5, None)
             .await
             .unwrap();
 
@@ -386,7 +367,7 @@ mod tests {
             defect("reasoning_tree/tree", FailureClass::Schema, 3),
         ];
 
-        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 1)
+        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 1, None)
             .await
             .unwrap();
 
@@ -405,57 +386,44 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn manager_tick_proposes_for_recurring_defects_in_the_log() {
-        use crate::metrics::MetricsCollector;
-
+    async fn varied_input_defect_is_held_back_not_proposed() {
         let dir = tempfile::tempdir().unwrap();
-        let s = Arc::new(storage().await);
-        let log = Arc::new(DefectLog::new(2));
-        let metrics = MetricsCollector::new();
-        // Two observations of the same class → promoted to Recurring.
-        log.observe(
-            &metrics,
+        let s = storage().await;
+        let client = staged_client();
+        let runner = ScriptedRunner::new(vec![]);
+        // Recurs in aggregate but no single input repeats → input-induced; held back.
+        let recurring = vec![varied_defect(
             "reasoning_linear/linear",
-            FailureClass::Parse,
-            "bad",
-            1,
-        );
-        log.observe(
-            &metrics,
-            "reasoning_linear/linear",
-            FailureClass::Parse,
-            "bad",
-            2,
-        );
-        assert_eq!(log.recurring().len(), 1);
-
-        let mgr = HealManager::new(
-            staged_client(),
-            full_admissible_runner(),
-            Arc::clone(&s),
-            Arc::clone(&log),
-            dir.path().to_path_buf(),
+            FailureClass::Schema,
             5,
-        );
-        let summary = mgr.tick().await.unwrap();
-        assert_eq!(summary.proposed, 1);
+        )];
+
+        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 5, None)
+            .await
+            .unwrap();
+
+        assert_eq!(summary.held_back, 1);
+        assert_eq!(summary.proposed, 0);
+        assert_eq!(runner.call_count(), 0);
+        assert!(summary.held_back_reasons[0].1.contains("input-induced"));
     }
 
     #[tokio::test]
     #[serial]
-    async fn manager_tick_is_a_noop_with_no_recurring_defects() {
+    async fn model_change_routes_recurring_defect_to_drift() {
         let dir = tempfile::tempdir().unwrap();
-        let s = Arc::new(storage().await);
-        let log = Arc::new(DefectLog::new(3));
-        let mgr = HealManager::new(
-            staged_client(),
-            ScriptedRunner::new(vec![]),
-            Arc::clone(&s),
-            Arc::clone(&log),
-            dir.path().to_path_buf(),
-            5,
-        );
-        let summary = mgr.tick().await.unwrap();
-        assert_eq!(summary, ProposeCycleSummary::default());
+        let s = storage().await;
+        let client = staged_client();
+        let runner = ScriptedRunner::new(vec![]);
+        // A stable-path defect first_seen at t=1; a model change at t=5 overlaps it.
+        let recurring = vec![defect("reasoning_linear/linear", FailureClass::Schema, 5)];
+
+        let summary = run_propose_cycle(&client, &runner, &s, &recurring, dir.path(), 5, Some(5))
+            .await
+            .unwrap();
+
+        assert_eq!(summary.drift, 1);
+        assert_eq!(summary.proposed, 0);
+        assert_eq!(runner.call_count(), 0);
     }
 }

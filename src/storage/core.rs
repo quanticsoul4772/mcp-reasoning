@@ -200,6 +200,24 @@ impl SqliteStorage {
                 message: format!("Failed to run migration 010: {e}"),
             })?;
 
+        // Migration 011: invariant-guard columns on heal_fix_proposals (spec 002,
+        // mirrors migrations/011_heal_proposal_invariant.sql). ALTER TABLE ADD
+        // COLUMN is not idempotent and migrations re-run every startup, so run each
+        // statement and tolerate "duplicate column name" on subsequent boots.
+        for stmt in [
+            "ALTER TABLE heal_fix_proposals ADD COLUMN weakens_invariant INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE heal_fix_proposals ADD COLUMN block_reason TEXT",
+        ] {
+            if let Err(e) = sqlx::query(stmt).execute(&self.pool).await {
+                if !e.to_string().contains("duplicate column name") {
+                    return Err(StorageError::MigrationFailed {
+                        version: "011".to_string(),
+                        message: format!("Failed to run migration 011: {e}"),
+                    });
+                }
+            }
+        }
+
         Ok(())
     }
 

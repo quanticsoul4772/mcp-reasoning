@@ -143,6 +143,8 @@ mod tests {
             quality_green: true,
             pr_url: Some("https://github.com/o/r/pull/9".to_string()),
             review_status: ProposalReview::Proposed,
+            weakens_invariant: false,
+            block_reason: None,
         }
     }
 

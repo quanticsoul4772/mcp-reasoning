@@ -11,17 +11,34 @@ use std::sync::RwLock;
 
 use crate::metrics::MetricsCollector;
 
-use super::types::{DefectRecord, DefectStatus, FailureClass};
+use super::redact::redact;
+use super::types::{DefectRecord, DefectStatus, FailureClass, EXCERPT_MAX};
 
 /// Default recurrence threshold (FR-003): N occurrences of a signature before a
 /// defect is eligible for a proposal.
 pub const DEFAULT_RECURRENCE_THRESHOLD: u32 = 3;
 
+/// A defect signature's record plus its per-triggering-input occurrence counts
+/// (spec 002, US2): the per-input map separates a stable-path code defect (one
+/// input recurring) from input-induced noise (many distinct inputs).
+#[derive(Debug)]
+struct Tracked {
+    record: DefectRecord,
+    per_input: HashMap<String, u32>,
+}
+
 /// In-memory log of detected self-defects, keyed by recurrence signature.
 #[derive(Debug)]
 pub struct DefectLog {
-    by_signature: RwLock<HashMap<String, DefectRecord>>,
+    by_signature: RwLock<HashMap<String, Tracked>>,
     recurrence_threshold: u32,
+}
+
+/// Snapshot the per-input stats into the record so callers see `max_input_occurrences`
+/// / `distinct_inputs` without holding the log lock.
+fn sync_input_stats(record: &mut DefectRecord, per_input: &HashMap<String, u32>) {
+    record.max_input_occurrences = per_input.values().copied().max().unwrap_or(0);
+    record.distinct_inputs = u32::try_from(per_input.len()).unwrap_or(u32::MAX);
 }
 
 impl DefectLog {
@@ -51,19 +68,33 @@ impl DefectLog {
             FailureClass::Drift => {}
         }
         let sig = format!("{component}::{class}");
+        let input_hash = redact(raw_input, EXCERPT_MAX).hash;
         let Ok(mut map) = self.by_signature.write() else {
             return DefectRecord::observe(component, class, raw_input, now);
         };
-        if let Some(rec) = map.get_mut(&sig) {
-            rec.record_occurrence(now);
-            if rec.status == DefectStatus::Observed && rec.is_recurring(self.recurrence_threshold) {
-                rec.status = DefectStatus::Recurring;
+        if let Some(tracked) = map.get_mut(&sig) {
+            tracked.record.record_occurrence(now);
+            *tracked.per_input.entry(input_hash).or_insert(0) += 1;
+            if tracked.record.status == DefectStatus::Observed
+                && tracked.record.is_recurring(self.recurrence_threshold)
+            {
+                tracked.record.status = DefectStatus::Recurring;
             }
-            rec.clone()
+            sync_input_stats(&mut tracked.record, &tracked.per_input);
+            tracked.record.clone()
         } else {
-            let rec = DefectRecord::observe(component, class, raw_input, now);
-            map.insert(sig, rec.clone());
-            rec
+            let mut record = DefectRecord::observe(component, class, raw_input, now);
+            let mut per_input = HashMap::new();
+            per_input.insert(input_hash, 1u32);
+            sync_input_stats(&mut record, &per_input);
+            map.insert(
+                sig,
+                Tracked {
+                    record: record.clone(),
+                    per_input,
+                },
+            );
+            record
         }
     }
 
@@ -74,8 +105,8 @@ impl DefectLog {
             |_| Vec::new(),
             |m| {
                 m.values()
-                    .filter(|d| d.status == DefectStatus::Recurring)
-                    .cloned()
+                    .filter(|t| t.record.status == DefectStatus::Recurring)
+                    .map(|t| t.record.clone())
                     .collect()
             },
         )
@@ -154,6 +185,76 @@ mod tests {
         log.observe(&m, "tool_a", FailureClass::Schema, "z", 1);
         assert_eq!(m.total_parse_failures(), 2);
         assert_eq!(m.total_schema_violations(), 1);
+    }
+
+    #[test]
+    fn varied_inputs_recur_but_are_not_propose_eligible() {
+        // spec 002 US2: three DIFFERENT inputs of the same signature each fail once.
+        // The defect recurs (aggregate), but no single input repeated → not eligible.
+        let m = MetricsCollector::new();
+        let log = DefectLog::new(3);
+        log.observe(
+            &m,
+            "reasoning_linear/linear",
+            FailureClass::Schema,
+            "in-a",
+            1,
+        );
+        log.observe(
+            &m,
+            "reasoning_linear/linear",
+            FailureClass::Schema,
+            "in-b",
+            2,
+        );
+        let d = log.observe(
+            &m,
+            "reasoning_linear/linear",
+            FailureClass::Schema,
+            "in-c",
+            3,
+        );
+        assert_eq!(d.status, DefectStatus::Recurring); // aggregate recurrence
+        assert_eq!(d.max_input_occurrences, 1);
+        assert_eq!(d.distinct_inputs, 3);
+        assert!(
+            !d.is_propose_eligible(3),
+            "varied inputs must not be eligible"
+        );
+    }
+
+    #[test]
+    fn stable_input_recurrence_is_propose_eligible() {
+        // The SAME input repeated three times → a stable, repeatable code path.
+        let m = MetricsCollector::new();
+        let log = DefectLog::new(3);
+        log.observe(
+            &m,
+            "reasoning_linear/linear",
+            FailureClass::Schema,
+            "same",
+            1,
+        );
+        log.observe(
+            &m,
+            "reasoning_linear/linear",
+            FailureClass::Schema,
+            "same",
+            2,
+        );
+        let d = log.observe(
+            &m,
+            "reasoning_linear/linear",
+            FailureClass::Schema,
+            "same",
+            3,
+        );
+        assert_eq!(d.max_input_occurrences, 3);
+        assert_eq!(d.distinct_inputs, 1);
+        assert!(
+            d.is_propose_eligible(3),
+            "stable-path recurrence must be eligible"
+        );
     }
 
     #[test]

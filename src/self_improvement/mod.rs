@@ -64,6 +64,7 @@ pub mod cli;
 mod executor;
 pub mod heal;
 pub mod heal_cycle;
+pub mod heal_manager;
 pub mod heal_review;
 mod learner;
 pub mod manager;

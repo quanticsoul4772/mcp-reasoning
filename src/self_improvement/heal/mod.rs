@@ -11,7 +11,9 @@
 //! executor (US2/US3) is a later increment, gated by the constitution.
 
 pub mod detect;
+pub mod eligibility;
 pub mod guard;
+pub mod invariant_guard;
 pub mod plan;
 pub mod pr;
 pub mod redact;
@@ -19,7 +21,9 @@ pub mod sink;
 pub mod types;
 
 pub use detect::{DefectLog, DEFAULT_RECURRENCE_THRESHOLD};
+pub use eligibility::{classify_eligibility, EligibilityOutcome};
 pub use guard::{is_protected, protected_paths};
+pub use invariant_guard::{scan_for_weakened_invariants, ChangedFile, InvariantVerdict};
 pub use plan::{
     blast_radius, classify, is_drift_class, partition_drift, rank_and_cap, severity,
     DEFAULT_DRIFT_THRESHOLD,

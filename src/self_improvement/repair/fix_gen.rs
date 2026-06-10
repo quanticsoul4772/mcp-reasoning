@@ -10,10 +10,13 @@
 //! (`FixProposal::is_admissible`) and the operator, not this function, decide
 //! whether a proposal proceeds. Only a protected-path violation is a hard error.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::self_improvement::analyzer::Localization;
-use crate::self_improvement::heal::{is_protected, DefectRecord};
+use crate::self_improvement::heal::{
+    is_protected, scan_for_weakened_invariants, ChangedFile, DefectRecord,
+};
 use crate::traits::{AnthropicClientTrait, CompletionConfig, Message};
 
 use super::{
@@ -22,6 +25,8 @@ use super::{
 };
 
 /// A fix applied to a branch, with its validation verdicts.
+// Flat verdict record: independent gate results, not a state machine.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedFix {
     /// The branch the fix was committed-in-progress on.
@@ -36,6 +41,11 @@ pub struct GeneratedFix {
     pub suite_green: bool,
     /// `cargo fmt --check` and `cargo clippy -D warnings` both pass.
     pub quality_green: bool,
+    /// The fix appears to weaken a validation/range/contract check (spec 002, US1).
+    /// When true, the proposal is never admissible and no branch is created.
+    pub weakens_invariant: bool,
+    /// Operator-visible reason when `weakens_invariant` (FR-009).
+    pub block_reason: Option<String>,
 }
 
 /// Generate a fix for `defect`, apply it on `branch`, and validate it (FR-008).
@@ -79,6 +89,38 @@ where
         }
     }
 
+    // Validation-invariant guard (spec 002, US1): refuse — before creating a
+    // branch or writing anything — a fix that weakens a validation/range/contract
+    // check. The reproducing test proves a behavior change, not correctness, so a
+    // weakening fix is never admissible regardless of the test gates.
+    let mut current_by_path: HashMap<String, String> = HashMap::new();
+    for (rel, _) in &files {
+        if let Ok(cur) = tokio::fs::read_to_string(workspace.join(rel)).await {
+            current_by_path.insert(rel.clone(), cur);
+        }
+    }
+    let to_scan: Vec<ChangedFile> = files
+        .iter()
+        .map(|(rel, contents)| ChangedFile {
+            path: rel.clone(),
+            new_contents: contents.clone(),
+        })
+        .collect();
+    let verdict = scan_for_weakened_invariants(&to_scan, |p| current_by_path.get(p).cloned());
+    if verdict.weakens {
+        // Recorded for operator visibility (FR-009); never built onto a branch.
+        return Ok(GeneratedFix {
+            branch: branch.to_string(),
+            changed_files: files.iter().map(|(rel, _)| rel.clone()).collect(),
+            change_summary,
+            reproducing_passes: false,
+            suite_green: false,
+            quality_green: false,
+            weakens_invariant: true,
+            block_reason: verdict.reason,
+        });
+    }
+
     // Create the branch; a non-zero exit (e.g. branch already exists) is a hard
     // failure — we will not write a fix onto an unknown ref.
     run_checked(
@@ -111,6 +153,8 @@ where
             reproducing_passes: false,
             suite_green: false,
             quality_green: false,
+            weakens_invariant: false,
+            block_reason: None,
         });
     }
 
@@ -144,6 +188,8 @@ where
         reproducing_passes: true,
         suite_green: suite.success(),
         quality_green: fmt.success() && clippy.success(),
+        weakens_invariant: false,
+        block_reason: None,
     })
 }
 
