@@ -558,7 +558,7 @@ That's all!"#;
     #[test]
     fn test_serialize_for_log_exact_length() {
         let value = serde_json::json!({"a": 1});
-        let json_len = serde_json::to_string(&value).map(|s| s.len()).unwrap_or(0);
+        let json_len = serde_json::to_string(&value).map_or(0, |s| s.len());
         let result = serialize_for_log(&value, json_len);
         assert!(!result.ends_with("..."));
     }

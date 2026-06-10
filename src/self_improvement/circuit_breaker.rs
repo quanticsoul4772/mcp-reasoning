@@ -436,7 +436,7 @@ mod tests {
     fn test_remaining_cooldown() {
         let config = CircuitBreakerConfig {
             failure_threshold: 1,
-            cooldown_duration: Duration::from_secs(60),
+            cooldown_duration: Duration::from_mins(1),
             ..Default::default()
         };
         let mut cb = CircuitBreaker::new(config);
@@ -479,7 +479,7 @@ mod tests {
     fn test_default_config_values() {
         let config = CircuitBreakerConfig::default();
         assert_eq!(config.failure_threshold, 3);
-        assert_eq!(config.cooldown_duration, Duration::from_secs(300));
+        assert_eq!(config.cooldown_duration, Duration::from_mins(5));
         assert_eq!(config.success_threshold, 2);
     }
 
