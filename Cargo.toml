@@ -1,6 +1,6 @@
 [package]
 name = "mcp-reasoning"
-version = "0.2.0"
+version = "0.3.0"
 # MSRV is dependency-driven: sqlx 0.9 requires rustc 1.94, darling 0.23
 # requires 1.88, and an edition2024 dep requires cargo 1.85. 1.94 is the
 # binding floor. Keep this accurate so clippy's `incompatible_msrv` lint and

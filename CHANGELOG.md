@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-10
+
+The tool surface grew to **35 tools** (17 core reasoning, 7 self-improvement,
+4 session management, 7 agent/team) and the self-improvement system went from
+advisory scaffolding to a wired, measured, self-correcting loop — including a
+self-heal path that proposes operator-reviewed PRs for its own recurring defects.
+
+### Added
+
+- **Self-heal propose-PR loop (specs 001 + 002)** — the server detects its own
+  recurring parse/schema defects and can open operator-reviewed PRs that fix
+  them. OFF by default (`SELF_HEAL_PROPOSE_ENABLED`, `SELF_HEAL_WORKSPACE`);
+  it **never merges**. Spec 002 adds two safety guards: a fix that would weaken a
+  validation/range/contract check is never admissible, and only stable-path code
+  defects are propose-eligible (varied-input recurrence is held back;
+  model-version-correlated spikes route to drift). A reproducing-test gate grounds
+  every proposal; all `cargo`/`git`/`gh` side effects go through an injectable
+  runner so tests never touch the real repo.
+- **Self-improvement system, wired end-to-end** — `ThresholdAdjust` now drives
+  real, tunable `Config` thresholds (reflection/MCTS quality, graph prune);
+  recorded config overrides are applied to the live `Config` at startup (opt-in);
+  each cycle's diagnosis and action outcomes are persisted as an audit trail;
+  per-action-type learning stats survive restarts; the Learn loop feeds past
+  lessons back into Analyze. New `reasoning_si_overrides` exposes advisory
+  recommendations; the self-correcting suppression of low-success tool transitions
+  is applied every cycle.
+- **Streaming milestone progress over MCP** — the long-running modes (divergent,
+  reflection, MCTS, counterfactual) deliver milestone progress as
+  `notifications/progress`, sent when the client supplies a progress token.
+- **Evaluation harness** — `eval::stats` statistical foundation, programmatic
+  scorers + report, a real-mode solver/runner, and an opt-in eval binary with
+  seed datasets; a real measurement sensor with a divergence tripwire (replacing
+  fabricated signals), rewarding absolute measured improvement gated on the MDE.
+- **Error enhancement** — `ErrorEnhancer` is wired into tool error responses with
+  contextual recovery suggestions, example calls, real complexity metrics, and
+  memory-tool-specific guidance.
+- **Tool-chain tracking** — transition matrix (`reasoning_metrics query="chains"`)
+  feeds `reasoning_meta` routing and data-driven next-tool suggestions; metadata
+  enrichment and timing estimates extended across the tool set; automated
+  anti-pattern detection routes low-success transitions into the SI monitor.
+
+### Changed
+
+- Documentation refreshed to the real surface: **35 tools**, ~64,000 lines of
+  production Rust, **2,895+ tests** (95%+ coverage); the shipped server
+  instructions, `lib.rs` rustdoc, README, CLAUDE.md, and ARCHITECTURE now agree.
+- MSRV corrected and pinned to **1.94** (dependency-driven by sqlx 0.9), with an
+  MSRV CI job and clippy `incompatible_msrv` to keep it honest.
+- Performance: ~45% fewer allocations; lighter transition counts; LRU eviction on
+  the in-memory session map.
+- Tool list no longer ships oversized output schemas (−45% payload).
+
+### Fixed
+
+- Validation checks across detect/counterfactual/timeline no longer "cry wolf";
+  causal-name matching is normalized; MCTS tuning params are wired into the prompt
+  and backtrack/backprop coherence is verified.
+- Thinking-budget labels and metadata report each mode's real budget.
+- Streaming flushes its final 100% Complete milestone (previously dropped).
+
+### Housekeeping
+
+- Removed a stray root demo script and a stale committed package artifact;
+  applied `clippy --fix` across test code; dropped a stale `dead_code` allow.
+
 ## [0.2.0] - 2026-06-03
 
 ### Added
