@@ -71,7 +71,8 @@ DATABASE_PATH=./data/reasoning.db    # Default
 LOG_LEVEL=info                        # error|warn|info|debug|trace
 REQUEST_TIMEOUT_MS=30000              # Default (30s)
 MAX_RETRIES=3                         # Default
-MCP_TRANSPORT=stdio                   # stdio (default) or http
+# Transport is stdio only. HTTP is NOT implemented (transport.rs is stdio-only)
+# and MCP_TRANSPORT is not read anywhere — setting it has no effect.
 
 # Semantic memory (Voyage AI) — REQUIRED for reasoning_search,
 # reasoning_relate, and reasoning_divergent (which grounds its novelty
@@ -177,7 +178,7 @@ src/
 ├── server/
 │   ├── mod.rs           # McpServer + graceful shutdown
 │   ├── mcp.rs           # JSON-RPC protocol
-│   ├── transport.rs     # Stdio + HTTP transport
+│   ├── transport.rs     # Stdio transport (HTTP not implemented)
 │   ├── progress.rs      # ProgressEvent, ProgressReporter, milestones
 │   ├── params.rs        # Tool parameter schemas
 │   ├── requests.rs      # Request types with JsonSchema
@@ -283,10 +284,12 @@ fn extract_json(text: &str) -> Result<Value, ModeError> {
 
 ### Request Size Limits
 
+Enforced in `AnthropicClient` just before the API POST (`anthropic/client.rs`):
+
 ```rust
-const MAX_REQUEST_BYTES: usize = 100_000;  // 100KB
-const MAX_MESSAGES: usize = 50;
-const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message
+const MAX_MESSAGES: usize = 50;            // enforced
+const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message, enforced
+const MAX_REQUEST_BYTES: usize = 100_000;  // 100KB — defined/exported but NOT enforced
 ```
 
 ### Extended Thinking Budgets
@@ -295,7 +298,7 @@ const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message
 |------|-----------------|
 | Linear, Tree, Auto, Checkpoint | None (fast) |
 | Graph | Standard (4096 tokens) |
-| Divergent, Reflection, Decision, Evidence | Deep (8192 tokens) |
+| Divergent, Reflection, Decision, Evidence, Detect, Timeline | Deep (8192 tokens) |
 | Counterfactual, MCTS | Maximum (16384 tokens) |
 
 ### Semantic Memory (Voyage AI)
