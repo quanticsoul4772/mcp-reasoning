@@ -20,10 +20,11 @@ Contents:
 
 ## 1. System overview
 
-The server speaks MCP over stdio (default) or HTTP, calls the Anthropic Claude
-API for reasoning, optionally calls Voyage AI for semantic memory, and persists
-everything to SQLite. Two background tasks run on intervals: the embedding
-worker (warms memory) and — when explicitly enabled — the self-heal propose loop.
+The server speaks MCP over stdio, calls the Anthropic Claude API for reasoning,
+optionally calls Voyage AI for semantic memory, and persists everything to
+SQLite. Background tasks run on intervals: the self-improvement cycle, the
+embedding worker (when Voyage is configured), and — only when explicitly
+enabled — the self-heal propose loop.
 
 ```mermaid
 flowchart TB
@@ -31,7 +32,7 @@ flowchart TB
 
     subgraph Server["MCP Reasoning Server (Rust)"]
         direction TB
-        Transport["Transport<br/>stdio | HTTP"]
+        Transport["Transport<br/>stdio"]
         RPC["JSON-RPC / rmcp<br/>tools/list, tools/call"]
         Router["Tool Registry<br/>35 tools → handlers"]
         Modes["Reasoning Modes<br/>linear, tree, graph, mcts, ..."]
@@ -39,7 +40,7 @@ flowchart TB
         subgraph BG["Background tasks"]
             EmbedWorker["Embedding worker<br/>(drains embedding_queue)"]
             HealLoop["Self-heal propose loop<br/>(OFF by default)"]
-            SILoop["Self-improvement cycle"]
+            SILoop["Self-improvement cycle<br/>(on by default)"]
         end
     end
 
@@ -71,7 +72,7 @@ respond. Request-size limits are enforced before any model call.
 ```mermaid
 sequenceDiagram
     participant C as MCP Client
-    participant T as Transport (stdio/http)
+    participant T as Transport (stdio)
     participant R as rmcp router
     participant H as Handler (handlers_*)
     participant M as Mode (ModeCore)
@@ -80,12 +81,12 @@ sequenceDiagram
 
     C->>T: tools/call {name, args, _meta}
     T->>R: JSON-RPC request
-    R->>R: validate size (≤100KB, ≤50 msgs)
     R->>H: dispatch by tool name
     H->>M: build request, load session context
     M->>S: read prior thoughts / mode state
     M->>M: select prompt + thinking budget
     M->>A: complete(messages, config)
+    Note over A: enforce ≤50 msgs, ≤50KB/msg<br/>before POST
     A-->>M: completion (text, usage)
     M->>M: extract_json (raw JSON → fenced block → error)
     M->>S: persist thought / branch / graph / checkpoint
@@ -98,8 +99,9 @@ sequenceDiagram
 
 Key guards on this path:
 
-- **Size limits**: `MAX_REQUEST_BYTES` 100KB, `MAX_MESSAGES` 50,
-  `MAX_CONTENT_LENGTH` 50KB/message — rejected before the model call.
+- **Size limits**, enforced in the Anthropic client just before the POST:
+  `MAX_MESSAGES` 50 and `MAX_CONTENT_LENGTH` 50KB/message — rejected before the
+  model call.
 - **No panics**: production paths never `unwrap()`/`expect()`; failures return a
   typed `ModeError`/`AppError`.
 - **JSON extraction** is tolerant: fast path raw JSON → fenced `json` block →
@@ -118,7 +120,7 @@ flowchart TD
     Start["Mode calls complete()/complete_streaming()"] --> Budget{"Thinking budget<br/>for this mode?"}
     Budget -->|"linear/tree/auto/checkpoint"| None["None (fast)"]
     Budget -->|"graph"| Std["Standard 4096"]
-    Budget -->|"divergent/reflection/decision/evidence"| Deep["Deep 8192"]
+    Budget -->|"divergent/reflection/decision/<br/>evidence/detect/timeline"| Deep["Deep 8192"]
     Budget -->|"counterfactual/mcts"| Max["Maximum 16384"]
 
     None --> Build
