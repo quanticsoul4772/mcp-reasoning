@@ -289,7 +289,7 @@ Errors include contextual alternatives — if a tool fails due to incorrect para
 |-------|-----------------|
 | `linear`, `tree`, `auto`, `checkpoint` | None (fast) |
 | `graph` | Standard — 4096 tokens |
-| `divergent`, `reflection`, `decision`, `evidence` | Deep — 8192 tokens |
+| `divergent`, `reflection`, `decision`, `evidence`, `detect`, `timeline` | Deep — 8192 tokens |
 | `counterfactual`, `mcts` | Maximum — 16384 tokens |
 
 ### Streaming
