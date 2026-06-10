@@ -155,11 +155,12 @@ impl McpServer {
                     .with_max_retries(config.max_retries);
                 let heal_client =
                     AnthropicClient::new(config.api_key.expose(), heal_client_config)?;
-                let heal_manager = crate::self_improvement::heal_cycle::HealManager::new(
+                let heal_manager = crate::self_improvement::heal_manager::HealManager::new(
                     heal_client,
                     crate::self_improvement::repair::SystemCommandRunner,
                     Arc::clone(&si_storage),
                     Arc::clone(&state.defect_log),
+                    Arc::clone(&state.metrics),
                     std::path::PathBuf::from(&workspace),
                     si_config.heal_max_proposals,
                 );
@@ -176,12 +177,13 @@ impl McpServer {
                     loop {
                         tokio::select! {
                             _ = ticker.tick() => match heal_manager.tick().await {
-                                Ok(s) if s.proposed + s.not_admissible + s.reused + s.drift + s.errored > 0 => {
+                                Ok(s) if s.proposed + s.not_admissible + s.reused + s.drift + s.held_back + s.errored > 0 => {
                                     tracing::info!(
                                         proposed = s.proposed,
                                         not_admissible = s.not_admissible,
                                         reused = s.reused,
                                         drift = s.drift,
+                                        held_back = s.held_back,
                                         errored = s.errored,
                                         "Self-heal propose cycle complete"
                                     );

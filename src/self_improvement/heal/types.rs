@@ -103,6 +103,13 @@ pub struct DefectRecord {
     pub occurrences: u32,
     /// Lifecycle status.
     pub status: DefectStatus,
+    /// Largest occurrence count for any single triggering input (spec 002, US2).
+    /// The stable-path signal: a code defect repeats on the *same* input, whereas
+    /// input-induced noise is spread across many inputs. Maintained by `DefectLog`;
+    /// `1` for a standalone record built via [`DefectRecord::observe`].
+    pub max_input_occurrences: u32,
+    /// Number of distinct triggering inputs seen for this signature (spec 002).
+    pub distinct_inputs: u32,
 }
 
 impl DefectRecord {
@@ -120,6 +127,8 @@ impl DefectRecord {
             last_seen: now,
             occurrences: 1,
             status: DefectStatus::Observed,
+            max_input_occurrences: 1,
+            distinct_inputs: 1,
         }
     }
 
@@ -142,6 +151,16 @@ impl DefectRecord {
         self.occurrences >= threshold && self.failure_class != FailureClass::Drift
     }
 
+    /// True when this defect is eligible to *propose* a fix (spec 002, FR-004): a
+    /// single triggering input recurred to `threshold` — a stable, repeatable code
+    /// path — and it is not drift. Varied-input recurrence (many distinct inputs,
+    /// none repeated to threshold) is NOT eligible: it is more likely input-induced
+    /// than a server code defect, so it is recorded but held back from the loop.
+    #[must_use]
+    pub fn is_propose_eligible(&self, threshold: u32) -> bool {
+        self.max_input_occurrences >= threshold && self.failure_class != FailureClass::Drift
+    }
+
     /// Mark this defect as routed to the drift response (FR-012); it never enters
     /// the repair path.
     pub fn route_drift(&mut self) {
@@ -151,6 +170,9 @@ impl DefectRecord {
 }
 
 /// A candidate change for a recurring [`DefectRecord`].
+// Flat verdict record: each bool is an independent gate result (grounded / suite /
+// quality / weakens-invariant); a state machine would obscure, not clarify.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FixProposal {
     /// Proposal id.
@@ -177,15 +199,23 @@ pub struct FixProposal {
     pub pr_url: Option<String>,
     /// Operator review state.
     pub review_status: ProposalReview,
+    /// The fix appears to weaken a validation/range/contract check (spec 002, US1).
+    /// When true the proposal is NEVER admissible, regardless of the test gates —
+    /// the reproducing test proves a behavior change, not that the change is correct.
+    pub weakens_invariant: bool,
+    /// Why the proposal was flagged/held (e.g. which invariant the fix would
+    /// weaken) — operator-visible (FR-009). `None` when nothing was flagged.
+    pub block_reason: Option<String>,
 }
 
 impl FixProposal {
-    /// Admissibility gate (FR-008): a fix may merge only if its reproducing test
-    /// is grounded, the full suite is green, and quality gates pass. Operator
-    /// approval is required additionally and is tracked separately.
+    /// Admissibility gate (FR-008, spec 001/002): a fix may merge only if its
+    /// reproducing test is grounded, the full suite is green, quality gates pass,
+    /// AND it does not weaken a validation/range/contract check. Operator approval
+    /// is required additionally and tracked separately.
     #[must_use]
     pub fn is_admissible(&self) -> bool {
-        self.grounded && self.suite_green && self.quality_green
+        self.grounded && self.suite_green && self.quality_green && !self.weakens_invariant
     }
 }
 
@@ -289,9 +319,33 @@ mod tests {
             quality_green: true,
             pr_url: None,
             review_status: ProposalReview::Proposed,
+            weakens_invariant: false,
+            block_reason: None,
         };
         assert!(p.is_admissible());
         p.grounded = false;
+        assert!(!p.is_admissible());
+    }
+
+    #[test]
+    fn weakens_invariant_blocks_admissibility_despite_green_gates() {
+        // spec 002 US1: even fully green, a fix that weakens a validation check
+        // is NEVER admissible — the reproducing test proves a change, not correctness.
+        let p = FixProposal {
+            id: "p2".into(),
+            defect_id: "d2".into(),
+            failure_signature: "reasoning_linear/linear::schema".into(),
+            branch: "heal/d2".into(),
+            change_summary: "widen confidence range".into(),
+            reproducing_test_ref: "t".into(),
+            grounded: true,
+            suite_green: true,
+            quality_green: true,
+            pr_url: None,
+            review_status: ProposalReview::Proposed,
+            weakens_invariant: true,
+            block_reason: Some("widened (0.0..=1.0) → (0.0..=100.0)".into()),
+        };
         assert!(!p.is_admissible());
     }
 }

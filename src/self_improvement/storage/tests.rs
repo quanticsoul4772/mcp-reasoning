@@ -197,6 +197,8 @@ async fn test_fix_proposal_roundtrip_and_review_update() {
         quality_green: true,
         pr_url: Some("https://github.com/o/r/pull/9".to_string()),
         review_status: ProposalReview::Proposed,
+        weakens_invariant: false,
+        block_reason: None,
     };
     storage
         .upsert_fix_proposal(&proposal)
@@ -239,6 +241,33 @@ async fn test_fix_proposal_roundtrip_and_review_update() {
     assert!(!reloaded.suite_green);
     assert!(!reloaded.is_admissible());
     assert_eq!(reloaded.review_status, ProposalReview::Rejected);
+
+    // spec 002 US1: the invariant-guard verdict persists (migration 011) so the
+    // operator-accept path enforces it across restarts.
+    let flagged = FixProposal {
+        id: "p-weak".to_string(),
+        weakens_invariant: true,
+        block_reason: Some("widened (0.0..=1.0) → (0.0..=100.0)".to_string()),
+        ..loaded
+    };
+    storage
+        .upsert_fix_proposal(&flagged)
+        .await
+        .expect("insert flagged");
+    let back = storage
+        .get_fix_proposal("p-weak")
+        .await
+        .expect("load flagged")
+        .expect("present");
+    assert!(back.weakens_invariant);
+    assert_eq!(
+        back.block_reason.as_deref(),
+        Some("widened (0.0..=1.0) → (0.0..=100.0)")
+    );
+    assert!(
+        !back.is_admissible(),
+        "a weakening fix is never admissible even when green"
+    );
 }
 
 #[test]

@@ -71,10 +71,13 @@ where
         quality_green: fix.quality_green,
         pr_url: None,
         review_status: ProposalReview::Proposed,
+        weakens_invariant: fix.weakens_invariant,
+        block_reason: fix.block_reason.clone(),
     };
 
-    // 3. Open the PR ONLY for an admissible fix (FR-008/FR-009). A fix that did
-    //    not pass the suite or quality gates never becomes a PR.
+    // 3. Open the PR ONLY for an admissible fix (FR-008/FR-009; spec 002 US1 — a
+    //    fix that weakens a validation check is not admissible). A fix that did not
+    //    pass the suite/quality gates, or that weakens an invariant, never becomes a PR.
     if proposal.is_admissible() {
         let mut files = fix.changed_files.clone();
         files.push(grounded.test_path.clone());
@@ -108,6 +111,18 @@ mod tests {
     const SYNTH_ARTIFACT: &str = r##"{"test_name": "heal_repro_parse", "test_path": "tests/heal_repro_parse.rs", "test_code": "#[test]\nfn heal_repro_parse() { assert!(false); }\n"}"##;
     const FIX_TO_PROD: &str = r#"{"change_summary": "broaden the JSON parser", "files": [{"path": "src/modes/linear.rs", "contents": "// fixed\n"}]}"#;
     const FIX_TO_PROTECTED: &str = r#"{"change_summary": "cheat", "files": [{"path": "src/metrics/mod.rs", "contents": "// gamed\n"}]}"#;
+    // Widens the confidence range check (0.0..=1.0 → 0.0..=100.0) — must be blocked.
+    const FIX_WIDENS: &str = r#"{"change_summary": "widen the confidence range", "files": [{"path": "src/modes/linear.rs", "contents": "if !(0.0..=100.0).contains(&c) { return Err(e); }\n"}]}"#;
+    // Keeps the validation check intact, edits an adjacent line — must NOT be blocked.
+    const FIX_PRESERVES: &str = r#"{"change_summary": "fix the parse", "files": [{"path": "src/modes/linear.rs", "contents": "let n = parse(x).trim();\nif !(0.0..=1.0).contains(&c) { return Err(e); }\n"}]}"#;
+
+    /// Seed a workspace file (creating parent dirs) so the invariant guard can
+    /// diff the proposed change against real current content.
+    fn seed(dir: &std::path::Path, rel: &str, contents: &str) {
+        let abs = dir.join(rel);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, contents).unwrap();
+    }
 
     /// A client that returns the synth artifact for the reproducing-test prompt
     /// (which contains "REPRODUCES") and the fix artifact otherwise.
@@ -273,5 +288,81 @@ mod tests {
         assert!(proposal.pr_url.is_none());
         // The pipeline stopped after the fix gates — git add/commit/gh never ran.
         assert_eq!(runner.call_count(), 6);
+    }
+
+    #[tokio::test]
+    async fn fix_that_weakens_a_range_check_is_blocked_and_opens_no_pr() {
+        // spec 002 US1 / SC-001: a fix whose only change widens a correct range
+        // check is never admissible and never reaches gh — even though its
+        // reproducing test would pass.
+        let dir = tempfile::tempdir().unwrap();
+        seed(
+            dir.path(),
+            "src/modes/linear.rs",
+            "if !(0.0..=1.0).contains(&c) { return Err(e); }\n",
+        );
+        let client = chained_client(SYNTH_ARTIFACT, FIX_WIDENS);
+        // Only the synth grounding runs; the guard blocks before any branch/fix command.
+        let runner = ScriptedRunner::new(vec![failing()]);
+
+        let proposal = propose_pr(
+            &client,
+            &runner,
+            dir.path(),
+            &defect(),
+            &localization(),
+            "heal/d1",
+        )
+        .await
+        .unwrap();
+
+        assert!(proposal.weakens_invariant);
+        assert!(!proposal.is_admissible());
+        assert!(proposal.pr_url.is_none());
+        assert!(proposal.block_reason.unwrap().contains("widened"));
+        // No branch/commit/gh — only the single synth grounding call happened.
+        assert_eq!(runner.call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn fix_near_validation_but_not_weakening_proceeds() {
+        // SC-005: a fix that edits a line ADJACENT to a validation check, leaving
+        // the check intact, is NOT blocked (no false positive).
+        let dir = tempfile::tempdir().unwrap();
+        seed(
+            dir.path(),
+            "src/modes/linear.rs",
+            "let n = parse(x);\nif !(0.0..=1.0).contains(&c) { return Err(e); }\n",
+        );
+        let client = chained_client(SYNTH_ARTIFACT, FIX_PRESERVES);
+        let runner = ScriptedRunner::new(vec![
+            failing(),                                // synth grounding
+            ok(),                                     // git checkout
+            passing(),                                // reproducing passes
+            passing(),                                // suite green
+            ok(),                                     // fmt
+            ok(),                                     // clippy
+            ok(),                                     // git add
+            ok(),                                     // git commit
+            gh_url("https://github.com/o/r/pull/12"), // gh
+        ]);
+
+        let proposal = propose_pr(
+            &client,
+            &runner,
+            dir.path(),
+            &defect(),
+            &localization(),
+            "heal/d1",
+        )
+        .await
+        .unwrap();
+
+        assert!(!proposal.weakens_invariant);
+        assert!(proposal.is_admissible());
+        assert_eq!(
+            proposal.pr_url.as_deref(),
+            Some("https://github.com/o/r/pull/12")
+        );
     }
 }

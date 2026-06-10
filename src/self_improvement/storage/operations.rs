@@ -704,9 +704,10 @@ impl SelfImprovementStorage {
             r"
             INSERT INTO heal_fix_proposals (
                 id, defect_id, failure_signature, branch, change_summary, reproducing_test_ref,
-                grounded, suite_green, quality_green, pr_url, review_status, created_at
+                grounded, suite_green, quality_green, pr_url, review_status, created_at,
+                weakens_invariant, block_reason
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 defect_id            = excluded.defect_id,
                 failure_signature    = excluded.failure_signature,
@@ -717,7 +718,9 @@ impl SelfImprovementStorage {
                 suite_green          = excluded.suite_green,
                 quality_green        = excluded.quality_green,
                 pr_url               = excluded.pr_url,
-                review_status        = excluded.review_status
+                review_status        = excluded.review_status,
+                weakens_invariant    = excluded.weakens_invariant,
+                block_reason         = excluded.block_reason
             ",
         )
         .bind(&p.id)
@@ -732,6 +735,8 @@ impl SelfImprovementStorage {
         .bind(&p.pr_url)
         .bind(p.review_status.as_str())
         .bind(Utc::now().timestamp_millis())
+        .bind(i64::from(p.weakens_invariant))
+        .bind(&p.block_reason)
         .execute(&self.pool)
         .await
         .map_err(|e| query_error(e.to_string()))?;
@@ -744,7 +749,8 @@ impl SelfImprovementStorage {
         let row = sqlx::query(
             r"
             SELECT id, defect_id, failure_signature, branch, change_summary, reproducing_test_ref,
-                   grounded, suite_green, quality_green, pr_url, review_status
+                   grounded, suite_green, quality_green, pr_url, review_status,
+                   weakens_invariant, block_reason
             FROM heal_fix_proposals
             WHERE id = ?
             ",
@@ -768,6 +774,8 @@ impl SelfImprovementStorage {
                 quality_green: row.get::<i64, _>("quality_green") != 0,
                 pr_url: row.get("pr_url"),
                 review_status: ProposalReview::from_db(&review_status),
+                weakens_invariant: row.get::<i64, _>("weakens_invariant") != 0,
+                block_reason: row.get("block_reason"),
             }
         }))
     }
