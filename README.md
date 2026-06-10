@@ -1,6 +1,6 @@
 # MCP Reasoning Server
 
-A Rust MCP server providing 35 tools for structured reasoning, self-improvement, session management, and agent coordination. 2,690+ tests, 95%+ coverage.
+A Rust MCP server providing 35 tools for structured reasoning, self-improvement, session management, and agent coordination. 2,895+ tests, 95%+ coverage.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
@@ -301,7 +301,7 @@ The long-running modes (`divergent`, `reflection`, `mcts`, `counterfactual`) emi
 - Zero `unsafe` code (`#![forbid(unsafe_code)]`)
 - No `.unwrap()` / `.expect()` in production paths
 - Const SQL queries, pre-allocated buffers
-- 2,690+ tests, 95%+ line coverage
+- 2,895+ tests, 95%+ line coverage
 
 ---
 

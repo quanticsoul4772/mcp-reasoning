@@ -573,12 +573,11 @@ impl ServerHandler for ReasoningServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(
-                "MCP Reasoning Server with 32 tools: 15 core reasoning modes \
-                 (linear/tree/divergent/reflection/graph/mcts/counterfactual/timeline/decision/evidence/detect/checkpoint/auto/meta/preset), \
-                 6 self-improvement tools (si_*), \
-                 4 session management tools, \
-                 6 agent and team tools, \
-                 plus metrics. \
+                "MCP Reasoning Server with 35 tools: 17 core reasoning tools \
+                 (linear/tree/divergent/reflection/graph/mcts/counterfactual/timeline/decision/evidence/detect/checkpoint/auto/meta/preset/metrics/confidence_route), \
+                 7 self-improvement tools (si_*), \
+                 4 session management tools (list_sessions/resume/search/relate), \
+                 7 agent and team tools. \
                  Use reasoning_auto when unsure which tool fits.",
             )
     }

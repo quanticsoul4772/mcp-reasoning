@@ -6,12 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MCP Reasoning Server - A Rust-based MCP server providing structured reasoning capabilities via direct Anthropic Claude API calls. This project offers 35 tools across reasoning (17), self-improvement (7), session management (4), and agent/team coordination (7).
 
-**Status**: Complete. 38,000+ lines of Rust code and 2,690+ tests.
+**Status**: Complete. ~64,000 lines of production Rust (~103,000 including tests) and 2,895+ tests.
 
 **Key Stats**:
 
-- 119 source files, 38,000+ lines of code
-- 2,690+ tests (95%+ line coverage)
+- 207 source files; ~64,000 lines of production code (~103,000 including in-file tests)
+- 2,895+ tests (95%+ line coverage)
 - 17 core reasoning tools + 7 SI + 4 session + 7 agent/team = 35 tools total
 - 6 workflow presets (code-review, debug-analysis, architecture-decision, strategic-decision, evidence-conclusion, brainstorming)
 - 4-phase self-improvement system with safety mechanisms
@@ -56,7 +56,7 @@ pre-commit run --all-files           # Run manually
 # Database
 cargo sqlx prepare --database-url "sqlite:./data/reasoning.db"  # Prepare SQLx queries
 
-# File size check (max 500 lines per file)
+# File size check (target ≤500 lines per file; some core modules exceed it)
 wc -l src/**/*.rs | sort -n
 ```
 
@@ -184,7 +184,7 @@ src/
 │   ├── responses.rs     # Response types
 │   ├── metadata_builders.rs # Response metadata helpers
 │   ├── types.rs         # AppState with progress broadcast channel
-│   └── tools/           # 32 tool schemas + per-category handlers
+│   └── tools/           # 35 tool schemas + per-category handlers
 │       ├── mod.rs        # Tool definitions (rmcp macros)
 │       ├── handlers_basic.rs    # linear, tree, divergent, reflection, checkpoint, auto
 │       ├── handlers_cognitive.rs # detect, meta
@@ -322,8 +322,8 @@ const MAX_CONTENT_LENGTH: usize = 50_000;  // 50KB per message
 - **Zero unsafe code**: `#![forbid(unsafe_code)]` in lib.rs
 - **No panics**: No `.unwrap()` or `.expect()` in production paths
 - **TDD workflow**: Write tests first, fail, implement, pass, 95%+ coverage
-- **File size limits**: Max 500 lines per .rs file
-- **High test coverage**: 2,690+ tests with 95%+ line coverage
+- **File size**: target ≤500 lines per .rs file for new/refactored modules; several core modules (e.g. `manager.rs`, `responses.rs`, `metrics/mod.rs`, `handlers_temporal.rs`) predate this and exceed it
+- **High test coverage**: 2,895+ tests with 95%+ line coverage
 - **Structured logging**: Use `tracing` with structured fields, logs to stderr only
 
 ## Implementation Status

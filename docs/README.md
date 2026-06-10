@@ -12,10 +12,10 @@ Welcome to the MCP Reasoning Server documentation!
 
 ### Architecture & Design
 
-- [Architecture](reference/ARCHITECTURE.md) - System design and tool overview
-- [API Specification](reference/API_SPECIFICATION.md) - Complete tool schemas (15 tools)
+- [Architecture](reference/ARCHITECTURE.md) - System design and the full 35-tool surface
+- [API Specification](reference/API_SPECIFICATION.md) - Schemas for the 15 core reasoning tools (the 20 self-improvement/session/agent tools are listed in Architecture and the root README)
 - [Implementation Details](reference/IMPLEMENTATION_DETAILS.md) - Technical implementation
-- [Tool Reference](reference/TOOL_REFERENCE.md) - API usage guide with examples
+- [Tool Reference](reference/TOOL_REFERENCE.md) - Usage guide with examples for the core reasoning tools
 
 ### Patterns & Best Practices
 
@@ -103,5 +103,5 @@ Documentation improvements are welcome! Please:
 
 ---
 
-**Last Updated:** 2026-03-01
-**Documentation Version:** 2.0 (Reorganized)
+**Last Updated:** 2026-06-10
+**Documentation Version:** 2.1 (count + tool-surface refresh)

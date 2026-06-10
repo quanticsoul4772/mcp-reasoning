@@ -1,6 +1,10 @@
-# MCP Reasoning Tools - Complete API Reference
+# MCP Reasoning Tools - Core Reasoning API Reference
 
-This document provides detailed API documentation for all 15 reasoning tools.
+This document provides detailed API documentation for the 15 core reasoning
+tools. The full server surface is 35 tools — see
+[Architecture](ARCHITECTURE.md) for the complete list, including the
+`reasoning_meta` / `reasoning_confidence_route` routers and the
+self-improvement (`si_*`), session-management, and agent/team tools.
 
 ## Response Metadata
 
