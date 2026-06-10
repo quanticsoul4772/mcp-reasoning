@@ -123,15 +123,9 @@ fn test_parse_missing_command() {
 fn test_parse_duration() {
     assert_eq!(parse_duration("100ms").unwrap(), Duration::from_millis(100));
     assert_eq!(parse_duration("30s").unwrap(), Duration::from_secs(30));
-    assert_eq!(parse_duration("5m").unwrap(), Duration::from_secs(5 * 60));
-    assert_eq!(
-        parse_duration("2h").unwrap(),
-        Duration::from_secs(2 * 60 * 60)
-    );
-    assert_eq!(
-        parse_duration("1d").unwrap(),
-        Duration::from_secs(24 * 60 * 60)
-    );
+    assert_eq!(parse_duration("5m").unwrap(), Duration::from_mins(5));
+    assert_eq!(parse_duration("2h").unwrap(), Duration::from_hours(2));
+    assert_eq!(parse_duration("1d").unwrap(), Duration::from_hours(24));
 }
 
 #[test]
@@ -145,10 +139,10 @@ fn test_parse_duration_error() {
 fn test_format_duration() {
     assert_eq!(format_duration(Duration::from_secs(30)), "30s");
     assert_eq!(format_duration(Duration::from_secs(90)), "1m 30s");
-    assert_eq!(format_duration(Duration::from_secs(3600)), "1h");
-    assert_eq!(format_duration(Duration::from_secs(3660)), "1h 1m");
-    assert_eq!(format_duration(Duration::from_secs(86400)), "1d");
-    assert_eq!(format_duration(Duration::from_secs(90000)), "1d 1h");
+    assert_eq!(format_duration(Duration::from_hours(1)), "1h");
+    assert_eq!(format_duration(Duration::from_mins(61)), "1h 1m");
+    assert_eq!(format_duration(Duration::from_hours(24)), "1d");
+    assert_eq!(format_duration(Duration::from_hours(25)), "1d 1h");
 }
 
 // ========== Additional tests for 100% coverage ==========
@@ -381,18 +375,18 @@ fn test_help_text() {
 // format_duration edge cases
 #[test]
 fn test_format_duration_exact_minutes() {
-    assert_eq!(format_duration(Duration::from_secs(60)), "1m");
-    assert_eq!(format_duration(Duration::from_secs(120)), "2m");
+    assert_eq!(format_duration(Duration::from_mins(1)), "1m");
+    assert_eq!(format_duration(Duration::from_mins(2)), "2m");
 }
 
 #[test]
 fn test_format_duration_exact_hours() {
-    assert_eq!(format_duration(Duration::from_secs(7200)), "2h");
+    assert_eq!(format_duration(Duration::from_hours(2)), "2h");
 }
 
 #[test]
 fn test_format_duration_exact_days() {
-    assert_eq!(format_duration(Duration::from_secs(172_800)), "2d");
+    assert_eq!(format_duration(Duration::from_hours(48)), "2d");
 }
 
 // Output types serialization tests

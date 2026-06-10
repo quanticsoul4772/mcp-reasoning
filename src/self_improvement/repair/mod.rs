@@ -272,7 +272,7 @@ pub(super) mod testutil {
 
     /// A scripted [`CommandRunner`] — returns queued outputs and records the calls
     /// made. No real `cargo`/`git`/`gh` ever runs, so tests never mutate the repo.
-    pub(crate) struct ScriptedRunner {
+    pub struct ScriptedRunner {
         outputs: Mutex<VecDeque<CommandOutput>>,
         calls: Mutex<Vec<(String, Vec<String>)>>,
     }
@@ -316,7 +316,7 @@ pub(super) mod testutil {
     }
 
     /// `cargo test`-style output: a passing summary at exit 0.
-    pub(crate) fn passing() -> CommandOutput {
+    pub fn passing() -> CommandOutput {
         CommandOutput {
             status: 0,
             stdout: "test result: ok. 1 passed; 0 failed".to_string(),
@@ -325,7 +325,7 @@ pub(super) mod testutil {
     }
 
     /// `cargo test`-style output: a genuine test failure summary at exit 101.
-    pub(crate) fn failing() -> CommandOutput {
+    pub fn failing() -> CommandOutput {
         CommandOutput {
             status: 101,
             stdout: "test result: FAILED. 0 passed; 1 failed; 0 ignored".to_string(),
