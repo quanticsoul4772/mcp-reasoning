@@ -13,6 +13,7 @@ Welcome to the MCP Reasoning Server documentation!
 ### Architecture & Design
 
 - [Architecture](reference/ARCHITECTURE.md) - System design and the full 35-tool surface
+- [End-to-End Flow](reference/END_TO_END_FLOW.md) - Detailed Mermaid flowcharts of the request lifecycle, streaming, memory, and the self-improvement/self-heal loops
 - [API Specification](reference/API_SPECIFICATION.md) - Schemas for the 15 core reasoning tools (the 20 self-improvement/session/agent tools are listed in Architecture and the root README)
 - [Implementation Details](reference/IMPLEMENTATION_DETAILS.md) - Technical implementation
 - [Tool Reference](reference/TOOL_REFERENCE.md) - Usage guide with examples for the core reasoning tools
