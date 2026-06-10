@@ -1,6 +1,8 @@
 # Build artifacts
 /target/
 **/*.rs.bk
+# Packaging output (regenerable from choco/*.nuspec via `choco pack`)
+*.nupkg
 
 # IDE
 .idea/
