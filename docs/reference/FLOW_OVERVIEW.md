@@ -12,7 +12,7 @@ decision tree), see **[End-to-End Flow](END_TO_END_FLOW.md)**.
 ![End-to-End Flow — the whole system in one diagram](diagrams/flow-overview.svg)
 
 <!-- Rendered from diagrams/flow-overview.d2 with D2 (https://d2lang.com):
-     d2 --layout dagre --theme 0 --dark-theme 200 --pad 32 \
+     d2 --layout elk --theme 0 --dark-theme 200 --pad 32 \
         docs/reference/diagrams/flow-overview.d2 \
         docs/reference/diagrams/flow-overview.svg
      The SVG embeds a prefers-color-scheme dark variant, so it adapts to
