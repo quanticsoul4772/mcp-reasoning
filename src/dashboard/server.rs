@@ -1,11 +1,12 @@
 //! Axum SSE sidecar that serves the live dashboard (feature `dashboard`).
 //!
-//! Three routes on a loopback port:
-//! - `GET /` — the embedded single-file SPA.
+//! Routes on a loopback port:
 //! - `GET /events` — a Server-Sent Events stream of [`ActivityEvent`]s, merging
 //!   the activity bus with the existing progress bus (progress milestones become
 //!   `Anthropic` activity, so the ②③ spine animates on streaming tools).
 //! - `GET /health` — liveness.
+//! - everything else — the embedded React Flow SPA (`src/dashboard/ui/dist`,
+//!   built by Vite, embedded via `rust-embed`), with SPA fallback to `index.html`.
 //!
 //! Read-only in v1: no write endpoints. The stream is lossy (a slow browser drops
 //! events rather than slowing the server) and never touches stdout.
@@ -14,11 +15,13 @@ use std::convert::Infallible;
 use std::time::Duration;
 
 use axum::extract::State;
+use axum::http::{header, StatusCode, Uri};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::Html;
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use futures_util::{Stream, StreamExt};
+use rust_embed::RustEmbed;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
@@ -28,15 +31,18 @@ use super::bus::{now_ms, ActivityBus};
 use super::config::DashboardConfig;
 use super::event::{ActivityEvent, EdgeId, Node, Phase};
 
+/// The Vite-built React Flow SPA, embedded at compile time (release) / read from
+/// disk (debug). Built from `src/dashboard/ui` via `npm run build`.
+#[derive(RustEmbed)]
+#[folder = "src/dashboard/ui/dist"]
+struct Assets;
+
 /// Shared sidecar state: the activity bus and a handle to the progress bus.
 #[derive(Clone)]
 struct DashboardState {
     activity: ActivityBus,
     progress_tx: broadcast::Sender<ProgressEvent>,
 }
-
-/// The embedded SPA, compiled into the binary.
-const INDEX_HTML: &str = include_str!("ui/index.html");
 
 /// Run the dashboard sidecar until the process exits.
 ///
@@ -52,9 +58,9 @@ pub async fn serve(
         progress_tx,
     };
     let app = Router::new()
-        .route("/", get(index))
         .route("/health", get(health))
         .route("/events", get(events))
+        .fallback(static_handler)
         .with_state(state);
 
     let listener = match tokio::net::TcpListener::bind(&config.addr).await {
@@ -74,9 +80,28 @@ pub async fn serve(
     }
 }
 
-/// Serve the embedded SPA.
-async fn index() -> Html<&'static str> {
-    Html(INDEX_HTML)
+/// Serve an embedded SPA asset, falling back to `index.html` for client-side
+/// routes (none in v1, but keeps deep links and unknown paths working).
+async fn static_handler(uri: Uri) -> Response {
+    let path = uri.path().trim_start_matches('/');
+    let path = if path.is_empty() { "index.html" } else { path };
+
+    if let Some(content) = Assets::get(path) {
+        let mime = content.metadata.mimetype();
+        return (
+            [(header::CONTENT_TYPE, mime.to_string())],
+            content.data.into_owned(),
+        )
+            .into_response();
+    }
+    match Assets::get("index.html") {
+        Some(content) => (
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            content.data.into_owned(),
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// Liveness probe.
@@ -154,8 +179,11 @@ mod tests {
     }
 
     #[test]
-    fn index_html_is_embedded_and_nonempty() {
-        assert!(INDEX_HTML.contains("<!DOCTYPE html>"));
-        assert!(INDEX_HTML.len() > 500);
+    fn spa_index_is_embedded() {
+        let index = Assets::get("index.html").expect("dist/index.html embedded");
+        let html = String::from_utf8_lossy(&index.data);
+        assert!(html.contains("<!doctype html>") || html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("live activity"));
+        assert!(html.contains("<div id=\"root\">"));
     }
 }

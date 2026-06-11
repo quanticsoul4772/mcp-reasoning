@@ -71,8 +71,9 @@ async fn sidecar_serves_spa_health_and_streams_events() {
     let index = client.get(format!("{base}/")).send().await.unwrap();
     assert!(index.status().is_success());
     let body = index.text().await.unwrap();
-    assert!(body.contains("<!DOCTYPE html>"));
+    assert!(body.to_lowercase().contains("<!doctype html>"));
     assert!(body.contains("live activity"));
+    assert!(body.contains("<div id=\"root\">"));
 
     // /events streams an emitted ActivityEvent as JSON.
     let resp = client.get(format!("{base}/events")).send().await.unwrap();
