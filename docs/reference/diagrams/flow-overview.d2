@@ -6,33 +6,19 @@ direction: down
 title: "End-to-End Flow" {
   near: top-center
   shape: text
-  style.font-size: 30
-  style.bold: true
-  style.font-color: "#2f6fed"
+  style: { font-size: 30; bold: true; font-color: "#2f6fed" }
 }
 
 classes: {
-  proc: {
-    style: { fill: "#d6e4ff"; stroke: "#2f6fed"; stroke-width: 2; border-radius: 10; shadow: true; font-color: "#10243f" }
-  }
-  store: {
-    style: { fill: "#ffe7ad"; stroke: "#cf8a17"; stroke-width: 2; shadow: true; font-color: "#3f2f08" }
-  }
-  ext: {
-    style: { fill: "#c7eedd"; stroke: "#1f9d63"; stroke-width: 2; border-radius: 10; shadow: true; font-color: "#0e3a23" }
-  }
-  client: {
-    style: { fill: "#e6dcfb"; stroke: "#7b4fd0"; stroke-width: 2; border-radius: 10; shadow: true; font-color: "#2a1452" }
-  }
-  guard: {
-    style: { fill: "#ffd6d6"; stroke: "#d64545"; stroke-width: 2; border-radius: 10; shadow: true; font-color: "#4f1414" }
-  }
-  spine: {
-    style: { stroke: "#2f6fed"; stroke-width: 2; font-color: "#274b8a"; bold: true }
-  }
-  async: {
-    style: { stroke: "#9aa3b0"; stroke-dash: 5; font-color: "#6b7280" }
-  }
+  proc:   { style: { fill: "#d6e4ff"; stroke: "#2f6fed"; stroke-width: 2; border-radius: 10; shadow: true; font-color: "#10243f" } }
+  store:  { style: { fill: "#ffe7ad"; stroke: "#cf8a17"; stroke-width: 2; border-radius: 10; shadow: true } }
+  ext:    { style: { fill: "#c7eedd"; stroke: "#1f9d63"; stroke-width: 2; border-radius: 10; shadow: true } }
+  client: { style: { fill: "#e6dcfb"; stroke: "#7b4fd0"; stroke-width: 2; border-radius: 10; shadow: true; font-color: "#2a1452" } }
+  guard:  { style: { fill: "#ffd6d6"; stroke: "#d64545"; stroke-width: 2; border-radius: 10; shadow: true; font-color: "#4f1414" } }
+  subext:   { style: { fill: transparent; stroke-width: 0; font-color: "#1f6b46"; font-size: 13 } }
+  substore: { style: { fill: transparent; stroke-width: 0; font-color: "#7a5a10"; font-size: 13 } }
+  spine:  { style: { stroke: "#2f6fed"; stroke-width: 2; font-color: "#274b8a"; bold: true } }
+  async:  { style: { stroke: "#9aa3b0"; stroke-dash: 5; font-color: "#6b7280" } }
 }
 
 client: "MCP Client\n(Claude Code · Desktop)" { class: client }
@@ -40,18 +26,29 @@ client: "MCP Client\n(Claude Code · Desktop)" { class: client }
 server: "MCP Reasoning Server (Rust)" {
   icon: https://icons.terrastruct.com/dev%2Frust.svg
   style: { border-radius: 14; shadow: true; fill: "#eef3fc"; stroke: "#2f6fed"; stroke-width: 2; font-size: 18; bold: true }
-
   registry: "Tool Registry → handler\n(35 tools)" { class: proc }
   mode: "Reasoning Mode · ModeCore\n(storage + Anthropic client)" { class: proc; style.bold: true }
   registry -> mode
 }
 
-anthropic: "Anthropic Claude API\nreasoning + thinking" { class: ext }
-voyage: "Voyage AI\nsemantic memory" { class: ext }
-github: "GitHub PR\n(never merged)" { class: ext }
-db: "SQLite\nsessions · thoughts · graph · metrics" {
+anthropic: "Anthropic Claude API" {
+  class: ext
+  icon: https://cdn.simpleicons.org/claude
+  s: "reasoning + thinking" { class: subext }
+}
+voyage: "Voyage AI" {
+  class: ext
+  s: "semantic memory (embed + rerank)" { class: subext }
+}
+github: "GitHub PR" {
+  class: ext
+  icon: https://icons.terrastruct.com/dev%2Fgithub.svg
+  s: "never merged" { class: subext }
+}
+db: "SQLite" {
   class: store
-  shape: cylinder
+  icon: https://cdn.simpleicons.org/sqlite
+  s: "sessions · thoughts · graph · metrics" { class: substore }
 }
 worker: "Embedding worker" { class: proc }
 si: "Self-improvement cycle\ntune thresholds" { class: proc }
