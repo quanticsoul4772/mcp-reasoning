@@ -124,8 +124,14 @@ impl<C: AnthropicClientTrait> SelfImprovementSystem<C> {
             );
         }
 
+        // Signal cycle start BEFORE any early-return so the dashboard's SI node
+        // reflects every cycle — including ones blocked by an open circuit breaker
+        // (otherwise the node stays dark whenever the breaker is tripped).
+        emit_si("monitor", crate::dashboard::Phase::Started);
+
         // Check circuit breaker
         if !self.circuit_breaker.is_allowed() {
+            emit_si("circuit breaker open", crate::dashboard::Phase::HeldBack);
             return Ok(CycleResult {
                 monitor_result: self.monitor.check(metrics),
                 analysis_result: None,
@@ -137,7 +143,6 @@ impl<C: AnthropicClientTrait> SelfImprovementSystem<C> {
         }
 
         // Phase 1: Monitor
-        emit_si("monitor", crate::dashboard::Phase::Started);
         let monitor_result = self.monitor.check(metrics);
 
         if !monitor_result.action_recommended {
