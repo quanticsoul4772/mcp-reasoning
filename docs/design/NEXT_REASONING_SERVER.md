@@ -30,6 +30,59 @@ persistence, observability, and safety. Anything that can run offline (analysis,
 tuning, "improvement") runs offline. The hot path stays simple enough that it
 rarely needs guards wrapped around it.
 
+## Why Claude calls these tools (the value model)
+
+This is the foundation the rest of the design rests on, and it is easy to get
+wrong. When Claude calls a reasoning tool, **Claude is calling Claude** — the
+server's "reasoning" is just another LLM call with a methodology-specific prompt.
+So the only durable value is whatever a *separate, templated* call provides that
+in-context thinking does not. Ranked, most real first:
+
+1. **Context separation / independence (strongest).** A separate call has a fresh
+   context. That is what lets N divergent perspectives avoid contaminating each
+   other, an adversarial critic stay unanchored by the reasoning it judges, and M
+   search candidates be evaluated independently. This is genuinely hard to do in
+   one context, and the client cannot replicate it by "thinking harder."
+2. **Methodology as a callable (strong).** Pearl's ladder, TOPSIS, MCTS/UCB1,
+   bias taxonomies — applied rigorously. The model *can* do these but won't
+   reliably without the scaffold; the server installs disciplined methods.
+3. **Offloaded budget + clean client context (real, smaller).** Heavy reasoning
+   spends a separate token budget and returns something compact. Overlaps with
+   the client's own extended thinking.
+4. **Memory / resumption (situational).** Valuable when used; clients rarely
+   thread session ids reliably.
+
+**Not** real value, and to be shed: raw reasoning horsepower (the client has it);
+single-pass wrappers that just re-prompt (`linear`, basic `decision`) — the client
+does that better in-context; and the `next_tools` / timing / preset machinery that
+second-guesses a client already good at planning.
+
+Selection mechanics matter here too: Claude picks a tool from its **description**
+("use instead of X when Y"). The descriptions are the real product surface — they
+install methodology into the client's tool-selection — so they are a first-class,
+versioned, *tested* asset (eval that the right tool is selected for representative
+problems), not boilerplate.
+
+### The value-driven taxonomy
+
+Organize the tool surface by *why* you would offload at all, not by reasoning
+style. Each primitive is justified by one specific value that in-context thinking
+cannot supply:
+
+| Primitive | What it does | Why offload |
+|---|---|---|
+| **Diverge** | N independent perspectives | separation — views must not contaminate |
+| **Verify** | adversarial, unanchored critique | separation — a critic must not be anchored |
+| **Search** | parallel independent evaluation of candidates | parallelism — many independent judgments |
+| **Decide** | methodology frameworks (weighted / TOPSIS / causal) | rigor — a disciplined method applied reliably |
+| **Recall** | session memory / resumption | continuity — state across turns |
+
+Five primitives, each earning its existence — versus 13 overlapping modes and
+four routers. And **parallelism becomes a server primitive**: one call fans out N
+*independent* sub-calls and synthesizes, instead of the client driving a loop
+(today's `mcts` / `graph`). That fan-out-and-synthesize is precisely the work the
+client cannot do cheaply itself.
+
 ## Lessons that drive the design (the evidence)
 
 - The self-heal PR pipeline + the SI loop exist **largely to fix the server's
@@ -81,11 +134,14 @@ into either pure data or pure code.
 
 ### 4. A few orthogonal primitives + one router
 
-Start from the usage data `mcp-reasoning` already has and identify the genuinely
-distinct reasoning shapes (roughly: single-pass, branch-and-compare,
-decompose-into-graph, search, critique/reflect, decide). Expose those — not 13
-modes with heavy overlap — behind **one** selection/escalation layer that
-replaces `auto` + `meta` + `confidence_route` + `preset`.
+Expose the five value-driven primitives — **diverge, verify, search, decide,
+recall** (see the value model above) — not 13 modes with heavy overlap. Each is
+justified by a *specific* value in-context thinking cannot supply, so there is no
+redundancy to route around. Selection is the tool descriptions doing their job;
+if an explicit router is needed at all, it is **one** thin selection/escalation
+layer replacing `auto` + `meta` + `confidence_route` + `preset` — not a
+second-guessing suggestion engine. Validate the cut against `mcp-reasoning`'s
+existing tool-usage and chain data before committing to it.
 
 ### 5. Explicit orchestration boundary
 
