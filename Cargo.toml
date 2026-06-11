@@ -103,6 +103,10 @@ criterion = "0.8"
 name = "reasoning_benchmarks"
 harness = false
 
+[[bench]]
+name = "dashboard_emit"
+harness = false
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
