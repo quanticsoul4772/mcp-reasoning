@@ -182,10 +182,17 @@ chrono = { version = "0.4", features = ["serde"] }
 
 ## 8. MCP Transport Architecture
 
-### 8.1 Streamable HTTP Transport (March 2025 MCP Spec)
+> **Status note (not implemented):** The HTTP/SSE transport described in §8.1
+> and the `MCP_TRANSPORT`-based dispatch in §9.3 are an **early design sketch
+> that was never built**. The shipped server is **stdio only** — `transport.rs`
+> implements `StdioTransport`, `main.rs` calls `run_stdio()`, `MCP_TRANSPORT` is
+> read nowhere, and `axum` is not a dependency. The HTTP code below is retained
+> as a future-design reference, not a description of current behavior.
 
-The server supports the Streamable HTTP transport, which replaced SSE for better scalability
-and simpler implementation.
+### 8.1 Streamable HTTP Transport (March 2025 MCP Spec) — NOT IMPLEMENTED
+
+This is an unbuilt design sketch (see the status note above). The server does
+not currently expose an HTTP/Streamable-HTTP transport.
 
 ```rust
 // src/server/transport.rs
@@ -454,6 +461,10 @@ pub enum TreeOperation {
 ```
 
 ### 9.3 Server Registration
+
+> **Not current:** the `MCP_TRANSPORT` / `SseTransport` dispatch below is the
+> unbuilt design sketch from §8. The real `main.rs` builds `McpServer` and calls
+> `server.run_stdio()` (stdio only).
 
 ```rust
 // src/main.rs
@@ -1927,8 +1938,9 @@ And in `lib.rs`:
 ```rust
 //! MCP Reasoning Server - Structured reasoning via Anthropic Claude API.
 //!
-//! This crate provides an MCP server with 15 reasoning tools for
-//! sequential, branching, creative, and analytical reasoning modes.
+//! This crate provides an MCP server with 35 tools (17 core reasoning plus
+//! self-improvement, session, and agent/team tools) for sequential, branching,
+//! creative, and analytical reasoning modes.
 
 #![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
