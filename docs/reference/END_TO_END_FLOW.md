@@ -14,7 +14,6 @@ Contents:
 5. [Semantic memory (Voyage)](#5-semantic-memory-voyage)
 6. [Self-improvement loop](#6-self-improvement-loop)
 7. [Self-heal propose-PR pipeline](#7-self-heal-propose-pr-pipeline)
-8. [Storage / data model](#8-storage--data-model)
 
 ---
 
@@ -29,6 +28,8 @@ enabled — the self-heal propose loop.
 ```mermaid
 flowchart TB
     Client["MCP Client<br/>(Claude Code / Desktop)"]:::client
+    Client -->|"requests (stdio · JSON-RPC)"| Server
+    State -.->|"notifications / progress"| Client
 
     subgraph Server["MCP Reasoning Server (Rust)"]
         direction TB
@@ -36,9 +37,6 @@ flowchart TB
         State["AppState<br/>(progress broadcast bus)"]:::proc
         BG["Background tasks<br/>self-improvement cycle · embed worker ·<br/>self-heal propose loop (OFF by default)"]:::proc
     end
-
-    Client <-->|"stdin / stdout"| Server
-    State -.->|"notifications/progress"| Client
 
     Pipeline -->|"prompt + thinking budget"| Anthropic["Anthropic Claude API<br/>(reasoning + thinking)"]:::ext
     Pipeline --> SQLite[("SQLite<br/>sessions · thoughts · graph ·<br/>metrics · embeddings · SI/heal")]:::store
@@ -300,29 +298,6 @@ flowchart TD
 
 Gated by env: `SELF_HEAL_PROPOSE_ENABLED=true` **and** `SELF_HEAL_WORKSPACE` set;
 `SELF_HEAL_MAX_PROPOSALS` caps PRs per cycle.
-
----
-
-## 8. Storage / data model
-
-SQLite is the single source of truth. Caches (`session_embeddings`) are derived
-data that self-heal on a miss; the embedding queue decouples writes from Voyage.
-
-```mermaid
-flowchart LR
-    Sessions["sessions"]:::store --> Thoughts["thoughts"]:::store
-    Sessions --> Branches["branches"]:::store
-    Sessions --> Checkpoints["checkpoints"]:::store
-    Sessions --> GraphN["graph nodes/edges"]:::store
-    Thoughts --> EQ["embedding_queue"]:::store
-    Sessions --> SE["session_embeddings<br/>(content-hash + model)"]:::store
-    Metrics["metrics + tool transitions"]:::store
-    SIA["SI: diagnoses, actions, overrides, action stats"]:::store
-    Heal["heal: fix_proposals, knowledge_entries"]:::store
-    AgentM["agent metrics"]:::store
-
-    classDef store fill:#fbf0d4,stroke:#b8902a,color:#4a3410
-```
 
 ---
 
