@@ -153,23 +153,19 @@ concurrent calls never leak each other's progress.
 
 ```mermaid
 flowchart LR
-    subgraph Mode["Streaming mode (divergent/reflection/mcts/counterfactual)"]
-        RM["ProgressReporter.report_milestone()<br/>5% → 15% → 90% → 100%"]
-    end
-    RM -->|"ProgressEvent{token, percent, msg}"| TX["progress_tx (broadcast)"]
+    RM["Streaming mode emits milestones<br/>report_milestone: 5% → 15% → 90% → 100%"]
+    RM -->|"ProgressEvent{token, percent, msg}"| TX["progress_tx<br/>(broadcast bus)"]
 
-    subgraph Boundary["Tool method"]
-        Meta{"client sent<br/>progress token?"}
-        WP["with_progress: subscribe + select loop"]
-    end
-
+    Meta{"client sent a<br/>progress token?"}
+    Meta -->|"no"| Passthrough["run handler,<br/>send nothing"]
+    Meta -->|"yes"| WP["with_progress (tool boundary)<br/>subscribe + select loop"]
     TX --> WP
-    Meta -->|"no"| Passthrough["run handler, send nothing"]
-    Meta -->|"yes"| WP
+
     WP -->|"ev.token == this call"| Notify["peer.notify_progress()"]
-    WP -->|"other call's token"| Ignore["ignore"]
+    WP -->|"another call's token"| Ignore["ignore"]
+    WP -->|"on completion"| Drain["drain final 100% tick"]
     Notify --> Client["MCP client receives<br/>notifications/progress"]
-    WP -->|"on completion"| Drain["drain final 100% tick"] --> Client
+    Drain --> Client
 ```
 
 ---
@@ -183,26 +179,26 @@ worker warms the cache so the first search/relate after a write is ready.
 
 ```mermaid
 flowchart TB
-    subgraph Write["Write path (warming)"]
-        TW["Thought write"] --> EQ["enqueue session → embedding_queue"]
-        EW["embed_worker (interval)"] --> DQ["dequeue"]
-        DQ --> EMB["Voyage /embeddings (voyage-4)"]
-        EMB --> Cache[("session_embeddings<br/>{model, dtype, dim, vector}")]
-    end
+    %% Write / warming path fills the cache
+    TW["Thought write"] --> EQ["enqueue session →<br/>embedding_queue"]
+    EQ -.->|"warms"| EW["embed_worker<br/>(interval)"]
+    EW --> DQ["dequeue"]
+    DQ --> EMB["Voyage /embeddings<br/>(voyage-4)"]
+    EMB --> Cache[("session_embeddings cache<br/>keyed on content hash + model")]
 
-    subgraph Read["Read path"]
-        Q["reasoning_search(query)"] --> Key{"VOYAGE_API_KEY?"}
-        Key -->|"unset"| CfgErr["clear config error"]
-        Key -->|"set"| QE["embed query"]
-        QE --> Cos["cosine recall over cached vectors"]
-        Cos --> Rank["Voyage /rerank (rerank-2.5)"]
-        Rank --> Top["top sessions"]
-        Cache -.->|"cache hit (hash+model)"| Cos
+    %% Read path — search reads the cache
+    Q["reasoning_search(query)"] --> Key{"VOYAGE_API_KEY<br/>set?"}
+    Key -->|"no"| CfgErr["clear config error"]
+    Key -->|"yes"| QE["embed query"]
+    QE --> Cos["cosine recall<br/>over cached vectors"]
+    Cache -->|"cache hit"| Cos
+    Cos --> Rank["Voyage /rerank<br/>(rerank-2.5)"]
+    Rank --> Top["top sessions"]
 
-        RL["reasoning_relate(session)"] --> Edges["cosine + shared-mode + temporal edges"]
-        Edges --> BFS["depth-bounded BFS,<br/>capped at MAX_GRAPH_EDGES"]
-        BFS --> Graph["relatedness graph"]
-    end
+    %% Read path — relate
+    RL["reasoning_relate(session)"] --> Edges["cosine + shared-mode<br/>+ temporal edges"]
+    Edges --> BFS["depth-bounded BFS<br/>(capped at MAX_GRAPH_EDGES)"]
+    BFS --> Graph["relatedness graph"]
 ```
 
 ---
@@ -215,28 +211,29 @@ rewards measured improvement. Safety mechanisms gate every action.
 
 ```mermaid
 flowchart LR
-    subgraph Cycle["run_cycle"]
-        Mon["1. Monitor<br/>collect success/latency/baseline<br/>+ low-success tool transitions"]
-        Ana["2. Analyze<br/>LLM diagnosis of regressions"]
+    subgraph Cycle["run_cycle (4 phases)"]
+        direction LR
+        Mon["1. Monitor<br/>success / latency / baseline<br/>+ low-success transitions"]
+        Ana["2. Analyze<br/>LLM diagnosis"]
         Exe["3. Execute<br/>apply ThresholdAdjust / override"]
-        Lrn["4. Learn<br/>reward = measured Δ gated on MDE"]
-        Mon --> Ana --> Exe --> Lrn --> Mon
+        Lrn["4. Learn<br/>reward = measured Δ, gated on MDE"]
+        Mon --> Ana --> Exe --> Lrn
+        Lrn -->|"next cycle"| Mon
     end
 
-    subgraph Safety["Safety gates"]
-        CB["Circuit breaker<br/>halt on consecutive failures"]
-        AL["Allowlist<br/>validate action bounds"]
-        BL["Baseline tracking"]
-        RB["Rollback on regression"]
-    end
-
+    %% Safety gates are free nodes; dotted edges exit the cycle (no cross-cluster tangle)
+    AL["Allowlist<br/>validate action bounds"]
+    CB["Circuit breaker<br/>halt on consecutive failures"]
+    RB["Rollback on regression"]
+    BL["Baseline tracking"]
     Ana -.-> AL
     Exe -.-> CB
     Exe -.-> RB
     Lrn -.-> BL
-    Cycle --> Sup["apply self-correcting suppression<br/>of sustained anti-pattern transitions"]
-    Sup --> SuggEng["SuggestionEngine hard-blocks them"]
-    Cycle --> Store[("SI storage<br/>diagnoses, actions, overrides, stats")]
+
+    Lrn --> Sup["self-correcting suppression<br/>of anti-pattern transitions"]
+    Sup --> SuggEng["SuggestionEngine<br/>hard-blocks them"]
+    Mon --> Store[("SI storage<br/>diagnoses, actions, overrides, stats")]
 ```
 
 Operator surface: `reasoning_si_status`, `si_diagnoses`, `si_overrides`,
