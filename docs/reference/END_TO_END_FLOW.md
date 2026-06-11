@@ -28,23 +28,29 @@ enabled — the self-heal propose loop.
 
 ```mermaid
 flowchart TB
-    Client["MCP Client<br/>(Claude Code / Desktop)"]
+    Client["MCP Client<br/>(Claude Code / Desktop)"]:::client
 
     subgraph Server["MCP Reasoning Server (Rust)"]
         direction TB
-        Pipeline["Request pipeline<br/>Transport (stdio) → JSON-RPC (rmcp)<br/>→ Tool Registry (35 tools) → Reasoning Modes"]
-        State["AppState<br/>(progress broadcast bus)"]
-        BG["Background tasks<br/>self-improvement cycle · embed worker ·<br/>self-heal propose loop (OFF by default)"]
+        Pipeline["Request pipeline<br/>Transport (stdio) → JSON-RPC (rmcp)<br/>→ Tool Registry (35 tools) → Reasoning Modes"]:::proc
+        State["AppState<br/>(progress broadcast bus)"]:::proc
+        BG["Background tasks<br/>self-improvement cycle · embed worker ·<br/>self-heal propose loop (OFF by default)"]:::proc
     end
 
     Client <-->|"stdin / stdout"| Server
     State -.->|"notifications/progress"| Client
 
-    Pipeline -->|"prompt + thinking budget"| Anthropic["Anthropic Claude API<br/>(reasoning + thinking)"]
-    Pipeline --> SQLite[("SQLite<br/>sessions · thoughts · graph ·<br/>metrics · embeddings · SI/heal")]
-    BG -->|"embed + rerank"| Voyage["Voyage AI<br/>(semantic memory)"]
+    Pipeline -->|"prompt + thinking budget"| Anthropic["Anthropic Claude API<br/>(reasoning + thinking)"]:::ext
+    Pipeline --> SQLite[("SQLite<br/>sessions · thoughts · graph ·<br/>metrics · embeddings · SI/heal")]:::store
+    BG -->|"embed + rerank"| Voyage["Voyage AI<br/>(semantic memory)"]:::ext
     BG --> SQLite
-    BG -->|"cargo / git / gh"| GH["GitHub PR<br/>(operator review · never merged)"]
+    BG -->|"cargo / git / gh"| GH["GitHub PR<br/>(operator review · never merged)"]:::ext
+
+    style Server fill:transparent,stroke:#9aa4b2,stroke-width:1px
+    classDef proc fill:#e8eef9,stroke:#4a6fa5,color:#13243b
+    classDef store fill:#fbf0d4,stroke:#b8902a,color:#4a3410
+    classDef ext fill:#e2f1e8,stroke:#3a8a5a,color:#15401f
+    classDef client fill:#efe9f7,stroke:#7a5aa5,color:#2c1a4a
 ```
 
 ---
@@ -104,28 +110,33 @@ accumulating them into a final response while emitting milestones.
 
 ```mermaid
 flowchart TD
-    Start["Mode calls complete()/complete_streaming()"] --> Budget{"Thinking budget<br/>for this mode?"}
-    Budget -->|"linear/tree/auto/checkpoint"| None["None (fast)"]
-    Budget -->|"graph"| Std["Standard 4096"]
-    Budget -->|"divergent/reflection/decision/<br/>evidence/detect/timeline"| Deep["Deep 8192"]
-    Budget -->|"counterfactual/mcts"| Max["Maximum 16384"]
+    Start["Mode calls complete()/complete_streaming()"]:::proc --> Budget{"Thinking budget<br/>for this mode?"}:::decision
+    Budget -->|"linear/tree/auto/checkpoint"| None["None (fast)"]:::proc
+    Budget -->|"graph"| Std["Standard 4096"]:::proc
+    Budget -->|"divergent/reflection/decision/<br/>evidence/detect/timeline"| Deep["Deep 8192"]:::proc
+    Budget -->|"counterfactual/mcts"| Max["Maximum 16384"]:::proc
 
     None --> Build
     Std --> Build
     Deep --> Build
-    Max --> Build["Build request"]
+    Max --> Build["Build request"]:::proc
 
-    Build --> Stream{"Streaming?"}
-    Stream -->|"no"| Post["POST /messages"]
-    Stream -->|"yes"| SSE["POST (SSE)<br/>parse events → StreamAccumulator"]
-    SSE -.->|"report_milestone"| Bus["progress_tx broadcast"]
+    Build --> Stream{"Streaming?"}:::decision
+    Stream -->|"no"| Post["POST /messages"]:::proc
+    Stream -->|"yes"| SSE["POST (SSE)<br/>parse events → StreamAccumulator"]:::proc
+    SSE -.->|"report_milestone"| Bus["progress_tx broadcast"]:::proc
 
-    Post --> Resp{"2xx?"}
+    Post --> Resp{"2xx?"}:::decision
     SSE --> Resp
-    Resp -->|"yes"| Done["CompletionResponse"]
-    Resp -->|"429 / 5xx / timeout"| Retry{"retries left?<br/>(MAX_RETRIES)"}
-    Retry -->|"yes"| Backoff["exponential backoff"] --> Build
-    Retry -->|"no"| Err["AnthropicError → ModeError"]
+    Resp -->|"yes"| Done["CompletionResponse"]:::term
+    Resp -->|"429 / 5xx / timeout"| Retry{"retries left?<br/>(MAX_RETRIES)"}:::decision
+    Retry -->|"yes"| Backoff["exponential backoff"]:::proc --> Build
+    Retry -->|"no"| Err["AnthropicError → ModeError"]:::guard
+
+    classDef proc fill:#e8eef9,stroke:#4a6fa5,color:#13243b
+    classDef decision fill:#fde9d9,stroke:#c47a2a,color:#5a3410
+    classDef term fill:#eef0f2,stroke:#8a93a0,color:#2a2f36
+    classDef guard fill:#f7e6e6,stroke:#b15a5a,color:#5a1818
 ```
 
 ---
@@ -140,19 +151,24 @@ concurrent calls never leak each other's progress.
 
 ```mermaid
 flowchart LR
-    RM["Streaming mode emits milestones<br/>report_milestone: 5% → 15% → 90% → 100%"]
-    RM -->|"ProgressEvent{token, percent, msg}"| TX["progress_tx<br/>(broadcast bus)"]
+    RM["Streaming mode emits milestones<br/>report_milestone: 5% → 15% → 90% → 100%"]:::proc
+    RM -->|"ProgressEvent{token, percent, msg}"| TX["progress_tx<br/>(broadcast bus)"]:::proc
 
-    Meta{"client sent a<br/>progress token?"}
-    Meta -->|"no"| Passthrough["run handler,<br/>send nothing"]
-    Meta -->|"yes"| WP["with_progress (tool boundary)<br/>subscribe + select loop"]
+    Meta{"client sent a<br/>progress token?"}:::decision
+    Meta -->|"no"| Passthrough["run handler,<br/>send nothing"]:::term
+    Meta -->|"yes"| WP["with_progress (tool boundary)<br/>subscribe + select loop"]:::proc
     TX --> WP
 
-    WP -->|"ev.token == this call"| Notify["peer.notify_progress()"]
-    WP -->|"another call's token"| Ignore["ignore"]
-    WP -->|"on completion"| Drain["drain final 100% tick"]
-    Notify --> Client["MCP client receives<br/>notifications/progress"]
+    WP -->|"ev.token == this call"| Notify["peer.notify_progress()"]:::proc
+    WP -->|"another call's token"| Ignore["ignore"]:::term
+    WP -->|"on completion"| Drain["drain final 100% tick"]:::proc
+    Notify --> Client["MCP client receives<br/>notifications/progress"]:::client
     Drain --> Client
+
+    classDef proc fill:#e8eef9,stroke:#4a6fa5,color:#13243b
+    classDef decision fill:#fde9d9,stroke:#c47a2a,color:#5a3410
+    classDef term fill:#eef0f2,stroke:#8a93a0,color:#2a2f36
+    classDef client fill:#efe9f7,stroke:#7a5aa5,color:#2c1a4a
 ```
 
 ---
@@ -167,25 +183,32 @@ worker warms the cache so the first search/relate after a write is ready.
 ```mermaid
 flowchart TB
     %% Write / warming path fills the cache
-    TW["Thought write"] --> EQ["enqueue session →<br/>embedding_queue"]
-    EQ -.->|"warms"| EW["embed_worker<br/>(interval)"]
-    EW --> DQ["dequeue"]
-    DQ --> EMB["Voyage /embeddings<br/>(voyage-4)"]
-    EMB --> Cache[("session_embeddings cache<br/>keyed on content hash + model")]
+    TW["Thought write"]:::proc --> EQ["enqueue session →<br/>embedding_queue"]:::proc
+    EQ -.->|"warms"| EW["embed_worker<br/>(interval)"]:::proc
+    EW --> DQ["dequeue"]:::proc
+    DQ --> EMB["Voyage /embeddings<br/>(voyage-4)"]:::ext
+    EMB --> Cache[("session_embeddings cache<br/>keyed on content hash + model")]:::store
 
     %% Read path — search reads the cache
-    Q["reasoning_search(query)"] --> Key{"VOYAGE_API_KEY<br/>set?"}
-    Key -->|"no"| CfgErr["clear config error"]
-    Key -->|"yes"| QE["embed query"]
-    QE --> Cos["cosine recall<br/>over cached vectors"]
+    Q["reasoning_search(query)"]:::proc --> Key{"VOYAGE_API_KEY<br/>set?"}:::decision
+    Key -->|"no"| CfgErr["clear config error"]:::guard
+    Key -->|"yes"| QE["embed query"]:::proc
+    QE --> Cos["cosine recall<br/>over cached vectors"]:::proc
     Cache -->|"cache hit"| Cos
-    Cos --> Rank["Voyage /rerank<br/>(rerank-2.5)"]
-    Rank --> Top["top sessions"]
+    Cos --> Rank["Voyage /rerank<br/>(rerank-2.5)"]:::ext
+    Rank --> Top["top sessions"]:::term
 
     %% Read path — relate
-    RL["reasoning_relate(session)"] --> Edges["cosine + shared-mode<br/>+ temporal edges"]
-    Edges --> BFS["depth-bounded BFS<br/>(capped at MAX_GRAPH_EDGES)"]
-    BFS --> Graph["relatedness graph"]
+    RL["reasoning_relate(session)"]:::proc --> Edges["cosine + shared-mode<br/>+ temporal edges"]:::proc
+    Edges --> BFS["depth-bounded BFS<br/>(capped at MAX_GRAPH_EDGES)"]:::proc
+    BFS --> Graph["relatedness graph"]:::term
+
+    classDef proc fill:#e8eef9,stroke:#4a6fa5,color:#13243b
+    classDef store fill:#fbf0d4,stroke:#b8902a,color:#4a3410
+    classDef ext fill:#e2f1e8,stroke:#3a8a5a,color:#15401f
+    classDef decision fill:#fde9d9,stroke:#c47a2a,color:#5a3410
+    classDef guard fill:#f7e6e6,stroke:#b15a5a,color:#5a1818
+    classDef term fill:#eef0f2,stroke:#8a93a0,color:#2a2f36
 ```
 
 ---
@@ -200,27 +223,32 @@ rewards measured improvement. Safety mechanisms gate every action.
 flowchart LR
     subgraph Cycle["run_cycle (4 phases)"]
         direction LR
-        Mon["1. Monitor<br/>success / latency / baseline<br/>+ low-success transitions"]
-        Ana["2. Analyze<br/>LLM diagnosis"]
-        Exe["3. Execute<br/>apply ThresholdAdjust / override"]
-        Lrn["4. Learn<br/>reward = measured Δ, gated on MDE"]
+        Mon["1. Monitor<br/>success / latency / baseline<br/>+ low-success transitions"]:::proc
+        Ana["2. Analyze<br/>LLM diagnosis"]:::proc
+        Exe["3. Execute<br/>apply ThresholdAdjust / override"]:::proc
+        Lrn["4. Learn<br/>reward = measured Δ, gated on MDE"]:::proc
         Mon --> Ana --> Exe --> Lrn
         Lrn -->|"next cycle"| Mon
     end
 
     %% Safety gates are free nodes; dotted edges exit the cycle (no cross-cluster tangle)
-    AL["Allowlist<br/>validate action bounds"]
-    CB["Circuit breaker<br/>halt on consecutive failures"]
-    RB["Rollback on regression"]
-    BL["Baseline tracking"]
+    AL["Allowlist<br/>validate action bounds"]:::guard
+    CB["Circuit breaker<br/>halt on consecutive failures"]:::guard
+    RB["Rollback on regression"]:::guard
+    BL["Baseline tracking"]:::guard
     Ana -.-> AL
     Exe -.-> CB
     Exe -.-> RB
     Lrn -.-> BL
 
-    Lrn --> Sup["self-correcting suppression<br/>of anti-pattern transitions"]
-    Sup --> SuggEng["SuggestionEngine<br/>hard-blocks them"]
-    Mon --> Store[("SI storage<br/>diagnoses, actions, overrides, stats")]
+    Lrn --> Sup["self-correcting suppression<br/>of anti-pattern transitions"]:::proc
+    Sup --> SuggEng["SuggestionEngine<br/>hard-blocks them"]:::proc
+    Mon --> Store[("SI storage<br/>diagnoses, actions, overrides, stats")]:::store
+
+    style Cycle fill:transparent,stroke:#9aa4b2,stroke-width:1px
+    classDef proc fill:#e8eef9,stroke:#4a6fa5,color:#13243b
+    classDef store fill:#fbf0d4,stroke:#b8902a,color:#4a3410
+    classDef guard fill:#f7e6e6,stroke:#b15a5a,color:#5a1818
 ```
 
 Operator surface: `reasoning_si_status`, `si_diagnoses`, `si_overrides`,
@@ -237,32 +265,37 @@ it from acting on noise or weakening a correct check.
 
 ```mermaid
 flowchart TD
-    Fail["Tool parse/schema failure"] --> Detect["DefectLog.observe()<br/>per-signature + per-input counts"]
-    Detect --> Recur{"recurring?<br/>(≥ threshold)"}
-    Recur -->|"no"| Wait["wait"]
-    Recur -->|"yes"| Drift{"partition_drift:<br/>broad across components?"}
-    Drift -->|"yes"| Alert["route to drift<br/>(alert + record, no patch)"]
-    Drift -->|"no"| Elig["classify_eligibility (spec 002)"]
+    Fail["Tool parse/schema failure"]:::proc --> Detect["DefectLog.observe()<br/>per-signature + per-input counts"]:::proc
+    Detect --> Recur{"recurring?<br/>(≥ threshold)"}:::decision
+    Recur -->|"no"| Wait["wait"]:::term
+    Recur -->|"yes"| Drift{"partition_drift:<br/>broad across components?"}:::decision
+    Drift -->|"yes"| Alert["route to drift<br/>(alert + record, no patch)"]:::guard
+    Drift -->|"no"| Elig["classify_eligibility (spec 002)"]:::proc
 
     Elig -->|"model-version spike"| Alert
-    Elig -->|"varied inputs"| Hold["HeldBack<br/>(recorded, operator-visible)"]
-    Elig -->|"stable path"| Rank["rank_and_cap (≤ max_proposals)"]
+    Elig -->|"varied inputs"| Hold["HeldBack<br/>(recorded, operator-visible)"]:::guard
+    Elig -->|"stable path"| Rank["rank_and_cap (≤ max_proposals)"]:::proc
 
-    Rank --> Reuse{"known class?<br/>find_reusable_fix"}
-    Reuse -->|"yes"| Skip["reuse prior accepted fix"]
-    Reuse -->|"no"| Loc["localize (LLM → source_hint)"]
+    Rank --> Reuse{"known class?<br/>find_reusable_fix"}:::decision
+    Reuse -->|"yes"| Skip["reuse prior accepted fix"]:::term
+    Reuse -->|"no"| Loc["localize (LLM → source_hint)"]:::proc
 
-    Loc --> Synth["synthesize_reproducing_test<br/>GATE: must FAIL on base"]
-    Synth -->|"not grounded"| Abort["abort, no PR"]
-    Synth -->|"grounded"| Fix["generate_and_validate_fix"]
+    Loc --> Synth["synthesize_reproducing_test<br/>GATE: must FAIL on base"]:::proc
+    Synth -->|"not grounded"| Abort["abort, no PR"]:::guard
+    Synth -->|"grounded"| Fix["generate_and_validate_fix"]:::proc
 
-    Fix --> Guard{"invariant guard:<br/>weakens a check?"}
-    Guard -->|"yes"| Block["blocked, not admissible, no PR"]
-    Guard -->|"no"| Gates{"suite green ∧<br/>quality green?"}
-    Gates -->|"no"| NotAdm["not admissible, no PR"]
-    Gates -->|"yes"| Adm["is_admissible = grounded ∧ suite ∧ quality ∧ ¬weakens"]
-    Adm --> PR["open_pr (gh)<br/>NEVER merges"]
-    PR --> Op["operator accept → KnowledgeEntry → reuse"]
+    Fix --> Guard{"invariant guard:<br/>weakens a check?"}:::decision
+    Guard -->|"yes"| Block["blocked, not admissible, no PR"]:::guard
+    Guard -->|"no"| Gates{"suite green ∧<br/>quality green?"}:::decision
+    Gates -->|"no"| NotAdm["not admissible, no PR"]:::guard
+    Gates -->|"yes"| Adm["is_admissible = grounded ∧ suite ∧ quality ∧ ¬weakens"]:::proc
+    Adm --> PR["open_pr (gh)<br/>NEVER merges"]:::proc
+    PR --> Op["operator accept → KnowledgeEntry → reuse"]:::term
+
+    classDef proc fill:#e8eef9,stroke:#4a6fa5,color:#13243b
+    classDef decision fill:#fde9d9,stroke:#c47a2a,color:#5a3410
+    classDef guard fill:#f7e6e6,stroke:#b15a5a,color:#5a1818
+    classDef term fill:#eef0f2,stroke:#8a93a0,color:#2a2f36
 ```
 
 Gated by env: `SELF_HEAL_PROPOSE_ENABLED=true` **and** `SELF_HEAL_WORKSPACE` set;
@@ -277,26 +310,39 @@ data that self-heal on a miss; the embedding queue decouples writes from Voyage.
 
 ```mermaid
 flowchart LR
-    Sessions["sessions"] --> Thoughts["thoughts"]
-    Sessions --> Branches["branches"]
-    Sessions --> Checkpoints["checkpoints"]
-    Sessions --> GraphN["graph nodes/edges"]
-    Thoughts --> EQ["embedding_queue"]
-    Sessions --> SE["session_embeddings<br/>(content-hash + model)"]
-    Metrics["metrics + tool transitions"]
-    SIA["SI: diagnoses, actions, overrides, action stats"]
-    Heal["heal: fix_proposals, knowledge_entries"]
-    AgentM["agent metrics"]
+    Sessions["sessions"]:::store --> Thoughts["thoughts"]:::store
+    Sessions --> Branches["branches"]:::store
+    Sessions --> Checkpoints["checkpoints"]:::store
+    Sessions --> GraphN["graph nodes/edges"]:::store
+    Thoughts --> EQ["embedding_queue"]:::store
+    Sessions --> SE["session_embeddings<br/>(content-hash + model)"]:::store
+    Metrics["metrics + tool transitions"]:::store
+    SIA["SI: diagnoses, actions, overrides, action stats"]:::store
+    Heal["heal: fix_proposals, knowledge_entries"]:::store
+    AgentM["agent metrics"]:::store
+
+    classDef store fill:#fbf0d4,stroke:#b8902a,color:#4a3410
 ```
 
 ---
 
 ## Legend
 
+Node colors encode each box's role:
+
+- 🟦 **Process** — server logic / pipeline step
+- 🟨 **Datastore** — SQLite table or cache (drawn as a cylinder)
+- 🟩 **External service** — Anthropic, Voyage, or GitHub
+- 🟪 **Client** — the MCP client
+- 🟧 **Decision** — a branch point (drawn as a diamond)
+- 🟥 **Guard / blocked** — a safety gate or a rejected/aborted outcome
+- ⬜ **Terminal** — a normal end state
+
+Edges:
+
 - **Solid arrow** — direct call / data flow.
 - **Dotted arrow** — asynchronous / best-effort (milestones, cache hits, safety
   signals).
-- **Cylinder** — persistent store. **Diamond** — decision point.
 
 For the component breakdown behind these flows, see
 [Architecture](ARCHITECTURE.md); for tool schemas, see
