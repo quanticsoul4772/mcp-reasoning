@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>mcp-reasoning · live activity</title>
+<style>
+  :root {
+    --bg: #0e1726; --panel: #15203a; --line: #2a3a5e; --text: #e8eefc;
+    --muted: #8ea2c7; --proc: #2f6fed; --store: #cf8a17; --ext: #1f9d63;
+    --client: #7b4fd0; --guard: #d64545; --flash: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    padding: 10px 16px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 12px;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  #status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  #dot { width: 9px; height: 9px; border-radius: 50%; background: var(--guard); transition: background .3s; }
+  #dot.live { background: var(--ext); }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
+  #stage { position: relative; overflow: auto; padding: 8px; }
+  aside {
+    border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0;
+    background: var(--panel);
+  }
+  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  #timeline { overflow-y: auto; flex: 1; font-size: 12px; }
+  .row { padding: 6px 14px; border-bottom: 1px solid var(--line); display: grid;
+    grid-template-columns: 64px 1fr auto; gap: 8px; align-items: baseline; }
+  .row .t { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .row .n { font-weight: 600; }
+  .row .d { color: var(--muted); }
+  .phase-completed .n { color: #7fe0a8; }
+  .phase-failed .n { color: #ff8d8d; }
+  .phase-progress .n, .phase-started .n { color: #8db4ff; }
+  .phase-held_back .n { color: #ffcf7a; }
+  /* SVG node + edge styling */
+  .node rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; rx: 10; }
+  .node text { fill: var(--text); font-size: 12px; font-weight: 600; }
+  .node .count { fill: var(--muted); font-size: 11px; font-weight: 500; }
+  .node.proc rect { stroke: var(--proc); }
+  .node.store rect { stroke: var(--store); }
+  .node.ext rect { stroke: var(--ext); }
+  .node.client rect { stroke: var(--client); }
+  .node.guard rect { stroke: var(--guard); }
+  .node.flash rect { fill: var(--flash); }
+  .node.flash text { fill: #0e1726; }
+  .node.flash .count { fill: #2a3a5e; }
+  .node rect { transition: fill .12s ease; }
+  .edge { stroke: var(--line); stroke-width: 2; fill: none; }
+  .edge.async { stroke-dasharray: 5 5; stroke: #5a6a8e; }
+  .edge.pulse { stroke: var(--flash); stroke-width: 3.5; }
+  .edge { transition: stroke .12s ease, stroke-width .12s ease; }
+  .elabel { fill: var(--muted); font-size: 10.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>mcp-reasoning · live activity</h1>
+  <span id="status"><span id="dot"></span><span id="statustext">connecting…</span></span>
+  <span style="flex:1"></span>
+  <span id="counts" style="font-size:12px;color:var(--muted)"></span>
+</header>
+<main>
+  <div id="stage">
+    <svg id="flow" width="620" height="520" viewBox="0 0 620 520" role="img" aria-label="end-to-end flow">
+      <!-- edges (drawn first, under nodes) -->
+      <g id="edges">
+        <!-- synchronous request spine ①–⑤ -->
+        <path class="edge" data-edge="client_to_registry" d="M130,76 L130,150" />
+        <path class="edge" data-edge="registry_to_mode"   d="M130,208 L130,300" />
+        <path class="edge" data-edge="mode_to_sqlite"     d="M230,315 L410,185" />
+        <path class="edge" data-edge="mode_to_anthropic"  d="M230,330 L410,327" />
+        <path class="edge" data-edge="mode_to_client"     d="M70,300 C20,228 20,150 70,76" />
+        <!-- asynchronous background loops: a dashed interval rail off SQLite -->
+        <path class="edge async" d="M505,204 L505,410" />
+        <path class="edge async" d="M120,410 L505,410" />
+        <path class="edge async" data-edge="heal_to_github"   d="M120,410 L120,440" />
+        <path class="edge async" data-edge="si_cycle"         d="M305,410 L305,440" />
+        <path class="edge async" data-edge="worker_to_voyage" d="M505,410 L505,440" />
+      </g>
+      <!-- numbered spine labels -->
+      <g>
+        <text class="elabel" x="296" y="230">①④ load · persist</text>
+        <text class="elabel" x="300" y="354">②③ prompt · completion</text>
+        <text class="elabel" x="6" y="200">⑤</text>
+        <text class="elabel" x="250" y="404">interval loops</text>
+      </g>
+      <!-- nodes: each <g class="node ...gid" data-node="..."> -->
+      <g id="nodes"></g>
+    </svg>
+  </div>
+  <aside>
+    <h2>Timeline</h2>
+    <div id="timeline"></div>
+  </aside>
+</main>
+<script>
+(() => {
+  // Node layout: id -> {x,y,w,h,label,cls}
+  // Layout: a left request spine (client → registry → mode), the datastore +
+  // external API on the right, and a non-overlapping bottom band for the three
+  // background loops. Voyage/GitHub are folded into the worker/heal labels to
+  // keep the bottom band clear (events for those nodes are simply ignored until
+  // a later phase adds their boxes).
+  const NODES = {
+    client:    {x: 40,  y: 30,  w: 180, h: 46, label: "MCP Client",         cls: "client"},
+    registry:  {x: 40,  y: 150, w: 180, h: 58, label: "Tool Registry",      cls: "proc"},
+    mode:      {x: 40,  y: 300, w: 190, h: 58, label: "Reasoning Mode",      cls: "proc"},
+    sqlite:    {x: 410, y: 150, w: 190, h: 54, label: "SQLite",             cls: "store"},
+    anthropic: {x: 410, y: 300, w: 190, h: 54, label: "Anthropic API",      cls: "ext"},
+    heal:      {x: 40,  y: 440, w: 160, h: 48, label: "Self-heal → PR",      cls: "guard"},
+    si:        {x: 220, y: 440, w: 170, h: 48, label: "Self-improvement",    cls: "proc"},
+    worker:    {x: 410, y: 440, w: 190, h: 48, label: "Embedding → Voyage",  cls: "proc"},
+  };
+  const counts = {};
+  const flashTimers = {};
+  const pulseTimers = {};
+
+  const svgNs = "http://www.w3.org/2000/svg";
+  const nodesG = document.getElementById("nodes");
+  for (const [id, n] of Object.entries(NODES)) {
+    if (n.hide) continue;
+    counts[id] = 0;
+    const g = document.createElementNS(svgNs, "g");
+    g.setAttribute("class", "node " + n.cls);
+    g.setAttribute("data-node", id);
+    g.innerHTML =
+      `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10"></rect>` +
+      `<text x="${n.x + 12}" y="${n.y + 24}">${n.label}</text>` +
+      `<text class="count" x="${n.x + 12}" y="${n.y + 40}" data-count="${id}">0</text>`;
+    nodesG.appendChild(g);
+  }
+
+  function flashNode(id) {
+    const el = document.querySelector(`.node[data-node="${id}"]`);
+    if (!el) return;
+    el.classList.add("flash");
+    clearTimeout(flashTimers[id]);
+    flashTimers[id] = setTimeout(() => el.classList.remove("flash"), 280);
+  }
+  function pulseEdge(edge) {
+    if (!edge) return;
+    const el = document.querySelector(`.edge[data-edge="${edge}"]`);
+    if (!el) return;
+    el.classList.add("pulse");
+    clearTimeout(pulseTimers[edge]);
+    pulseTimers[edge] = setTimeout(() => el.classList.remove("pulse"), 320);
+  }
+  function bump(id) {
+    if (!(id in counts)) return;
+    counts[id]++;
+    const c = document.querySelector(`[data-count="${id}"]`);
+    if (c) c.textContent = counts[id];
+  }
+
+  const tl = document.getElementById("timeline");
+  let rows = 0;
+  function fmtTime(ms) {
+    if (!ms) return "--:--:--";
+    const d = new Date(ms);
+    return d.toLocaleTimeString([], {hour12: false});
+  }
+  function addRow(ev) {
+    const row = document.createElement("div");
+    row.className = "row phase-" + ev.phase;
+    const name = ev.tool || ev.node;
+    const detail = [ev.phase, ev.duration_ms != null ? ev.duration_ms + "ms" : null, ev.note]
+      .filter(Boolean).join(" · ");
+    row.innerHTML =
+      `<span class="t">${fmtTime(ev.ts_ms)}</span>` +
+      `<span class="n">${name}</span>` +
+      `<span class="d">${detail}</span>`;
+    tl.prepend(row);
+    if (++rows > 300) { tl.removeChild(tl.lastChild); rows--; }
+  }
+
+  let total = 0;
+  function onEvent(ev) {
+    flashNode(ev.node);
+    pulseEdge(ev.edge);
+    bump(ev.node);
+    addRow(ev);
+    total++;
+    document.getElementById("counts").textContent = total + " events";
+  }
+
+  const dot = document.getElementById("dot");
+  const statustext = document.getElementById("statustext");
+  function connect() {
+    const es = new EventSource("/events");
+    es.onopen = () => { dot.classList.add("live"); statustext.textContent = "live"; };
+    es.onmessage = (m) => {
+      try { onEvent(JSON.parse(m.data)); } catch (_) { /* ignore non-JSON keep-alives */ }
+    };
+    es.onerror = () => {
+      dot.classList.remove("live"); statustext.textContent = "reconnecting…";
+      // EventSource auto-reconnects; nothing else to do.
+    };
+  }
+  connect();
+})();
+</script>
+</body>
+</html>

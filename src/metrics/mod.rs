@@ -32,8 +32,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
+use std::sync::{OnceLock, RwLock};
 use std::time::Instant;
+
+use crate::dashboard::{ActivityBus, ActivityEvent, EdgeId, Node, Phase};
 
 /// Maximum number of transitions to keep in circular buffer.
 const MAX_TRANSITIONS: usize = 10_000;
@@ -364,6 +366,12 @@ pub struct MetricsCollector {
     /// Recorded model-version-change events, oldest first, bounded by
     /// [`MAX_MODEL_VERSION_CHANGES`]. Read by the drift classifier (FR-017, D3).
     model_version_changes: RwLock<Vec<ModelVersionChange>>,
+    /// Optional activity bus for the real-time dashboard. Set once at startup via
+    /// [`MetricsCollector::set_activity`]; when present, [`MetricsCollector::record`]
+    /// emits a `Mode` completed/failed activity for every tool call (the single
+    /// chokepoint that makes all tools visible in the dashboard). Unset by default,
+    /// so there is zero dashboard coupling when the feature is not wired.
+    activity: OnceLock<ActivityBus>,
 }
 
 /// A change in the pinned model identifier between two consecutive API calls.
@@ -387,6 +395,13 @@ impl MetricsCollector {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Attach the dashboard activity bus so each recorded tool call emits a
+    /// `Mode` activity event. Idempotent: a second call is ignored (the bus is
+    /// set once at startup). Has no effect on metric collection itself.
+    pub fn set_activity(&self, bus: ActivityBus) {
+        let _ = self.activity.set(bus);
     }
 
     /// Record a parse failure (malformed/unparseable output) for `component`
@@ -495,6 +510,26 @@ impl MetricsCollector {
 
     /// Record a metric event.
     pub fn record(&self, event: MetricEvent) {
+        // Mirror the completion to the dashboard activity bus (when attached).
+        // This is the single chokepoint every tool call passes through, so it
+        // makes all 35 tools visible in the live diagram + timeline. `operation`
+        // (e.g. "create"/"focus") is a label, not user content — redaction-safe.
+        if let Some(bus) = self.activity.get() {
+            let phase = if event.success {
+                Phase::Completed
+            } else {
+                Phase::Failed
+            };
+            let mut activity = ActivityEvent::new(Node::Mode, phase)
+                .with_edge(EdgeId::ModeToClient)
+                .with_tool(event.mode.clone())
+                .with_duration_ms(event.latency_ms);
+            if let Some(op) = &event.operation {
+                activity = activity.with_note(op.clone());
+            }
+            bus.emit(activity);
+        }
+
         match self.events.write() {
             Ok(mut events) => {
                 events.push(event);
@@ -1741,6 +1776,46 @@ mod tests {
     // ========================================================================
     // Tool Transition Tracking Tests
     // ========================================================================
+
+    #[tokio::test]
+    async fn record_emits_activity_when_bus_attached() {
+        let collector = MetricsCollector::new();
+        let bus = ActivityBus::new();
+        let mut rx = bus.subscribe();
+        collector.set_activity(bus);
+
+        collector.record(MetricEvent::new("tree", 42, true).with_operation("create"));
+
+        let ev = rx.recv().await.expect("activity event");
+        assert_eq!(ev.node, Node::Mode);
+        assert_eq!(ev.phase, Phase::Completed);
+        assert_eq!(ev.edge, Some(EdgeId::ModeToClient));
+        assert_eq!(ev.tool.as_deref(), Some("tree"));
+        assert_eq!(ev.duration_ms, Some(42));
+        assert_eq!(ev.note.as_deref(), Some("create"));
+    }
+
+    #[tokio::test]
+    async fn record_failure_emits_failed_phase() {
+        let collector = MetricsCollector::new();
+        let bus = ActivityBus::new();
+        let mut rx = bus.subscribe();
+        collector.set_activity(bus);
+
+        collector.record(MetricEvent::new("linear", 7, false));
+
+        let ev = rx.recv().await.expect("activity event");
+        assert_eq!(ev.phase, Phase::Failed);
+        assert!(ev.note.is_none());
+    }
+
+    #[test]
+    fn record_without_bus_does_not_panic() {
+        // The default path (no dashboard wired) must record metrics normally.
+        let collector = MetricsCollector::new();
+        collector.record(MetricEvent::new("linear", 1, true));
+        assert_eq!(collector.summary().total_invocations, 1);
+    }
 
     #[test]
     fn test_record_tool_use_derives_transition() {

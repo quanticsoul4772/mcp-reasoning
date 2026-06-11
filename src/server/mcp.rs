@@ -228,6 +228,32 @@ impl McpServer {
             });
         }
 
+        // Spawn the real-time dashboard sidecar ONLY when built with the
+        // `dashboard` feature AND enabled at runtime via MCP_DASHBOARD (off by
+        // default, mirroring SELF_HEAL_*). Read-only, loopback-bound; it rides
+        // the in-memory activity + progress buses and never touches stdout.
+        #[cfg(feature = "dashboard")]
+        {
+            let dashboard_config = crate::dashboard::DashboardConfig::from_env();
+            if dashboard_config.enabled {
+                if !dashboard_config.is_loopback() {
+                    tracing::warn!(
+                        addr = %dashboard_config.addr,
+                        "MCP_DASHBOARD bound to a non-loopback address — exposing an unauthenticated read-only dev tool beyond localhost"
+                    );
+                }
+                let activity = state.activity.clone();
+                let progress_tx = state.progress_tx.clone();
+                tokio::spawn(async move {
+                    tracing::warn!(
+                        addr = %dashboard_config.addr,
+                        "Activity dashboard ENABLED (read-only, loopback dev tool)"
+                    );
+                    crate::dashboard::server::serve(dashboard_config, activity, progress_tx).await;
+                });
+            }
+        }
+
         // Create reasoning server
         let server = ReasoningServer::new(Arc::new(state));
 
