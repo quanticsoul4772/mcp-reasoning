@@ -12,16 +12,16 @@ decision tree), see **[End-to-End Flow](END_TO_END_FLOW.md)**.
 ![End-to-End Flow — the whole system in one diagram](diagrams/flow-overview.svg)
 
 <!-- Rendered from diagrams/flow-overview.d2 with D2 (https://d2lang.com):
-     d2 --layout dagre --theme 0 --dark-theme 200 --pad 32 \
+     d2 --layout elk --theme 0 --pad 32 \
         docs/reference/diagrams/flow-overview.d2 \
         docs/reference/diagrams/flow-overview.svg
-     The SVG embeds a prefers-color-scheme dark variant, so it adapts to
-     GitHub light/dark. Edit the .d2 source and re-run the command to regenerate. -->
+     The SVG has its own light background, so it renders the same on GitHub light
+     or dark. Edit the .d2 source and re-run the command to regenerate. -->
 
 > The diagram is generated from [`diagrams/flow-overview.d2`](diagrams/flow-overview.d2)
-> with [D2](https://d2lang.com) and committed as an SVG that adapts to GitHub's
-> light/dark theme. To regenerate after editing the source, run the `d2` command in
-> the HTML comment above.
+> with [D2](https://d2lang.com) and committed as a self-contained SVG (its own
+> light background renders the same in GitHub light or dark mode). To regenerate
+> after editing the source, run the `d2` command in the HTML comment above.
 
 **Reading it:** steps ①–⑤ are the synchronous request spine; dotted edges are
 asynchronous (progress notifications, and the interval-driven background loops
