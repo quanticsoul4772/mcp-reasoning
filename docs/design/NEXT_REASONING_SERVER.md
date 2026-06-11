@@ -30,70 +30,100 @@ persistence, observability, and safety. Anything that can run offline (analysis,
 tuning, "improvement") runs offline. The hot path stays simple enough that it
 rarely needs guards wrapped around it.
 
-## Why Claude calls these tools (the value model)
+## Why the server exists (the value model)
 
-This is the foundation the rest of the design rests on, and it is easy to get
-wrong. When Claude calls a reasoning tool, **Claude is calling Claude** — the
-server's "reasoning" is just another LLM call with a methodology-specific prompt.
-So the only durable value is whatever a *separate, templated* call provides that
-in-context thinking does not. Ranked, most real first:
+This is the foundation the rest of the design rests on, and an earlier draft of
+this note got the *altitude* wrong — it pitched the value in technical terms
+(separation, parallelism, methodology). The real value is **behavioral**.
 
-1. **Context separation / independence (strongest).** A separate call has a fresh
-   context. That is what lets N divergent perspectives avoid contaminating each
-   other, an adversarial critic stay unanchored by the reasoning it judges, and M
-   search candidates be evaluated independently. This is genuinely hard to do in
-   one context, and the client cannot replicate it by "thinking harder."
-2. **Methodology as a callable (strong).** Pearl's ladder, TOPSIS, MCTS/UCB1,
-   bias taxonomies — applied rigorously. The model *can* do these but won't
-   reliably without the scaffold; the server installs disciplined methods.
-3. **Offloaded budget + clean client context (real, smaller).** Heavy reasoning
-   spends a separate token budget and returns something compact. Overlaps with
-   the client's own extended thinking.
-4. **Memory / resumption (situational).** Valuable when used; clients rarely
-   thread session ids reliably.
+When Claude calls a reasoning tool, **Claude is calling Claude** — so the server
+adds nothing by reasoning *harder*. What it adds is **catching the ways the model
+reliably goes wrong that the model cannot catch from inside its own context.**
+These are failures of the *frame*, not of effort: you cannot out-think a blind spot
+from inside it. Asking an anchored model to "reconsider" in the same context just
+yields more confident wrong reasoning. An external, structured, **independent** pass
+is the only thing that breaks the frame — which is exactly why in-context
+self-reflection fails and a separate tool works.
 
-**Not** real value, and to be shed: raw reasoning horsepower (the client has it),
-and the `next_tools` / timing / preset machinery that second-guesses a client
-already good at planning.
+That is the irreducible value: **metacognition the model can't run on itself.** Not
+horsepower (the client has it), not a methodology library (nice-to-have), not
+parallelism for its own sake. The server is a **catalog of correctives for the
+calling model's predictable failure modes** — what you reach for when the model is
+in trouble and can't tell.
 
-> **Corrected against real usage (see "What the usage data says" below).** The
-> ranking above was partly wrong. A single clean structured step (`linear`) is the
-> *most-used* organic tool, and the methodology bucket dominates — so "offloaded
-> budget + a clean structured step" (which this note had ranked third and
-> "smaller") and "methodology" are what's actually reached for, while pure
-> independence (`divergent`) is modest. So: **do not shed `linear`** — promote it
-> to a first-class *Step* primitive — and hold "independence is the strongest
-> value" loosely. The genuine dead weight is elsewhere (agents/team, `relate`,
-> graph's heavy half), found only by looking at the data.
+### The failure modes it corrects (open, not fixed)
 
-Selection mechanics matter here too: Claude picks a tool from its **description**
-("use instead of X when Y"). The descriptions are the real product surface — they
-install methodology into the client's tool-selection — so they are a first-class,
-versioned, *tested* asset (eval that the right tool is selected for representative
-problems), not boilerplate.
+The daily-driver correctives — why it becomes a go-to when the model is stuck in
+its own bullshit:
 
-### The value-driven taxonomy
+| Failure mode | What it looks like | Corrective |
+|---|---|---|
+| **Indecision** | dumps N options instead of committing | **Converge** — weigh, commit, recommend |
+| **Stuck / looping** | no next move; plausible motion that goes nowhere | **Unstick** — externalize one structured step, regain momentum |
+| **Anchoring / overconfidence** | convinced while wrong; defends the answer | **Challenge** — an independent pass not standing where the model stands |
+| **Drift** | loses the goal, constraints, or prior decisions on a long task | **Hold the line** — keep the thread: constraints, goal, what was decided |
 
-Organize the tool surface by *why* you would offload at all, not by reasoning
-style. Each primitive is justified by one specific value that in-context thinking
-cannot supply:
+**This list is open, not closed** — those four are *some* of the daily drivers, not
+the whole product. The catalog grows by the same move each time: name a reliable
+failure the model can't see from inside, design the external corrective. Others the
+existing tools and the offload opportunities already cover:
 
-| Primitive | What it does | Why offload | Organic use |
-|---|---|---|---|
-| **Step** | one externalized, structured reasoning step | a clean step without spending the client's own context | **highest** (`linear` #1) |
-| **Decide** | methodology frameworks (weighted / TOPSIS / causal / evidence) | rigor — a disciplined method applied reliably | **high** (`decision`+`evidence`+`counterfactual`+`timeline` ≈ 116) |
-| **Verify** | adversarial, unanchored critique | separation — a critic must not be anchored | medium (`detect`+`reflection` ≈ 52) |
-| **Search** | parallel independent evaluation of candidates | parallelism — many independent judgments | medium (`mcts`/`tree`/`graph`) |
-| **Diverge** | N independent perspectives | separation — views must not contaminate | modest (`divergent` 19) |
-| **Recall** | session memory / resumption | continuity — state across turns | low when manual; make it effortless |
+- **Tunnel vision** — first plausible answer, no alternatives → breadth before depth
+  (multi-perspective / branch-and-compare).
+- **Bad causal reasoning** — correlation taken for cause → a causal method
+  (counterfactual / Pearl's ladder).
+- **Lost sequence** — how earlier choices constrain later ones → temporal/timeline.
+- **Too large to evaluate** — more candidates than the context can hold → offload
+  the search (MCTS-style).
+- **Miscalibration** — false confidence in a number or probability → grounded in
+  agreement, not vibes (evidence / self-consistency ensemble).
+- **Unverified assertion** — plausible but false → adversarial verification /
+  grounded research.
+- **No memory across turns** — re-deriving or losing prior work → durable recall.
 
-Six primitives, each earning its existence — versus 13 overlapping modes and four
-routers. The "Organic use" column is the proxy usage data below: it **reorders**
-the value model (Step and Decide lead; independence is modest) but **keeps every
-primitive** — none is dead. And **parallelism becomes a server primitive**: one
-call fans out N *independent* sub-calls and synthesizes, instead of the client
-driving a loop (today's `mcts` / `graph`). That fan-out-and-synthesize is
-precisely the work the client cannot do cheaply itself.
+Every entry is a place the model is predictably weak *and blind to from inside*.
+None of them is the final list.
+
+### The mechanisms are *how*, not *why*
+
+Context separation, parallelism, methodology, memory, offloaded budget are all real
+— but they are **how the corrections get delivered**, not the reason the tool
+exists:
+
+- **Independence / separation** delivers *Challenge* and verification — a critic or
+  perspective not anchored where the model is.
+- **Parallelism** delivers breadth and calibration — N independent
+  perspectives / samples / candidates fanned out and synthesized.
+- **Methodology** delivers *Converge* and rigor — a disciplined frame applied
+  reliably.
+- **Memory** delivers *Hold the line* and recall — continuity the ephemeral context
+  lacks.
+- **Offloaded budget** keeps the model's own context clean while the heavy work
+  happens elsewhere.
+
+Design the surface around the *failure modes*; reach for whichever mechanism
+delivers the correction. The buildable **primitives** are the units that deliver
+them — each maps to one or more failure modes, and the list is as open as the
+failure-mode catalog (add a corrective, add the primitive that delivers it):
+
+| Primitive | Corrects | Mechanism |
+|---|---|---|
+| **Step** | stuck / looping | externalized structured step |
+| **Decide** | indecision, miscalibration | methodology (weigh / causal / probabilistic) |
+| **Verify** | overconfidence, unverified assertion | independent adversarial pass |
+| **Diverge** | anchoring, tunnel vision | independent perspectives |
+| **Search** | too-large-to-evaluate | parallel independent evaluation |
+| **Recall** | drift, lost prior work | durable memory |
+| **Research** | unverified assertion, at scale | parallel fetch + verify |
+
+### How the model knows which corrective it needs
+
+Selection runs through the tool **descriptions** — and they are not boilerplate.
+They are how the model recognizes *that it is in a failure mode and which corrective
+applies* ("when you're juggling options and can't commit, use Converge"). That makes
+the descriptions a first-class, versioned, **tested** asset: eval that the right
+corrective is selected for representative *failure situations*, not just
+representative problems.
 
 ### What the usage data says
 
@@ -103,8 +133,13 @@ filtered out. **Caveat:** the `metrics`/`invocations` tables were never persiste
 so this is a *thoughts-produced proxy*, not a call log, over modest dev/eval-heavy
 data — trust the **zeros and relative magnitudes**, not absolute counts.
 
-- **`linear` is the #1 organic tool (67).** The cheap structured step is the
-  workhorse, not low-value. (This is what corrected the ranking above.)
+The data backs the failure-mode framing: the most-used tools *are* the daily-driver
+correctives — **Unstick** (`linear`) and **Converge** (`decision`/`evidence`) lead
+because indecision and stuckness are the most common failures, and **Challenge**
+(`detect`/`reflection`/`divergent`) is steadily used.
+
+- **`linear` is the #1 organic tool (67)** — *Unstick*. The cheap structured step
+  is the workhorse, not low-value. (This is what corrected the earlier ranking.)
 - **The methodology bucket dominates** (`decision` 66, `evidence` 20,
   `counterfactual` 19, `timeline` 11). "Methodology as a callable" is the most
   validated value.
