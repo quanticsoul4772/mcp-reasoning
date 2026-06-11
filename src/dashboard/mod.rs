@@ -27,6 +27,6 @@ pub mod event;
 #[cfg(feature = "dashboard")]
 pub mod server;
 
-pub use bus::{now_ms, ActivityBus, ACTIVITY_BUFFER};
+pub use bus::{emit, now_ms, set_global, ActivityBus, ACTIVITY_BUFFER};
 pub use config::{DashboardConfig, DEFAULT_DASHBOARD_ADDR};
 pub use event::{ActivityEvent, EdgeId, Node, Phase};

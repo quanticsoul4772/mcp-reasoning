@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
@@ -11,15 +11,25 @@ import {
 import { ActivityNode } from "./ActivityNode";
 import { initialEdges, initialNodes, type ActivityNodeData } from "./flowDefs";
 import { Timeline } from "./Timeline";
+import { Metrics } from "./Metrics";
 import { useEventStream } from "./useEventStream";
-import type { ActivityEvent } from "./types";
+import { useMetrics } from "./useMetrics";
+import type { ActivityEvent, NodeId, Phase } from "./types";
 
 const FLASH_MS = 320;
+
+const NODE_OPTIONS: NodeId[] = [
+  "client", "registry", "mode", "anthropic", "sqlite", "voyage", "worker", "si", "heal", "github",
+];
 
 export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<ActivityNodeData>>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
   const nodeTypes = useMemo(() => ({ activity: ActivityNode }), []);
+
+  const [nodeFilter, setNodeFilter] = useState<"all" | NodeId>("all");
+  const [phaseFilter, setPhaseFilter] = useState<"all" | Phase>("all");
+  const [sessionFilter, setSessionFilter] = useState("");
 
   const counts = useRef<Record<string, number>>({});
   const nodeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -31,9 +41,7 @@ export default function App() {
       const count = counts.current[id];
       setNodes((ns) =>
         ns.map((node) =>
-          node.id === id
-            ? { ...node, data: { ...node.data, count, active: true, phase } }
-            : node,
+          node.id === id ? { ...node, data: { ...node.data, count, active: true, phase } } : node,
         ),
       );
       clearTimeout(nodeTimers.current[id]);
@@ -65,11 +73,7 @@ export default function App() {
             if (edge.id !== id) return edge;
             const isAsync = Boolean((edge.data as { async?: boolean } | undefined)?.async);
             const base = ((edge.data as { base?: string } | undefined)?.base) ?? "#3a4a6e";
-            return {
-              ...edge,
-              animated: isAsync,
-              style: { ...edge.style, stroke: base, strokeWidth: 2 },
-            };
+            return { ...edge, animated: isAsync, style: { ...edge.style, stroke: base, strokeWidth: 2 } };
           }),
         );
       }, FLASH_MS + 40);
@@ -86,6 +90,18 @@ export default function App() {
   );
 
   const stream = useEventStream(onEvent);
+  const metrics = useMetrics();
+
+  const filtered = useMemo(
+    () =>
+      stream.events.filter(
+        (e) =>
+          (nodeFilter === "all" || e.node === nodeFilter) &&
+          (phaseFilter === "all" || e.phase === phaseFilter) &&
+          (sessionFilter === "" || (e.session_id ?? "").includes(sessionFilter)),
+      ),
+    [stream.events, nodeFilter, phaseFilter, sessionFilter],
+  );
 
   return (
     <div className="app">
@@ -117,7 +133,31 @@ export default function App() {
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
-        <Timeline events={stream.events} />
+        <div className="sidebar">
+          <Metrics snap={metrics} />
+          <div className="filters">
+            <select value={nodeFilter} onChange={(e) => setNodeFilter(e.target.value as "all" | NodeId)}>
+              <option value="all">all nodes</option>
+              {NODE_OPTIONS.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+            <select value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value as "all" | Phase)}>
+              <option value="all">all phases</option>
+              <option value="started">started</option>
+              <option value="progress">progress</option>
+              <option value="completed">completed</option>
+              <option value="failed">failed</option>
+              <option value="held_back">held_back</option>
+            </select>
+            <input
+              placeholder="session…"
+              value={sessionFilter}
+              onChange={(e) => setSessionFilter(e.target.value)}
+            />
+          </div>
+          <Timeline events={filtered} />
+        </div>
       </main>
     </div>
   );

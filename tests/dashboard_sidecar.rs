@@ -10,9 +10,14 @@
 
 use std::time::Duration;
 
+use std::sync::Arc;
+
 use futures_util::StreamExt;
-use mcp_reasoning::dashboard::server::serve;
+use mcp_reasoning::dashboard::server::{serve, DashboardDeps};
 use mcp_reasoning::dashboard::{ActivityBus, ActivityEvent, DashboardConfig, EdgeId, Node, Phase};
+use mcp_reasoning::metrics::MetricsCollector;
+use mcp_reasoning::self_improvement::heal::{DefectLog, DEFAULT_RECURRENCE_THRESHOLD};
+use mcp_reasoning::self_improvement::ManagerHandle;
 use mcp_reasoning::server::create_progress_channel;
 
 /// Find a free loopback port by binding to :0 and releasing it.
@@ -51,12 +56,17 @@ async fn sidecar_serves_spa_health_and_streams_events() {
 
     let activity = ActivityBus::new();
     let (progress_tx, _progress_rx) = create_progress_channel();
+    let deps = DashboardDeps {
+        activity: activity.clone(),
+        progress_tx: progress_tx.clone(),
+        metrics: Arc::new(MetricsCollector::new()),
+        self_improvement: Arc::new(ManagerHandle::for_testing()),
+        defect_log: Arc::new(DefectLog::new(DEFAULT_RECURRENCE_THRESHOLD)),
+    };
 
     // Start the sidecar.
-    let serve_activity = activity.clone();
-    let serve_progress = progress_tx.clone();
     tokio::spawn(async move {
-        serve(config, serve_activity, serve_progress).await;
+        serve(config, deps).await;
     });
 
     let client = reqwest::Client::new();
@@ -74,6 +84,18 @@ async fn sidecar_serves_spa_health_and_streams_events() {
     assert!(body.to_lowercase().contains("<!doctype html>"));
     assert!(body.contains("live activity"));
     assert!(body.contains("<div id=\"root\">"));
+
+    // /metrics returns a JSON snapshot with the expected top-level keys.
+    let metrics = client.get(format!("{base}/metrics")).send().await.unwrap();
+    assert!(metrics.status().is_success());
+    let m: serde_json::Value = metrics.json().await.unwrap();
+    assert!(m.get("usage").is_some(), "metrics missing usage");
+    assert!(m.get("chains").is_some(), "metrics missing chains");
+    assert!(
+        m.get("self_improvement").is_some(),
+        "metrics missing self_improvement"
+    );
+    assert!(m["heal"]["recurring_defects"].is_number());
 
     // /events streams an emitted ActivityEvent as JSON.
     let resp = client.get(format!("{base}/events")).send().await.unwrap();

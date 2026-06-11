@@ -12,6 +12,7 @@
 //! events rather than slowing the server) and never touches stdout.
 
 use std::convert::Infallible;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::State;
@@ -19,12 +20,16 @@ use axum::http::{header, StatusCode, Uri};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
+use axum::{Json, Router};
 use futures_util::{Stream, StreamExt};
 use rust_embed::RustEmbed;
+use serde_json::json;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
+use crate::metrics::MetricsCollector;
+use crate::self_improvement::heal::DefectLog;
+use crate::self_improvement::ManagerHandle;
 use crate::server::ProgressEvent;
 
 use super::bus::{now_ms, ActivityBus};
@@ -37,31 +42,32 @@ use super::event::{ActivityEvent, EdgeId, Node, Phase};
 #[folder = "src/dashboard/ui/dist"]
 struct Assets;
 
-/// Shared sidecar state: the activity bus and a handle to the progress bus.
+/// Everything the sidecar needs to serve `/events` and `/metrics`.
 #[derive(Clone)]
-struct DashboardState {
-    activity: ActivityBus,
-    progress_tx: broadcast::Sender<ProgressEvent>,
+pub struct DashboardDeps {
+    /// Live activity bus the SSE stream subscribes to.
+    pub activity: ActivityBus,
+    /// Existing progress bus (milestones become `Anthropic` activity).
+    pub progress_tx: broadcast::Sender<ProgressEvent>,
+    /// Usage metrics for the `/metrics` snapshot.
+    pub metrics: Arc<MetricsCollector>,
+    /// Self-improvement handle for cycle/circuit-breaker status.
+    pub self_improvement: Arc<ManagerHandle>,
+    /// Self-heal defect log for recurring-defect counts.
+    pub defect_log: Arc<DefectLog>,
 }
 
 /// Run the dashboard sidecar until the process exits.
 ///
-/// Binds `config.addr` and serves the SPA + SSE stream. A bind failure is logged
-/// and the sidecar simply does not start — it never aborts the main server.
-pub async fn serve(
-    config: DashboardConfig,
-    activity: ActivityBus,
-    progress_tx: broadcast::Sender<ProgressEvent>,
-) {
-    let state = DashboardState {
-        activity,
-        progress_tx,
-    };
+/// Binds `config.addr` and serves the SPA + SSE + metrics. A bind failure is
+/// logged and the sidecar simply does not start — it never aborts the main server.
+pub async fn serve(config: DashboardConfig, deps: DashboardDeps) {
     let app = Router::new()
         .route("/health", get(health))
         .route("/events", get(events))
+        .route("/metrics", get(metrics_handler))
         .fallback(static_handler)
-        .with_state(state);
+        .with_state(deps);
 
     let listener = match tokio::net::TcpListener::bind(&config.addr).await {
         Ok(l) => l,
@@ -109,13 +115,32 @@ async fn health() -> &'static str {
     "ok"
 }
 
+/// JSON metrics snapshot: usage summary, tool-chain transitions, SI status, and
+/// the self-heal recurring-defect count. Read-only.
+async fn metrics_handler(State(deps): State<DashboardDeps>) -> Json<serde_json::Value> {
+    let summary = deps.metrics.summary();
+    let chains = deps.metrics.chain_summary();
+    let si = deps.self_improvement.status().await;
+    let recurring = deps.defect_log.recurring().len();
+    Json(json!({
+        "usage": summary,
+        "chains": {
+            "transitions": chains.transitions,
+            "anti_patterns": chains.anti_patterns,
+            "common_chains": chains.common_chains,
+        },
+        "self_improvement": si,
+        "heal": { "recurring_defects": recurring },
+    }))
+}
+
 /// Stream merged activity + progress events as SSE.
 async fn events(
-    State(state): State<DashboardState>,
+    State(deps): State<DashboardDeps>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let activity =
-        BroadcastStream::new(state.activity.subscribe()).filter_map(|r| async move { r.ok() });
-    let progress = BroadcastStream::new(state.progress_tx.subscribe())
+        BroadcastStream::new(deps.activity.subscribe()).filter_map(|r| async move { r.ok() });
+    let progress = BroadcastStream::new(deps.progress_tx.subscribe())
         .filter_map(|r| async move { r.ok().map(progress_to_activity) });
 
     let merged = futures_util::stream::select(activity, progress).map(|ev| {

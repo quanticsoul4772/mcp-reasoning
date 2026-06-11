@@ -123,6 +123,10 @@ impl AppState {
         // sidecar (off by default) has a subscriber.
         let activity = crate::dashboard::ActivityBus::new();
         metrics.set_activity(activity.clone());
+        // Install the same bus as the process-global sink so cross-cutting seams
+        // (Anthropic client, storage, the background loops) can emit without
+        // threading the bus through their constructors.
+        crate::dashboard::set_global(activity.clone());
 
         Self {
             storage: Arc::new(storage),

@@ -36,6 +36,17 @@ pub const MAX_CONTENT_LENGTH: usize = 50_000;
 /// Anthropic API version header value.
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// Emit an `Anthropic` activity event (dashboard). No-op when the dashboard is
+/// not wired; never blocks. `model` may be empty for terminal events.
+fn emit_anthropic(model: &str, phase: crate::dashboard::Phase) {
+    let mut ev = crate::dashboard::ActivityEvent::new(crate::dashboard::Node::Anthropic, phase)
+        .with_edge(crate::dashboard::EdgeId::ModeToAnthropic);
+    if !model.is_empty() {
+        ev = ev.with_model(model);
+    }
+    crate::dashboard::emit(ev);
+}
+
 /// Anthropic API client.
 #[derive(Debug)]
 pub struct AnthropicClient {
@@ -106,7 +117,17 @@ impl AnthropicClient {
     pub async fn complete(&self, request: ApiRequest) -> Result<ReasoningResponse, AnthropicError> {
         Self::validate_request(&request)?;
         self.observe_model(&request.model);
-        self.execute_with_retry(request).await
+        emit_anthropic(&request.model, crate::dashboard::Phase::Started);
+        let result = self.execute_with_retry(request).await;
+        emit_anthropic(
+            "",
+            if result.is_ok() {
+                crate::dashboard::Phase::Completed
+            } else {
+                crate::dashboard::Phase::Failed
+            },
+        );
+        result
     }
 
     /// Send a streaming completion request.
@@ -124,6 +145,7 @@ impl AnthropicClient {
     ) -> Result<mpsc::Receiver<Result<StreamEvent, AnthropicError>>, AnthropicError> {
         Self::validate_request(&request)?;
         self.observe_model(&request.model);
+        emit_anthropic(&request.model, crate::dashboard::Phase::Started);
         let request = request.with_streaming(true);
 
         let (tx, rx) = mpsc::channel(32);

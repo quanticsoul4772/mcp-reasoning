@@ -12,6 +12,31 @@ use crate::self_improvement::repair::CommandRunner;
 use crate::self_improvement::storage::SelfImprovementStorage;
 use crate::traits::AnthropicClientTrait;
 
+/// Emit `Self-heal` / `GitHub PR` activity events (dashboard) for a cycle's
+/// outcome. No-op when the dashboard is not wired; never blocks.
+fn emit_heal_outcome(summary: &ProposeCycleSummary) {
+    use crate::dashboard::{emit, ActivityEvent, EdgeId, Node, Phase};
+    if summary.proposed > 0 {
+        emit(
+            ActivityEvent::new(Node::Github, Phase::Completed)
+                .with_edge(EdgeId::HealToGithub)
+                .with_note(format!("{} PR opened", summary.proposed)),
+        );
+    }
+    if summary.held_back > 0 {
+        emit(
+            ActivityEvent::new(Node::Heal, Phase::HeldBack)
+                .with_note(format!("{} held back", summary.held_back)),
+        );
+    }
+    if summary.errored > 0 {
+        emit(
+            ActivityEvent::new(Node::Heal, Phase::Failed)
+                .with_note(format!("{} errored", summary.errored)),
+        );
+    }
+}
+
 /// Owns the dependencies of the propose cycle and runs it on demand.
 ///
 /// Constructed (only when the propose path is explicitly enabled) at startup with
@@ -68,6 +93,13 @@ where
         if recurring.is_empty() {
             return Ok(ProposeCycleSummary::default());
         }
+        crate::dashboard::emit(
+            crate::dashboard::ActivityEvent::new(
+                crate::dashboard::Node::Heal,
+                crate::dashboard::Phase::Started,
+            )
+            .with_note(format!("{} recurring", recurring.len())),
+        );
         // Most recent model-version change (spec 002, FR-005); a defect whose window
         // overlaps it routes to drift rather than the repair path.
         let latest_model_change = self
@@ -76,7 +108,7 @@ where
             .iter()
             .map(|c| c.at_millis)
             .max();
-        run_propose_cycle(
+        let summary = run_propose_cycle(
             &self.client,
             &self.runner,
             &self.storage,
@@ -85,7 +117,9 @@ where
             self.max_proposals,
             latest_model_change,
         )
-        .await
+        .await?;
+        emit_heal_outcome(&summary);
+        Ok(summary)
     }
 }
 

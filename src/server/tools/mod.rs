@@ -567,9 +567,37 @@ impl ReasoningServer {
     }
 }
 
-// Implement ServerHandler to integrate with rmcp's server infrastructure
+// Implement ServerHandler to integrate with rmcp's server infrastructure.
+//
+// `#[tool_handler]` only generates `call_tool` when the impl doesn't already
+// define one (it always generates `list_tools`/`get_tool`/`get_info`). We supply
+// our own `call_tool` so the dashboard sees a request *enter* — Client → Registry
+// → Mode light up at dispatch — then delegate to the router exactly as the macro
+// would. No behavior change to tool execution.
 #[tool_handler]
 impl ServerHandler for ReasoningServer {
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        use crate::dashboard::{emit, ActivityEvent, EdgeId, Node, Phase};
+        let tool = request.name.to_string();
+        emit(
+            ActivityEvent::new(Node::Client, Phase::Started)
+                .with_edge(EdgeId::ClientToRegistry)
+                .with_tool(tool.clone()),
+        );
+        emit(
+            ActivityEvent::new(Node::Registry, Phase::Started)
+                .with_edge(EdgeId::RegistryToMode)
+                .with_tool(tool.clone()),
+        );
+        emit(ActivityEvent::new(Node::Mode, Phase::Started).with_tool(tool));
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
+    }
+
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(

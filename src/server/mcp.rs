@@ -242,14 +242,19 @@ impl McpServer {
                         "MCP_DASHBOARD bound to a non-loopback address — exposing an unauthenticated read-only dev tool beyond localhost"
                     );
                 }
-                let activity = state.activity.clone();
-                let progress_tx = state.progress_tx.clone();
+                let deps = crate::dashboard::server::DashboardDeps {
+                    activity: state.activity.clone(),
+                    progress_tx: state.progress_tx.clone(),
+                    metrics: Arc::clone(&state.metrics),
+                    self_improvement: Arc::clone(&state.self_improvement),
+                    defect_log: Arc::clone(&state.defect_log),
+                };
                 tokio::spawn(async move {
                     tracing::warn!(
                         addr = %dashboard_config.addr,
                         "Activity dashboard ENABLED (read-only, loopback dev tool)"
                     );
-                    crate::dashboard::server::serve(dashboard_config, activity, progress_tx).await;
+                    crate::dashboard::server::serve(dashboard_config, deps).await;
                 });
             }
         }

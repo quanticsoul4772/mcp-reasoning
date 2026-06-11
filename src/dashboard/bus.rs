@@ -11,7 +11,7 @@
 //! MCP channel.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use tokio::sync::broadcast;
 
@@ -20,6 +20,32 @@ use super::event::ActivityEvent;
 /// Broadcast buffer size. Lossy by design: a lagging subscriber drops the oldest
 /// events instead of applying backpressure to the server.
 pub const ACTIVITY_BUFFER: usize = 256;
+
+/// Process-global activity sink, set once at startup.
+///
+/// Cross-cutting seams (the Anthropic client, storage, the background loops)
+/// emit through [`emit`] without threading a bus through their constructors —
+/// the same pattern `tracing` uses for its global dispatcher. Unset by default,
+/// so [`emit`] is a no-op until [`set_global`] runs.
+static GLOBAL: OnceLock<ActivityBus> = OnceLock::new();
+
+/// Install the process-global activity bus. Idempotent — a second call is
+/// ignored. Called once from `AppState::new` with the same bus the dashboard
+/// sidecar subscribes to.
+pub fn set_global(bus: ActivityBus) {
+    let _ = GLOBAL.set(bus);
+}
+
+/// Emit an event through the process-global bus, if one is installed.
+///
+/// A no-op (cheap branch) when the dashboard was never wired, and a non-blocking
+/// best-effort send with zero subscribers when it was but is off. Safe to call
+/// from anywhere, including background tasks.
+pub fn emit(event: ActivityEvent) {
+    if let Some(bus) = GLOBAL.get() {
+        bus.emit(event);
+    }
+}
 
 /// A cloneable handle to the activity broadcast channel.
 ///
