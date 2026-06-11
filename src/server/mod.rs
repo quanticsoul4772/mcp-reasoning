@@ -3,18 +3,23 @@
 //! This module provides:
 //! - MCP JSON-RPC protocol handling
 //! - Tool definitions with rmcp macros
-//! - Transport layer (stdio, HTTP)
+//! - Transport layer (stdio only)
 //! - Handler registry for tool dispatch
 //!
 //! # Architecture
 //!
-//! The server is built on the rmcp SDK and provides 15 reasoning tools:
+//! The server is built on the rmcp SDK and provides 35 tools
+//! (17 core reasoning + 7 self-improvement + 4 session + 7 agent/team):
 //!
-//! - **Core**: linear, tree, divergent, reflection, checkpoint, auto
+//! - **Core reasoning**: linear, tree, divergent, reflection, checkpoint, auto,
+//!   meta, confidence_route
 //! - **Graph**: graph (8 operations)
 //! - **Analysis**: detect, decision, evidence
 //! - **Advanced**: timeline, mcts, counterfactual
 //! - **Infrastructure**: preset, metrics
+//! - **Self-improvement**: si_status/diagnoses/overrides/approve/reject/trigger/rollback
+//! - **Session**: list_sessions, resume, search, relate
+//! - **Agent/team**: agent_invoke/list/metrics, skill_run, team_run/list, crew_invoke
 //!
 //! # Example
 //!
