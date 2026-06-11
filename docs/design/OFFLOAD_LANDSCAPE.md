@@ -43,6 +43,17 @@ reasoning, lost sequence, too-large-to-evaluate, miscalibration, unverified
 assertion, sycophancy, order/position bias, lost-in-the-middle, omission bias. The
 **Verify** spike (`spikes/verify_spike.py`) validated this layer empirically.
 
+- **Functional fixedness / Einstellung** — the model locks onto a familiar
+  procedure or frame that doesn't fit, "fixated by red herrings"
+  ([Only Connect](https://arxiv.org/pdf/2306.11167),
+  [chat-search fixedness](https://arxiv.org/pdf/2504.02074)). Corrective:
+  **reframing** — deliberately reinterpret the problem or its resources to break
+  the mental set (the "problem-reframing" thread, grounded).
+- *On delivery:* **multi-agent debate** and **cross-examination** beat a single-pass
+  critic for factuality (arithmetic 67→82%, GSM8K 77→85%), with **role diversity
+  critical** — which validates the diverse-lens design and points to multi-round
+  debate for the hardest claims ([multiagent debate](https://www.emergentmind.com/papers/2305.14325)).
+
 ### B. Deterministic / symbolic offload
 
 - **Verify-by-execution** — turn a checkable claim into code or a formal spec and
@@ -112,6 +123,14 @@ assertion, sycophancy, order/position bias, lost-in-the-middle, omission bias. T
   surface the clarifying question *before* charging ahead; models default to
   non-interactive and hallucinate the missing requirements
   ([underspecification](https://arxiv.org/html/2505.13360v2)).
+- **Unfaithful reasoning / post-hoc rationalization** — the model's *stated*
+  reasoning can be theater: biasing the input flips the answer **without changing
+  the explanation**, and it will answer "yes" to both "is X > Y?" and "is Y > X?"
+  with convincing, contradictory chains ([CoT not always faithful](https://arxiv.org/abs/2503.08679),
+  [measuring faithfulness](https://arxiv.org/pdf/2307.13702)). Implication: **don't
+  grade the explanation — test the decision** (intervene on inputs / re-derive
+  independently / perturb). This is *why* a corrective must judge the bare claim,
+  not the model's account of how it got there.
 
 ### I. Economic / efficiency offload (a different kind)
 
@@ -127,6 +146,21 @@ assertion, sycophancy, order/position bias, lost-in-the-middle, omission bias. T
 - Exact computation (→ B), real-time data (→ D), large-corpus map-reduce, persistent
   project/world state (→ G). Things the model can't do in-context at all.
 
+### K. Safety / adversarial inputs
+
+When the model can **act** (tools, MCP), injected text becomes a *workflow*
+compromise — credential theft, unauthorized actions, policy bypass. ~2.6% of agent
+posts in one production network carried hidden injection payloads, and "Policy
+Puppetry" jailbroke every major model ([OWASP LLM Top 10 2025](https://genai.owasp.org/llmrisk/llm01-prompt-injection/),
+[prompt-injection review](https://www.preprints.org/manuscript/202511.0088)).
+Offloads: **injection/jailbreak detection** on inputs and tool streams, an
+**instruction hierarchy** the data can't override, and **verify-before-commit**
+gating on consequential / irreversible actions
+([VIGIL](https://arxiv.org/pdf/2601.05755),
+[AgentSentry](https://arxiv.org/pdf/2602.22724)). This is a watchdog (→ C) pointed
+at adversaries rather than the model's own slips — and it matters doubly here
+because the server runs in an agentic context where the model acts.
+
 ## The bigger picture
 
 This is no longer "a reasoning server." It's an **LLM-augmentation substrate**: a
@@ -140,14 +174,23 @@ experience/state). Two design consequences worth holding onto:
 2. **The memory/experience layer may be the single highest-leverage piece** — the
    literature says it can beat a better model. We've spent most effort on the
    reasoning correctives; the data suggests memory deserves at least equal weight.
+3. **Don't trust the model's account of its own reasoning.** Faithfulness research
+   shows stated reasoning is often *post-hoc* — so correctives must test the
+   **decision** (intervene, re-derive, perturb), never grade the explanation. This
+   is the strongest form of "metacognition it can't do on itself": it can't even
+   reliably report *how* it decided.
 
-## Still pulling (open threads, not yet researched)
+## Still pulling (open threads)
 
-- Problem-reframing / "are we solving the right problem" (partly H-clarification)
+Resolved this round: problem-reframing (→ A, functional fixedness), adversarial /
+jailbreak resistance (→ K), reasoning faithfulness (→ H). Still open:
+
 - Multi-modal grounding
-- Adversarial-input / jailbreak resistance (→ C guardrails)
-- Tool/corrective selection routing (which corrective applies)
-- Value / preference elicitation
+- Tool/corrective selection routing (which corrective applies, when)
+- Value / preference elicitation (eliciting the user's real objective)
+- Reversibility / blast-radius assessment before consequential actions (partly K)
+- Theory-of-mind / perspective-taking failures
+- Temporal reasoning + knowledge-cutoff awareness
 - Faithfulness: does the model's stated reasoning match its actual decision?
 
 *(This list grows. Pull a thread → research it → add it here with its grounding and
