@@ -64,6 +64,19 @@ dotenvy = "0.15"
 # Schema generation
 schemars = "1.2"
 
+# Dashboard sidecar (optional; behind the `dashboard` feature). The default
+# binary carries none of these — they compile only with `--features dashboard`.
+axum = { version = "0.8", optional = true }
+tokio-stream = { version = "0.1", features = ["sync"], optional = true }
+rust-embed = { version = "8", optional = true, features = ["mime-guess"] }
+
+[features]
+# Real-time activity dashboard sidecar (axum + SSE on a loopback port, off by
+# default at runtime behind MCP_DASHBOARD). Serves a React Flow SPA embedded
+# from src/dashboard/ui/dist via rust-embed. Keeps these deps out of the
+# default build.
+dashboard = ["dep:axum", "dep:tokio-stream", "dep:rust-embed"]
+
 [dev-dependencies]
 # Testing
 # rmcp `client` feature is test-only: it powers the in-process MCP client used to

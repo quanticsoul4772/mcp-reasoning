@@ -79,6 +79,23 @@ pub async fn run_embed_worker<E: EmbeddingProvider + Send + Sync + 'static>(
                 match process_pending_batch(storage.as_ref(), embedder.as_ref(), &model, EMBED_BATCH_SIZE).await {
                     Ok(o) if o.processed + o.failed > 0 => {
                         tracing::info!(processed = o.processed, failed = o.failed, "Embedding worker drained batch");
+                        crate::dashboard::emit(
+                            crate::dashboard::ActivityEvent::new(
+                                crate::dashboard::Node::Worker,
+                                crate::dashboard::Phase::Started,
+                            )
+                            .with_note(format!("{} queued", o.processed + o.failed)),
+                        );
+                        let phase = if o.processed > 0 {
+                            crate::dashboard::Phase::Completed
+                        } else {
+                            crate::dashboard::Phase::Failed
+                        };
+                        crate::dashboard::emit(
+                            crate::dashboard::ActivityEvent::new(crate::dashboard::Node::Voyage, phase)
+                                .with_edge(crate::dashboard::EdgeId::WorkerToVoyage)
+                                .with_note(format!("{} embedded", o.processed)),
+                        );
                     }
                     Ok(_) => {}
                     Err(e) => tracing::warn!(error = %e, "Embedding worker batch errored"),

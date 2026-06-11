@@ -66,6 +66,12 @@ pub struct AppState {
     /// Tools use this to emit progress notifications during streaming operations.
     /// Clients can subscribe via `progress_tx.subscribe()`.
     pub progress_tx: broadcast::Sender<ProgressEvent>,
+    /// In-memory activity bus for the real-time dashboard.
+    ///
+    /// Always present (cheap when unused); the dashboard sidecar subscribes when
+    /// enabled. The same bus is injected into `metrics` so every tool call emits
+    /// a completion activity. See [`crate::dashboard`].
+    pub activity: crate::dashboard::ActivityBus,
 }
 
 impl AppState {
@@ -111,6 +117,17 @@ impl AppState {
                 }
             }
         });
+        // Create the dashboard activity bus and inject it into the shared metrics
+        // collector so every tool call's completion emits an activity event. The
+        // bus is cheap and always present; it only does work when the dashboard
+        // sidecar (off by default) has a subscriber.
+        let activity = crate::dashboard::ActivityBus::new();
+        metrics.set_activity(activity.clone());
+        // Install the same bus as the process-global sink so cross-cutting seams
+        // (Anthropic client, storage, the background loops) can emit without
+        // threading the bus through their constructors.
+        crate::dashboard::set_global(activity.clone());
+
         Self {
             storage: Arc::new(storage),
             client: Arc::new(client),
@@ -128,6 +145,7 @@ impl AppState {
             self_improvement: Arc::new(self_improvement),
             metadata_builder: Arc::new(metadata_builder),
             progress_tx,
+            activity,
         }
     }
 

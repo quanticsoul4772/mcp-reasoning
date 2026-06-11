@@ -14,6 +14,20 @@ use super::types::{
     StoredBranch, StoredCheckpoint, StoredGraphEdge, StoredGraphNode, StoredThought,
 };
 
+/// Emit a `SQLite` activity event (dashboard) for a request-path read/write.
+/// No-op when the dashboard is not wired; never blocks.
+fn emit_sqlite(session_id: &str, note: &str) {
+    crate::dashboard::emit(
+        crate::dashboard::ActivityEvent::new(
+            crate::dashboard::Node::Sqlite,
+            crate::dashboard::Phase::Completed,
+        )
+        .with_edge(crate::dashboard::EdgeId::ModeToSqlite)
+        .with_session(session_id)
+        .with_note(note),
+    );
+}
+
 #[async_trait]
 impl StorageTrait for SqliteStorage {
     async fn get_session(&self, id: &str) -> Result<Option<Session>, StorageError> {
@@ -25,13 +39,15 @@ impl StorageTrait for SqliteStorage {
         let session_id = id.unwrap_or_else(Self::generate_id);
 
         // Try to get existing session
-        if let Some(stored) = self.get_stored_session(&session_id).await? {
-            return Ok(Session::with_timestamp(stored.id, stored.created_at));
-        }
-
-        // Create new session
-        let stored = self.create_session_with_id(&session_id).await?;
-        Ok(Session::with_timestamp(stored.id, stored.created_at))
+        let session = if let Some(stored) = self.get_stored_session(&session_id).await? {
+            Session::with_timestamp(stored.id, stored.created_at)
+        } else {
+            // Create new session
+            let stored = self.create_session_with_id(&session_id).await?;
+            Session::with_timestamp(stored.id, stored.created_at)
+        };
+        emit_sqlite(&session.id, "load context");
+        Ok(session)
     }
 
     async fn save_thought(&self, thought: &Thought) -> Result<(), StorageError> {
@@ -44,7 +60,9 @@ impl StorageTrait for SqliteStorage {
         )
         .with_timestamp(thought.created_at);
 
-        self.save_stored_thought(&stored).await
+        self.save_stored_thought(&stored).await?;
+        emit_sqlite(&thought.session_id, "persist");
+        Ok(())
     }
 
     async fn get_thoughts(&self, session_id: &str) -> Result<Vec<Thought>, StorageError> {

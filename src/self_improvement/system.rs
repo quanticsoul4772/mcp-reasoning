@@ -16,6 +16,16 @@ use super::monitor::{Monitor, MonitorConfig, MonitorResult};
 use super::types::{ActionStatus, ActionType, Lesson, SelfImprovementAction};
 use std::collections::HashMap;
 
+/// Emit a `Self-improvement` activity event (dashboard) for a cycle phase.
+/// No-op when the dashboard is not wired; never blocks.
+fn emit_si(note: &str, phase: crate::dashboard::Phase) {
+    crate::dashboard::emit(
+        crate::dashboard::ActivityEvent::new(crate::dashboard::Node::Si, phase)
+            .with_edge(crate::dashboard::EdgeId::SiCycle)
+            .with_note(note),
+    );
+}
+
 /// Configuration for the self-improvement system.
 #[derive(Debug, Clone)]
 pub struct SystemConfig {
@@ -127,6 +137,7 @@ impl<C: AnthropicClientTrait> SelfImprovementSystem<C> {
         }
 
         // Phase 1: Monitor
+        emit_si("monitor", crate::dashboard::Phase::Started);
         let monitor_result = self.monitor.check(metrics);
 
         if !monitor_result.action_recommended {
@@ -144,6 +155,7 @@ impl<C: AnthropicClientTrait> SelfImprovementSystem<C> {
         // proposals favor what has worked and avoid what has repeatedly failed.
         // Empty on the first cycle (no history), leaving the prompt unchanged.
         let guidance = self.learner.guidance(5);
+        emit_si("analyze", crate::dashboard::Phase::Progress);
         let analysis_result = match self.analyzer.analyze(&monitor_result, &guidance).await {
             Ok(result) => result,
             Err(e) => {
@@ -173,6 +185,7 @@ impl<C: AnthropicClientTrait> SelfImprovementSystem<C> {
         }
 
         // Phase 3 & 4: Execute and Learn
+        emit_si("execute", crate::dashboard::Phase::Completed);
         let (execution_results, learning_results) =
             self.execute_and_learn(analysis_result.actions.clone());
 

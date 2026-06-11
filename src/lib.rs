@@ -61,6 +61,7 @@
 pub mod agents;
 pub mod anthropic;
 pub mod config;
+pub mod dashboard;
 pub mod error;
 pub mod eval;
 pub mod metadata;
