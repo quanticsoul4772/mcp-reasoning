@@ -2,13 +2,13 @@ $ErrorActionPreference = 'Stop'
 
 $packageName = 'mcp-reasoning'
 $toolsDir = "$(Split-Path -parent $MyInvocation.MyCommand.Definition)"
-$url64 = 'https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.1.0/x86_64-pc-windows-msvc.zip'
+$url64 = 'https://github.com/quanticsoul4772/mcp-reasoning/releases/download/v0.3.0/x86_64-pc-windows-msvc.zip'
 
 $packageArgs = @{
   packageName   = $packageName
   unzipLocation = $toolsDir
   url64bit      = $url64
-  checksum64    = '014da2f50ca4651930a8fc8a3ed0db30ef725a87a1d619bdc1f3171686b58bdb'
+  checksum64    = '5ceb6b69b7a396c452bc87411bc2b378da3570791f62f8d4e4b38c441e987749'
   checksumType64= 'sha256'
 }
 

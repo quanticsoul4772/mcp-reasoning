@@ -1,6 +1,6 @@
 {
   "name": "@mcp-reasoning/server",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "MCP server providing structured reasoning capabilities for Claude Code and Claude Desktop",
   "main": "index.js",
   "bin": {
