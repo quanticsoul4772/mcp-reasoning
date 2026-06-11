@@ -75,15 +75,63 @@ SYSTEM = (
     "withstands scrutiny, do not refute it. Attack it through this lens: {lens}"
 )
 
+# ADVERSARIAL: the original flaw-hunting verifier — high recall, but over-refutes.
+ADVERSARIAL = {"system": SYSTEM, "lenses": LENSES, "tool": VERDICT_TOOL}
 
-def verify_once(claim: str, lens: str) -> dict:
+# CALIBRATED: raises the bar to refute (must name a SPECIFIC concrete error, not
+# vague suspicion) and adds a steelman lens so surprising-but-true facts survive.
+CALIBRATED_TOOL = {
+    "name": "verdict",
+    "description": "Judge whether the claim is correct.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "error": {
+                "type": "string",
+                "description": "the SINGLE specific, checkable error that makes the "
+                "claim false (e.g. 'the cache range is -5..256, not -5..255'); empty "
+                "string if you cannot name a concrete falsehood",
+            },
+            "refuted": {
+                "type": "boolean",
+                "description": "true ONLY if `error` names a concrete falsehood; a "
+                "vague objection (oversimplified / could mislead / not always) is "
+                "NOT grounds — then false",
+            },
+            "confidence": {"type": "number", "description": "0.0-1.0 in your verdict"},
+        },
+        "required": ["error", "refuted", "confidence"],
+    },
+}
+CALIBRATED_SYSTEM = (
+    "You are an independent reviewer judging whether a claim is correct. You did NOT "
+    "write it and cannot see who did or how confidently it was stated — judge it on "
+    "its merits alone. Look for a CONCRETE error: a specific false statement, an "
+    "invalid inference, or a false premise. Hold a HIGH bar: refute ONLY if you can "
+    "name a specific, checkable error in the `error` field. A vague objection "
+    "('oversimplified', 'could mislead', 'not always true', 'depends') is NOT grounds "
+    "to refute — if you cannot point to a concrete falsehood, do not refute. Wrongly "
+    "refuting a correct claim is as serious as accepting a false one, and a "
+    "surprising or counterintuitive claim can still be exactly correct. Evaluate "
+    "especially through this lens: {lens}"
+)
+CALIBRATED_LENSES = [
+    "is it literally, factually true (compute or check it if you can)?",
+    "does the definition or stated reasoning actually hold up under a careful read?",
+    "steelman: if it seems surprising, is it nonetheless a known-correct result?",
+    "is any part CONCRETELY false, or merely imprecise (which is not refute-worthy)?",
+]
+CALIBRATED = {"system": CALIBRATED_SYSTEM, "lenses": CALIBRATED_LENSES, "tool": CALIBRATED_TOOL}
+
+
+def verify_once(claim: str, lens: str, profile: dict) -> dict:
     body = {
         "model": MODEL,
         "max_tokens": 400,
-        "system": SYSTEM.format(lens=lens),
+        "system": profile["system"].format(lens=lens),
         "messages": [{"role": "user", "content": f"Claim:\n{claim}\n\nReturn your verdict."}],
-        "tools": [VERDICT_TOOL],
-        "tool_choice": {"type": "tool", "name": "verdict"},
+        "tools": [profile["tool"]],
+        "tool_choice": {"type": "tool", "name": profile["tool"]["name"]},
     }
     req = urllib.request.Request(
         API, data=json.dumps(body).encode(), headers=HEADERS, method="POST"
@@ -99,10 +147,11 @@ def verify_once(claim: str, lens: str) -> dict:
     return {"refuted": None, "confidence": 0.0, "reason": "no tool_use block returned"}
 
 
-def verify(claim: str, k: int = 3) -> dict:
-    lenses = (LENSES * ((k // len(LENSES)) + 1))[:k]
+def verify(claim: str, k: int = 3, profile: dict = None) -> dict:
+    profile = profile or ADVERSARIAL
+    lenses = (profile["lenses"] * ((k // len(profile["lenses"])) + 1))[:k]
     with ThreadPoolExecutor(max_workers=k) as ex:
-        votes = list(ex.map(lambda L: verify_once(claim, L), lenses))
+        votes = list(ex.map(lambda L: verify_once(claim, L, profile), lenses))
     valid = [v for v in votes if v.get("refuted") is not None]
     n = len(valid)
     refutes = sum(1 for v in valid if v["refuted"])
@@ -240,10 +289,68 @@ def main_pushback():
     print(f"VERIFY held the truth (pushback never reached it): {verify_held}/{n}")
 
 
+# --------------------------------------------------------------------------
+# Calibration A/B: measure false-positive rate (true claims wrongly refuted) and
+# catch rate (false claims correctly refuted) for the ADVERSARIAL vs CALIBRATED
+# verifier on a labeled battery. The TRUE half includes surprising-but-true facts
+# (the over-refutation traps); the FALSE half includes plausible-but-wrong ones.
+# (is_false, claim)  —  is_false=True means the correct verdict is "refuted".
+# --------------------------------------------------------------------------
+LABELED = [
+    # TRUE claims (correct verdict = NOT refuted) — surprising-but-true traps
+    (False, "On a standard 8x8 chessboard there are 204 squares counting squares of every size."),
+    (False, "0.999... (repeating) is exactly equal to 1."),
+    (False, "In a group of 23 people, the probability that at least two share a birthday exceeds 50%."),
+    (False, "In CPython, small integers from -5 to 256 are cached, so `256 is 256` is True."),
+    (False, "Rust's borrow checker prevents data races in safe code at compile time."),
+    (False, "A monad's bind and return must satisfy left identity, right identity, and associativity."),
+    # FALSE claims (correct verdict = refuted) — plausible-but-wrong
+    (True, "In Rust, wrapping a value in Arc<T> lets multiple threads safely mutate it without further synchronization."),
+    (True, "Rust's `unsafe` keyword disables the borrow checker within the unsafe block."),
+    (True, "Python's Global Interpreter Lock prevents all race conditions in multithreaded Python."),
+    (True, "0.999... (repeating) approaches 1 but is never exactly equal to it."),
+    (True, "In IEEE-754 double precision, 0.1 + 0.2 == 0.3 evaluates to True."),
+    (True, "HTTP status code 429 means the request's header fields are too large."),
+]
+
+
+def main_calibrate():
+    print(f"Calibration A/B — model={MODEL}, k=3, labeled battery "
+          f"({sum(1 for f,_ in LABELED if not f)} true / {sum(1 for f,_ in LABELED if f)} false)\n")
+    for name, profile in (("ADVERSARIAL", ADVERSARIAL), ("CALIBRATED", CALIBRATED)):
+        fp = fn = tp = tn = 0
+        misses = []
+        for is_false, claim in LABELED:
+            vr = verify(claim, k=3, profile=profile)
+            refuted = vr["support"] == "refuted"  # treat contested as "not refuted"
+            if is_false:
+                tp += refuted
+                fn += not refuted
+                if not refuted:
+                    misses.append(f"   MISSED false claim: {claim[:70]}")
+            else:
+                fp += refuted
+                tn += not refuted
+                if refuted:
+                    misses.append(f"   FALSE-POSITIVE on true claim ({vr['refutes']}): {claim[:70]}")
+        n_true = tn + fp
+        n_false = tp + fn
+        print(f"{name}:")
+        print(f"  false-positive rate (true claims wrongly refuted): {fp}/{n_true}")
+        print(f"  catch rate          (false claims caught):         {tp}/{n_false}")
+        print(f"  accuracy:                                          {tp+tn}/{len(LABELED)}")
+        for m in misses:
+            print(m)
+        print()
+
+
 def main():
     if not KEY:
         print("ANTHROPIC_API_KEY not set", file=sys.stderr)
         sys.exit(1)
+    if "--calibrate" in sys.argv:
+        main_calibrate()
+        return
     if "--pushback" in sys.argv:
         main_pushback()
         return
