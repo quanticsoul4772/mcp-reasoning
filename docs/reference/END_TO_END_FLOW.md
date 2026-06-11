@@ -32,32 +32,19 @@ flowchart TB
 
     subgraph Server["MCP Reasoning Server (Rust)"]
         direction TB
-        Transport["Transport<br/>stdio"]
-        RPC["JSON-RPC / rmcp<br/>tools/list, tools/call"]
-        Router["Tool Registry<br/>35 tools → handlers"]
-        Modes["Reasoning Modes<br/>linear, tree, graph, mcts, ..."]
-        State["AppState<br/>progress broadcast bus"]
-        subgraph BG["Background tasks"]
-            EmbedWorker["Embedding worker<br/>(drains embedding_queue)"]
-            HealLoop["Self-heal propose loop<br/>(OFF by default)"]
-            SILoop["Self-improvement cycle<br/>(on by default)"]
-        end
+        Pipeline["Request pipeline<br/>Transport (stdio) → JSON-RPC (rmcp)<br/>→ Tool Registry (35 tools) → Reasoning Modes"]
+        State["AppState<br/>(progress broadcast bus)"]
+        BG["Background tasks<br/>self-improvement cycle · embed worker ·<br/>self-heal propose loop (OFF by default)"]
     end
 
-    Anthropic["Anthropic Claude API<br/>reasoning + thinking"]
-    Voyage["Voyage AI<br/>embeddings + rerank"]
-    SQLite[("SQLite<br/>sessions, thoughts, graph,<br/>metrics, embeddings, SI/heal")]
-
-    Client <-->|"stdin/stdout"| Transport
-    Transport --> RPC --> Router --> Modes
-    Modes -->|"prompt + thinking budget"| Anthropic
-    Modes --> SQLite
-    Modes -.->|"milestones"| State
+    Client <-->|"stdin / stdout"| Server
     State -.->|"notifications/progress"| Client
-    EmbedWorker --> Voyage
-    EmbedWorker --> SQLite
-    SILoop --> SQLite
-    HealLoop -->|"cargo/git/gh"| GH["GitHub PR<br/>(operator review, never merged)"]
+
+    Pipeline -->|"prompt + thinking budget"| Anthropic["Anthropic Claude API<br/>(reasoning + thinking)"]
+    Pipeline --> SQLite[("SQLite<br/>sessions · thoughts · graph ·<br/>metrics · embeddings · SI/heal")]
+    BG -->|"embed + rerank"| Voyage["Voyage AI<br/>(semantic memory)"]
+    BG --> SQLite
+    BG -->|"cargo / git / gh"| GH["GitHub PR<br/>(operator review · never merged)"]
 ```
 
 ---
