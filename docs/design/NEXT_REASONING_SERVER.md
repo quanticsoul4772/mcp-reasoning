@@ -51,6 +51,16 @@ parallelism for its own sake. The server is a **catalog of correctives for the
 calling model's predictable failure modes** — what you reach for when the model is
 in trouble and can't tell.
 
+**This is a documented finding, not just a framing.** Intrinsic self-correction —
+fixing your own reasoning with no external feedback — *degrades* performance on
+reasoning tasks ([Huang et al. 2023](https://arxiv.org/abs/2310.01798)); models
+**cannot detect their own reasoning errors but can fix them once an external pass
+surfaces them** ([Tyen et al. 2023](https://arxiv.org/html/2311.08516v2)); and
+separating production from a fresh review session measurably improves output
+([Cross-Context Review](https://arxiv.org/pdf/2603.12123)). The offload value is
+therefore concentrated in **detection and judgment** — the parts the model provably
+cannot do on itself — not in generating more reasoning.
+
 ### The failure modes it corrects (open, not fixed)
 
 The daily-driver correctives — why it becomes a go-to when the model is stuck in
@@ -65,24 +75,29 @@ its own bullshit:
 
 **This list is open, not closed** — those four are *some* of the daily drivers, not
 the whole product. The catalog grows by the same move each time: name a reliable
-failure the model can't see from inside, design the external corrective. Others the
-existing tools and the offload opportunities already cover:
+failure the model can't see from inside, design the external corrective. The
+research backs a longer, cited list (existing tools + the offload opportunities
+cover most of it):
 
-- **Tunnel vision** — first plausible answer, no alternatives → breadth before depth
-  (multi-perspective / branch-and-compare).
-- **Bad causal reasoning** — correlation taken for cause → a causal method
-  (counterfactual / Pearl's ladder).
-- **Lost sequence** — how earlier choices constrain later ones → temporal/timeline.
-- **Too large to evaluate** — more candidates than the context can hold → offload
-  the search (MCTS-style).
-- **Miscalibration** — false confidence in a number or probability → grounded in
-  agreement, not vibes (evidence / self-consistency ensemble).
-- **Unverified assertion** — plausible but false → adversarial verification /
-  grounded research.
-- **No memory across turns** — re-deriving or losing prior work → durable recall.
+| Failure mode | Evidence | Corrective (offloaded) |
+|---|---|---|
+| **Sycophancy / caves under pushback** | flips correct→incorrect ~15% under disagreement; judges *correctly in parallel* but caves *sequentially* ([SycEval](https://arxiv.org/html/2502.08177v4)) | evaluate **blind to the user's stance**, outside the pressured thread |
+| **Can't detect its own errors** | self-correction without an external signal degrades; errors fixable only once surfaced ([Huang](https://arxiv.org/abs/2310.01798), [Tyen](https://arxiv.org/html/2311.08516v2)) | an independent error-finder; the model fixes once told |
+| **Order / position bias** | option/info order disproportionately shapes the answer — partly architectural (causal masking) ([CoBBLEr](https://arxiv.org/html/2412.00323v1)) | re-run under permuted orderings; position-invariant aggregation |
+| **Lost in the middle** | U-shaped attention ignores middle content even in long-context models ([Liu et al.](https://arxiv.org/abs/2406.16008)) | chunked **independent** extraction, not attention over one huge context |
+| **Authority / bandwagon deference** | "according to this paper…" triggers the most regressive caving ([SycEval](https://arxiv.org/html/2502.08177v4)) | source-/authority-blind evaluation |
+| **Omission / status-quo bias** | systematically biased *against acting*, stronger than humans ([PNAS](https://www.pnas.org/doi/10.1073/pnas.2412015122)) | a decision pass weighing action vs inaction symmetrically |
+| **Tunnel vision** | first plausible answer, no alternatives | breadth before depth (multi-perspective / branch-and-compare) |
+| **Bad causal reasoning** | correlation taken for cause | a causal method (counterfactual / Pearl's ladder) |
+| **Lost sequence** | how earlier choices constrain later ones | temporal / timeline |
+| **Too large to evaluate** | more candidates than the context can hold | offload the search (MCTS-style) |
+| **Miscalibration** | documented confidence–competence gap ([study](https://arxiv.org/pdf/2309.16145)) | confidence from ensemble agreement, not the model's say-so |
+| **Unverified assertion** | plausible but false | adversarial verification / grounded research |
+| **No memory across turns** | re-deriving or losing prior work | durable recall |
 
 Every entry is a place the model is predictably weak *and blind to from inside*.
-None of them is the final list.
+None is the final list — and the citations turn this from priors into something
+grounded.
 
 ### The mechanisms are *how*, not *why*
 
@@ -115,6 +130,34 @@ failure-mode catalog (add a corrective, add the primitive that delivers it):
 | **Search** | too-large-to-evaluate | parallel independent evaluation |
 | **Recall** | drift, lost prior work | durable memory |
 | **Research** | unverified assertion, at scale | parallel fetch + verify |
+
+### Designing real independence (the judge-bias catch)
+
+Every corrective above is delivered by an LLM critic/judge — and **an LLM judge is
+not automatically independent.** Judges carry their own documented biases:
+**verbosity** (longer = better), **order/position**, **bandwagon**, and
+**egocentric/self-preference** (favoring their own style)
+([CoBBLEr](https://arxiv.org/html/2412.00323v1)). Offloading naively just
+re-launders the biases the corrective was meant to remove — a Verify tool that
+doesn't account for them is a sycophancy amplifier with extra steps.
+
+So independence must be **engineered**, not assumed. Every Verify / Decide /
+Diverge primitive has to, by construction:
+
+- **Blind the judge** to source, author, and the user's stance — sycophancy and
+  authority-deference collapse when the judge can't see who's pushing
+  ([SycEval](https://arxiv.org/html/2502.08177v4)).
+- **Permute order** of options/evidence and aggregate across permutations — kills
+  order/position bias.
+- **Length-normalize** judgments — kills verbosity bias.
+- **Use diverse lenses, not N identical critics** (the [Research spec](RESEARCH_PRIMITIVE.md)'s
+  verify model) — different failure modes need different critics; redundancy catches
+  only one.
+- **Judge in parallel, never sequentially under pushback** — the model judges
+  correctly in isolation and caves in a thread, so keep the critic out of the
+  pressured conversation entirely.
+
+This is a hard contract on the primitives, not a nice-to-have.
 
 ### How the model knows which corrective it needs
 
