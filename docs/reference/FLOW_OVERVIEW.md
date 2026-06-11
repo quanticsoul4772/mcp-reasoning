@@ -9,33 +9,19 @@ For the per-subsystem detail behind each box (the request lifecycle, retry/
 thinking budgets, streaming, the 4-phase self-improvement cycle, and the self-heal
 decision tree), see **[End-to-End Flow](END_TO_END_FLOW.md)**.
 
-```mermaid
-flowchart TD
-    Client["MCP Client<br/>(Claude Code / Desktop)"]:::client
-    Client -->|"tool call · stdio / JSON-RPC"| Server["Tool Registry → handler<br/>(35 tools)"]:::proc
-    Server --> Mode["Reasoning Mode · ModeCore<br/>(storage + Anthropic client)"]:::proc
+![End-to-End Flow — the whole system in one diagram](diagrams/flow-overview.svg)
 
-    Mode -->|"① load session context"| DB[("SQLite<br/>sessions · thoughts · graph · metrics")]:::store
-    Mode -->|"② prompt + thinking budget<br/>(bounded retry / backoff)"| Anthropic["Anthropic Claude API<br/>reasoning + thinking"]:::ext
-    Anthropic -->|"③ completion (may stream)"| Mode
-    Mode -->|"④ parse JSON + persist"| DB
-    Mode ==>|"⑤ response"| Client
-    Mode -.->|"progress notifications<br/>(if client opted in)"| Client
+<!-- Rendered from diagrams/flow-overview.d2 with D2 (https://d2lang.com):
+     d2 --layout dagre --theme 0 --dark-theme 200 --pad 32 \
+        docs/reference/diagrams/flow-overview.d2 \
+        docs/reference/diagrams/flow-overview.svg
+     The SVG embeds a prefers-color-scheme dark variant, so it adapts to
+     GitHub light/dark. Edit the .d2 source and re-run the command to regenerate. -->
 
-    DB -.->|"on interval"| Worker["Embedding worker"]:::proc
-    Worker -->|"embed + rerank"| Voyage["Voyage AI<br/>semantic memory"]:::ext
-    Worker --> DB
-    DB -.->|"metrics"| SI["Self-improvement cycle<br/>tune thresholds"]:::proc
-    SI --> DB
-    DB -.->|"recurring defects"| Heal["Self-heal loop<br/>(OFF by default)"]:::guard
-    Heal -->|"cargo / git / gh"| GH["GitHub PR<br/>never merged"]:::ext
-
-    classDef proc fill:#e8eef9,stroke:#4a6fa5,color:#13243b
-    classDef store fill:#fbf0d4,stroke:#b8902a,color:#4a3410
-    classDef ext fill:#e2f1e8,stroke:#3a8a5a,color:#15401f
-    classDef client fill:#efe9f7,stroke:#7a5aa5,color:#2c1a4a
-    classDef guard fill:#f7e6e6,stroke:#b15a5a,color:#5a1818
-```
+> The diagram is generated from [`diagrams/flow-overview.d2`](diagrams/flow-overview.d2)
+> with [D2](https://d2lang.com) and committed as an SVG that adapts to GitHub's
+> light/dark theme. To regenerate after editing the source, run the `d2` command in
+> the HTML comment above.
 
 **Reading it:** steps ①–⑤ are the synchronous request spine; dotted edges are
 asynchronous (progress notifications, and the interval-driven background loops
