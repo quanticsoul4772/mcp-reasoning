@@ -5,6 +5,10 @@ Reasoning Server, and how the two background loops (self-improvement and
 self-heal) operate alongside it. Diagrams are [Mermaid](https://mermaid.js.org/)
 and render on GitHub.
 
+> Want the whole system in **one** diagram? See
+> [Flow Overview — At a Glance](FLOW_OVERVIEW.md). This page is the detailed,
+> per-subsystem breakdown.
+
 Contents:
 
 1. [System overview](#1-system-overview)
