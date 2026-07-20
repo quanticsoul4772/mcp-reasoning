@@ -62,7 +62,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.100.0
+      # Pin must equal Cargo.toml `rust-version`. For this action the ref IS
+      # the toolchain it installs, so a Dependabot "upgrade" here silently
+      # changes the MSRV floor, or breaks the job outright as #204 did by
+      # pointing at unreleased 1.100.0. Do not bump this automatically.
+      - uses: dtolnay/rust-toolchain@1.94.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --all-features
 
