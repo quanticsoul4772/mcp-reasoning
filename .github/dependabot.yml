@@ -1,5 +1,14 @@
 version: 2
 updates:
+  # Cargo. The `rust-dependencies` group is deliberately limited to minor and
+  # patch bumps. Major bumps are excluded from the group, so Dependabot opens
+  # one PR per major upgrade instead of burying it in a grouped "N updates"
+  # PR. That grouping is how #210 landed: rmcp 1.7 -> 2.2 rode along with
+  # three unrelated bumps, no source was migrated for the 2.x API rename, and
+  # `main` was left unable to compile.
+  #
+  # A major-bump PR is expected to need source changes before it is green.
+  # Do not merge one on the strength of the title alone.
   - package-ecosystem: cargo
     directory: /
     schedule:
@@ -9,9 +18,22 @@ updates:
       rust-dependencies:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    ignore:
+      # For dtolnay/rust-toolchain the ref IS the Rust toolchain that gets
+      # installed, not an action version. Dependabot reads the version-named
+      # branches as upgrades, so an automated bump silently raises the MSRV
+      # floor that the msrv job exists to prove -- or breaks the job outright,
+      # as #204 did by pointing it at unreleased Rust 1.100.0.
+      #
+      # This pin is maintained by hand, in lockstep with Cargo.toml
+      # `rust-version`. See the msrv job in .github/workflows/ci.yml.
+      - dependency-name: dtolnay/rust-toolchain
