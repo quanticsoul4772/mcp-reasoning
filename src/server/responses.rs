@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use crate::metadata::ResponseMetadata;
-use rmcp::model::{Content, IntoContents};
+use rmcp::model::{ContentBlock, IntoContents};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -14,10 +14,10 @@ macro_rules! impl_into_contents {
     ($($ty:ty),* $(,)?) => {
         $(
             impl IntoContents for $ty {
-                fn into_contents(self) -> Vec<Content> {
+                fn into_contents(self) -> Vec<ContentBlock> {
                     match serde_json::to_string_pretty(&self) {
-                        Ok(json) => vec![Content::text(json)],
-                        Err(e) => vec![Content::text(format!("{{\"error\": \"{}\"}}", e))],
+                        Ok(json) => vec![ContentBlock::text(json)],
+                        Err(e) => vec![ContentBlock::text(format!("{{\"error\": \"{}\"}}", e))],
                     }
                 }
             }
