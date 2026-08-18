@@ -86,7 +86,7 @@ mockall = "0.15"
 tokio-test = "0.4"
 pretty_assertions = "1"
 test-case = "3"
-serial_test = "3"
+serial_test = "4"
 wiremock = "0.6"
 tempfile = "3"
 
