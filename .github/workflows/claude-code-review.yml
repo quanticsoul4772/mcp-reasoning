@@ -27,7 +27,7 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@v1.0.183
+        uses: anthropics/claude-code-action@v1.0.216
         with:
           # Use the built-in token so the action does not require the Claude GitHub
           # App to be installed (the OIDC->app-token exchange was failing with 401).
