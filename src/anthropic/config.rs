@@ -17,8 +17,9 @@ pub const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 pub const DEFAULT_MAX_RETRIES: u32 = 3;
 /// Default retry delay in milliseconds.
 pub const DEFAULT_RETRY_DELAY_MS: u64 = 1_000;
-/// Default model.
-pub const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+/// Default model: a family alias, resolved at startup to the newest model in
+/// that family listed by the Models API (see [`super::models`]).
+pub const DEFAULT_MODEL: &str = "sonnet";
 /// Default max tokens.
 pub const DEFAULT_MAX_TOKENS: u32 = 4096;
 
@@ -33,6 +34,8 @@ pub struct ClientConfig {
     pub max_retries: u32,
     /// Initial retry delay in milliseconds.
     pub retry_delay_ms: u64,
+    /// Model identifier sent with every request.
+    pub model: String,
 }
 
 impl ClientConfig {
@@ -69,6 +72,13 @@ impl ClientConfig {
         self.retry_delay_ms = retry_delay_ms;
         self
     }
+
+    /// Set the model identifier.
+    #[must_use]
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = model.into();
+        self
+    }
 }
 
 impl Default for ClientConfig {
@@ -78,6 +88,7 @@ impl Default for ClientConfig {
             timeout_ms: DEFAULT_TIMEOUT_MS,
             max_retries: DEFAULT_MAX_RETRIES,
             retry_delay_ms: DEFAULT_RETRY_DELAY_MS,
+            model: DEFAULT_MODEL.to_string(),
         }
     }
 }

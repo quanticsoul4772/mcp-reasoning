@@ -34,6 +34,7 @@
 
 mod client;
 mod config;
+pub mod models;
 mod streaming;
 mod types;
 

@@ -124,6 +124,9 @@ fn print_help() {
     println!("    LOG_LEVEL               Log level: error|warn|info|debug|trace (default: info)");
     println!("    REQUEST_TIMEOUT_MS      Request timeout in milliseconds (default: 30000)");
     println!("    MAX_RETRIES             Maximum API retry attempts (default: 3)");
+    println!(
+        "    ANTHROPIC_MODEL         Model family (sonnet|opus|haiku) or full ID (default: sonnet)"
+    );
     println!();
     println!("EXAMPLES:");
     println!("    # Run server");
@@ -200,12 +203,30 @@ async fn run_health_check() -> Result<(), Box<dyn std::error::Error>> {
     // Check 4: API client creation
     print!("4. API client initialization... ");
     let api_key = std::env::var("ANTHROPIC_API_KEY")?;
-    match AnthropicClient::with_api_key(api_key) {
-        Ok(_) => println!("✅"),
+    let client = match AnthropicClient::with_api_key(api_key) {
+        Ok(client) => {
+            println!("✅");
+            client
+        }
         Err(e) => {
             println!("❌");
             println!();
             println!("Error: Cannot create Anthropic API client");
+            println!("Details: {e}");
+            return Err(Box::new(e));
+        }
+    };
+
+    // Check 5: model resolution
+    let requested = std::env::var("ANTHROPIC_MODEL")
+        .unwrap_or_else(|_| mcp_reasoning::anthropic::DEFAULT_MODEL.into());
+    print!("5. Model resolution ({requested})... ");
+    match mcp_reasoning::anthropic::models::resolve_model(&client, &requested).await {
+        Ok(model) => println!("✅ {model}"),
+        Err(e) => {
+            println!("❌");
+            println!();
+            println!("Error: Cannot resolve model '{requested}'");
             println!("Details: {e}");
             return Err(Box::new(e));
         }
