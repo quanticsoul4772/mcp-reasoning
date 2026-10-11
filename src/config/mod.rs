@@ -84,8 +84,9 @@ pub const DEFAULT_MCTS_QUALITY_THRESHOLD: f64 = 0.5;
 /// are pruning candidates), used when a caller omits `threshold`.
 pub const DEFAULT_GRAPH_PRUNE_THRESHOLD: f64 = 0.3;
 
-/// Default Anthropic model.
-pub const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+/// Default Anthropic model: a family alias resolved at startup to the newest
+/// model in that family (see [`crate::anthropic::models`]).
+pub const DEFAULT_MODEL: &str = crate::anthropic::DEFAULT_MODEL;
 
 /// Application configuration.
 ///
@@ -159,7 +160,10 @@ impl Config {
     /// - `REQUEST_TIMEOUT_MAXIMUM_MS`: Request timeout for maximum modes (default: `120000`)
     /// - `FACTORY_TIMEOUT_MS`: Factory timeout for metadata builder (default: `30000`)
     /// - `MAX_RETRIES`: Maximum retry attempts (default: `3`)
-    /// - `ANTHROPIC_MODEL`: Model to use (default: `claude-sonnet-4-20250514`)
+    /// - `ANTHROPIC_MODEL`: Model to use (default: `sonnet`). A family alias
+    ///   (`sonnet`, `opus`, `haiku`, ...) resolves at startup to the newest model
+    ///   in that family; a full ID (`claude-...`) is used as given after checking
+    ///   it is still listed by the Models API.
     ///
     /// # Errors
     ///

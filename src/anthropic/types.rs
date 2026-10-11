@@ -31,6 +31,9 @@ pub struct ApiRequest {
     /// Extended thinking configuration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<ThinkingConfig>,
+    /// Output configuration (reasoning effort for adaptive thinking).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_config: Option<OutputConfig>,
     /// Tool definitions for agentic reasoning.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ToolDefinition>>,
@@ -53,6 +56,7 @@ impl ApiRequest {
             system: None,
             messages,
             thinking: None,
+            output_config: None,
             tools: None,
             tool_choice: None,
             stream: None,
@@ -74,8 +78,14 @@ impl ApiRequest {
     }
 
     /// Set thinking configuration.
+    ///
+    /// Also sets `output_config.effort` from the thinking budget, since
+    /// adaptive thinking takes its depth from effort, not a token budget.
     #[must_use]
     pub fn with_thinking(mut self, thinking: ThinkingConfig) -> Self {
+        self.output_config = Some(OutputConfig {
+            effort: thinking.effort().to_string(),
+        });
         self.thinking = Some(thinking);
         self
     }
@@ -266,13 +276,25 @@ impl ImageSource {
 }
 
 /// Extended thinking configuration.
+///
+/// Serializes as `{"type": "adaptive"}`. Current models reject
+/// `{"type": "enabled", "budget_tokens": N}`; the budget is kept internally
+/// (timeouts, logging) and mapped to `output_config.effort` on the request.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ThinkingConfig {
-    /// Type - always "enabled".
+    /// Type - always "adaptive".
     #[serde(rename = "type")]
     pub type_: String,
-    /// Token budget for thinking (minimum 1024).
+    /// Internal thinking budget level (minimum 1024); not sent to the API.
+    #[serde(skip_serializing, default)]
     pub budget_tokens: u32,
+}
+
+/// Output configuration for the Messages API.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OutputConfig {
+    /// Reasoning effort: "low", "medium", "high", or "max".
+    pub effort: String,
 }
 
 /// Minimum allowed thinking budget.
@@ -290,8 +312,20 @@ impl ThinkingConfig {
     #[must_use]
     pub fn enabled(budget_tokens: u32) -> Self {
         Self {
-            type_: "enabled".to_string(),
+            type_: "adaptive".to_string(),
             budget_tokens: budget_tokens.max(MIN_THINKING_BUDGET),
+        }
+    }
+
+    /// Effort level for this budget: below standard is "low", standard is
+    /// "medium", deep is "high", maximum is "max".
+    #[must_use]
+    pub fn effort(&self) -> &'static str {
+        match self.budget_tokens {
+            b if b >= MAXIMUM_THINKING_BUDGET => "max",
+            b if b >= DEEP_THINKING_BUDGET => "high",
+            b if b >= STANDARD_THINKING_BUDGET => "medium",
+            _ => "low",
         }
     }
 
@@ -817,8 +851,33 @@ mod tests {
     #[test]
     fn test_thinking_config_enabled() {
         let config = ThinkingConfig::enabled(2048);
-        assert_eq!(config.type_, "enabled");
+        assert_eq!(config.type_, "adaptive");
         assert_eq!(config.budget_tokens, 2048);
+    }
+
+    #[test]
+    fn test_thinking_config_effort_mapping() {
+        assert_eq!(ThinkingConfig::enabled(1024).effort(), "low");
+        assert_eq!(ThinkingConfig::standard().effort(), "medium");
+        assert_eq!(ThinkingConfig::deep().effort(), "high");
+        assert_eq!(ThinkingConfig::maximum().effort(), "max");
+    }
+
+    #[test]
+    fn test_api_request_thinking_serializes_adaptive_with_effort() {
+        let req =
+            ApiRequest::new("claude-sonnet-5", 1000, vec![]).with_thinking(ThinkingConfig::deep());
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["thinking"], json!({"type": "adaptive"}));
+        assert_eq!(json["output_config"], json!({"effort": "high"}));
+    }
+
+    #[test]
+    fn test_api_request_without_thinking_omits_output_config() {
+        let req = ApiRequest::new("claude-sonnet-5", 1000, vec![]);
+        let json = serde_json::to_value(&req).unwrap();
+        assert!(json.get("thinking").is_none());
+        assert!(json.get("output_config").is_none());
     }
 
     #[test]
@@ -855,8 +914,7 @@ mod tests {
     fn test_thinking_config_serialization() {
         let config = ThinkingConfig::standard();
         let json = serde_json::to_string(&config).unwrap();
-        assert!(json.contains("\"type\":\"enabled\""));
-        assert!(json.contains("\"budget_tokens\":4096"));
+        assert_eq!(json, "{\"type\":\"adaptive\"}");
     }
 
     // ToolDefinition tests

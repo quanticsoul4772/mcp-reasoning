@@ -47,7 +47,15 @@
 #![allow(clippy::cast_possible_truncation)] // u128 milliseconds to u64 is safe in practice
 #![allow(clippy::doc_markdown)] // Backticks in docs not required for all identifiers
 #![allow(clippy::missing_errors_doc)] // Error documentation not required for all functions
-#![allow(clippy::too_many_lines)] // Allow longer functions when logically coherent
+#![allow(clippy::too_many_lines)]
+// Allow longer functions when logically coherent
+// Clippy 1.99 additions that fire on existing code:
+// - double_must_use: emitted inside the #[async_trait] macro expansion, which
+//   this crate cannot change.
+// - unused_async_trait_impl: handlers kept async to match their async callers;
+//   rewriting them to return `impl Future` changes no behavior.
+#![allow(clippy::double_must_use)]
+#![allow(clippy::unused_async_trait_impl)]
 #![allow(clippy::must_use_candidate)] // Not all getters need #[must_use]
 #![allow(clippy::trivially_copy_pass_by_ref)] // Small types by ref is fine
 #![allow(clippy::unused_self)] // Methods may have &self for future use

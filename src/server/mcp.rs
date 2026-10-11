@@ -73,6 +73,17 @@ impl McpServer {
             }
         }
 
+        // Resolve the configured model (family alias or full ID) against the
+        // Models API so new releases are picked up and retired IDs fail here.
+        let resolver = AnthropicClient::new(config.api_key.expose(), ClientConfig::default())?;
+        let requested_model = config.model.clone();
+        config.model = crate::anthropic::models::resolve_model(&resolver, &requested_model).await?;
+        tracing::info!(
+            requested = %requested_model,
+            resolved = %config.model,
+            "Resolved Anthropic model"
+        );
+
         // Initialize metrics collector (shared between MCP tools and self-improvement)
         let metrics = Arc::new(MetricsCollector::new());
 
@@ -81,13 +92,15 @@ impl McpServer {
         // (spec 001, FR-017) and the drift classifier can use it.
         let client_config = ClientConfig::default()
             .with_timeout_ms(config.request_timeout_maximum_ms) // Use maximum timeout for deep thinking modes
-            .with_max_retries(config.max_retries);
+            .with_max_retries(config.max_retries)
+            .with_model(&config.model);
         let client = AnthropicClient::new(config.api_key.expose(), client_config)?
             .with_metrics(Arc::clone(&metrics));
 
         let si_client_config = ClientConfig::default()
             .with_timeout_ms(config.request_timeout_maximum_ms) // Use maximum timeout for deep thinking modes
-            .with_max_retries(config.max_retries);
+            .with_max_retries(config.max_retries)
+            .with_model(&config.model);
         let si_client = AnthropicClient::new(config.api_key.expose(), si_client_config)?;
 
         let (si_manager, si_handle) = SelfImprovementManager::new(
@@ -152,7 +165,8 @@ impl McpServer {
             {
                 let heal_client_config = ClientConfig::default()
                     .with_timeout_ms(config.request_timeout_maximum_ms)
-                    .with_max_retries(config.max_retries);
+                    .with_max_retries(config.max_retries)
+                    .with_model(&config.model);
                 let heal_client =
                     AnthropicClient::new(config.api_key.expose(), heal_client_config)?;
                 let heal_manager = crate::self_improvement::heal_manager::HealManager::new(

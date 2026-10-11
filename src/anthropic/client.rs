@@ -17,7 +17,7 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use tokio::sync::mpsc;
 
-use super::config::{ClientConfig, DEFAULT_MODEL};
+use super::config::ClientConfig;
 use super::streaming::parse_sse_line;
 use super::types::{
     ApiMessage, ApiRequest, ApiResponse, ContentBlock, ReasoningResponse, StreamEvent,
@@ -105,6 +105,58 @@ impl AnthropicClient {
     #[must_use]
     pub fn base_url(&self) -> &str {
         &self.config.base_url
+    }
+
+    /// List all models available to this API key (`GET /v1/models`, all pages).
+    ///
+    /// # Errors
+    ///
+    /// Returns `AnthropicError` on network failure, a non-success status, or an
+    /// unparseable response body.
+    pub async fn list_models(&self) -> Result<Vec<super::models::ModelInfo>, AnthropicError> {
+        let url = format!("{}/models", self.config.base_url);
+        let mut models = Vec::new();
+        let mut after_id: Option<String> = None;
+        loop {
+            // Model IDs are URL-safe ([a-z0-9-]), so no query encoding is needed.
+            let page_url = after_id.as_ref().map_or_else(
+                || format!("{url}?limit=100"),
+                |after| format!("{url}?limit=100&after_id={after}"),
+            );
+            let response = self
+                .client
+                .get(&page_url)
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .send()
+                .await
+                .map_err(|e| AnthropicError::Network {
+                    message: e.to_string(),
+                })?;
+            let status = response.status();
+            if status.as_u16() == 401 {
+                return Err(AnthropicError::AuthenticationFailed);
+            }
+            if !status.is_success() {
+                let body = response.text().await.unwrap_or_default();
+                return Err(AnthropicError::UnexpectedResponse {
+                    message: format!("Models API status {status}: {body}"),
+                });
+            }
+            let page: super::models::ModelsPage =
+                response
+                    .json()
+                    .await
+                    .map_err(|e| AnthropicError::UnexpectedResponse {
+                        message: format!("Models API response: {e}"),
+                    })?;
+            models.extend(page.data);
+            match (page.has_more, page.last_id) {
+                (true, Some(last)) => after_id = Some(last),
+                _ => break,
+            }
+        }
+        Ok(models)
     }
 
     /// Get the client configuration.
@@ -531,9 +583,9 @@ impl AnthropicClientTrait for AnthropicClient {
             })
             .collect();
 
-        // Build API request using the default model
+        // Build API request using the configured model
         let max_tokens = config.max_tokens.unwrap_or(4096);
-        let mut request = ApiRequest::new(DEFAULT_MODEL, max_tokens, api_messages);
+        let mut request = ApiRequest::new(&self.config.model, max_tokens, api_messages);
 
         // Wire extended thinking if budget is specified
         // Note: When thinking is enabled, temperature must be 1 (API constraint)
@@ -581,9 +633,9 @@ impl AnthropicClientTrait for AnthropicClient {
             })
             .collect();
 
-        // Build API request using the default model
+        // Build API request using the configured model
         let max_tokens = config.max_tokens.unwrap_or(4096);
-        let mut request = ApiRequest::new(DEFAULT_MODEL, max_tokens, api_messages);
+        let mut request = ApiRequest::new(&self.config.model, max_tokens, api_messages);
 
         // Wire extended thinking if budget is specified
         if let Some(budget) = config.thinking_budget {
